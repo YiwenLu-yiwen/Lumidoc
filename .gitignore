@@ -237,3 +237,5 @@ secrets/
 
 # Old STP references
 STP_webui/
+
+.*
