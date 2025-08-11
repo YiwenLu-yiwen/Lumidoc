@@ -1,0 +1,27 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+监控服务启动入口
+"""
+
+import uvicorn
+import sys
+import os
+
+# 确保路径正确
+current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
+# 添加src/modules到系统路径
+modules_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if modules_dir not in sys.path:
+    sys.path.insert(0, modules_dir)
+
+# 导入原有路由模块
+from STP_webui.backend.api.monitoring_routes import app
+from config import settings
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=settings.monitoring_service_port) 
