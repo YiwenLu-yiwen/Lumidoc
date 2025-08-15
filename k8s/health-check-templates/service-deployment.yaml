@@ -1,0 +1,184 @@
+# STP微服务 Kubernetes 部署模板
+# 包含标准化健康检查配置
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${SERVICE_NAME}-deployment
+  namespace: stp
+  labels:
+    app: ${SERVICE_NAME}
+    version: v1
+    component: microservice
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ${SERVICE_NAME}
+  template:
+    metadata:
+      labels:
+        app: ${SERVICE_NAME}
+        version: v1
+    spec:
+      containers:
+      - name: ${SERVICE_NAME}
+        image: stp/${SERVICE_NAME}:latest
+        ports:
+        - containerPort: ${SERVICE_PORT}
+          protocol: TCP
+        env:
+        - name: ENVIRONMENT
+          value: "production"
+        - name: DEBUG_MODE
+          value: "false"
+        - name: SERVICE_PORT
+          value: "${SERVICE_PORT}"
+        - name: POSTGRES_HOST
+          valueFrom:
+            secretKeyRef:
+              name: stp-secrets
+              key: postgres-host
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: stp-secrets
+              key: postgres-password
+        - name: REDIS_HOST
+          valueFrom:
+            secretKeyRef:
+              name: stp-secrets
+              key: redis-host
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: stp-secrets
+              key: redis-password
+        
+        # 健康检查配置
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: ${SERVICE_PORT}
+            scheme: HTTP
+          initialDelaySeconds: 30    # 30秒后开始检查
+          periodSeconds: 10          # 每10秒检查一次
+          timeoutSeconds: 5          # 5秒超时
+          failureThreshold: 3        # 连续失败3次重启Pod
+          successThreshold: 1        # 成功1次认为恢复
+        
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: ${SERVICE_PORT}
+            scheme: HTTP
+          initialDelaySeconds: 5     # 5秒后开始检查
+          periodSeconds: 5           # 每5秒检查一次
+          timeoutSeconds: 3          # 3秒超时
+          failureThreshold: 3        # 连续失败3次从负载均衡移除
+          successThreshold: 1        # 成功1次认为就绪
+        
+        # 启动探针（可选，用于慢启动服务）
+        startupProbe:
+          httpGet:
+            path: /health
+            port: ${SERVICE_PORT}
+            scheme: HTTP
+          initialDelaySeconds: 10    # 10秒后开始检查
+          periodSeconds: 10          # 每10秒检查一次
+          timeoutSeconds: 5          # 5秒超时
+          failureThreshold: 30       # 最多检查30次（5分钟）
+          successThreshold: 1        # 成功1次认为启动完成
+        
+        # 资源限制
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        
+        # 安全上下文
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop:
+            - ALL
+
+      # Pod安全策略
+      securityContext:
+        fsGroup: 1000
+
+      # 容忍度（可选）
+      tolerations:
+      - key: "app"
+        operator: "Equal"
+        value: "stp"
+        effect: "NoSchedule"
+
+      # 节点选择器（可选）
+      nodeSelector:
+        app: stp
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${SERVICE_NAME}-service
+  namespace: stp
+  labels:
+    app: ${SERVICE_NAME}
+spec:
+  type: ClusterIP
+  selector:
+    app: ${SERVICE_NAME}
+  ports:
+  - name: http
+    port: ${SERVICE_PORT}
+    targetPort: ${SERVICE_PORT}
+    protocol: TCP
+
+---
+# 水平Pod自动缩放器（可选）
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ${SERVICE_NAME}-hpa
+  namespace: stp
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ${SERVICE_NAME}-deployment
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+
+---
+# Pod中断预算（可选）
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ${SERVICE_NAME}-pdb
+  namespace: stp
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: ${SERVICE_NAME}

@@ -1,0 +1,90 @@
+# STP微服务 Dockerfile 健康检查模板
+# 适用于所有STP微服务
+
+ARG PYTHON_VERSION=3.9
+FROM python:${PYTHON_VERSION}-slim
+
+# 设置工作目录
+WORKDIR /app
+
+# 安装系统依赖
+RUN apt-get update && apt-get install -y \
+    curl \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# 复制requirements文件
+COPY requirements.txt .
+
+# 安装Python依赖
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 复制应用代码
+COPY . .
+
+# 设置环境变量
+ENV PYTHONPATH=/app
+ENV ENVIRONMENT=production
+ENV DEBUG_MODE=false
+
+# 暴露端口（根据具体服务调整）
+ARG SERVICE_PORT=8080
+EXPOSE ${SERVICE_PORT}
+
+# 创建非root用户
+RUN adduser --disabled-password --gecos '' appuser
+RUN chown -R appuser:appuser /app
+USER appuser
+
+# 健康检查配置
+# 间隔30秒检查一次，超时10秒，启动5秒后开始检查，连续失败3次认为不健康
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:${SERVICE_PORT}/health || exit 1
+
+# 启动命令（根据具体服务调整）
+ARG SERVICE_NAME=service
+CMD ["python", "-m", "src.modules.${SERVICE_NAME}.main"]
+
+# 服务特定示例：
+
+# === Auth Service ===
+# ARG SERVICE_PORT=8007
+# ARG SERVICE_NAME=auth
+# EXPOSE 8007
+# CMD ["python", "-m", "src.modules.auth.main"]
+
+# === Chat Service ===  
+# ARG SERVICE_PORT=8001
+# ARG SERVICE_NAME=chat
+# EXPOSE 8001
+# CMD ["python", "-m", "src.modules.chat.main"]
+
+# === File Service ===
+# ARG SERVICE_PORT=8004  
+# ARG SERVICE_NAME=file
+# EXPOSE 8004
+# CMD ["python", "-m", "src.modules.file.main"]
+
+# === Graph Service ===
+# ARG SERVICE_PORT=8003
+# ARG SERVICE_NAME=graph  
+# EXPOSE 8003
+# CMD ["python", "-m", "src.modules.graph.main"]
+
+# === LLM Service ===
+# ARG SERVICE_PORT=8080
+# ARG SERVICE_NAME=llm
+# EXPOSE 8080  
+# CMD ["python", "-m", "src.modules.llm.main"]
+
+# === Question Service ===
+# ARG SERVICE_PORT=8002
+# ARG SERVICE_NAME=question
+# EXPOSE 8002
+# CMD ["python", "-m", "src.modules.question.main"]
+
+# === Monitoring Service ===
+# ARG SERVICE_PORT=8008
+# ARG SERVICE_NAME=monitoring
+# EXPOSE 8008
+# CMD ["python", "-m", "src.modules.monitoring.main"]

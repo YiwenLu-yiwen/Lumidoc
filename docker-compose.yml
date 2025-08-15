@@ -1,0 +1,328 @@
+version: '3.8'
+
+# 添加全局环境变量文件
+x-env-file: &env-file
+  env_file:
+    - ./.env
+
+services:
+  db:
+    image: ankane/pgvector:latest
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-lumidoc}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./scripts/setup_pgvector.sql:/docker-entrypoint-initdb.d/setup_pgvector.sql
+    networks:
+      - lumidoc_network
+
+  file_service:
+    build:
+      context: .
+      dockerfile: src/modules/file/Dockerfile
+    ports:
+      - "${FILE_SERVICE_PORT:-8004}:8004"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./temp:/app/temp
+    environment:
+      - PYTHONPATH=/app
+      - PDF_PROCESSOR_PATH=/usr/bin
+      - UPLOAD_DIR=/app/uploads
+      - TEMP_DIR=/app/temp
+      - REDIS_HOST=redis
+    <<: *env-file
+    networks:
+      - lumidoc_network
+    depends_on:
+      - db
+      - redis
+      - minio
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+
+  rag_service:
+    build:
+      context: .
+      dockerfile: src/modules/rag/Dockerfile
+    ports:
+      - "${RAG_SERVICE_PORT:-8006}:8006"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - PYTHONPATH=/app
+      - RAG_DIR=/app/data/rag
+      - RAG_INDEX_NAME=main_index
+      - DEFAULT_TOP_K=5
+    <<: *env-file
+    networks:
+      - lumidoc_network
+    depends_on:
+      - redis
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+      restart_policy:
+        condition: on-failure
+
+  graph_service:
+    build:
+      context: .
+      dockerfile: src/modules/graph/Dockerfile
+    ports:
+      - "${GRAPH_SERVICE_PORT:-8003}:8003"
+    environment:
+      - PYTHONPATH=/app
+      - GRAPH_DB_URI=neo4j://neo4j:7687
+      - GRAPH_DB_USER=neo4j
+      - GRAPH_DB_PASSWORD=password
+    volumes:
+      - ./data:/app/data/graph
+    <<: *env-file
+    networks:
+      - lumidoc_network
+    depends_on:
+      - db
+      - redis
+
+  auth_service:
+    build:
+      context: .
+      dockerfile: src/modules/auth/Dockerfile
+    ports:
+      - "${AUTH_SERVICE_PORT:-8007}:8007"
+    environment:
+      - PYTHONPATH=/app
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=lumidoc
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - REDIS_HOST=redis
+    <<: *env-file
+    networks:
+      - lumidoc_network
+    depends_on:
+      - db
+      - redis
+
+  chat_service:
+    build:
+      context: .
+      dockerfile: src/modules/chat/Dockerfile
+    ports:
+      - "${CHAT_SERVICE_PORT:-8001}:8001"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - PYTHONPATH=/app
+      - RAG_DIR=/app/data/rag
+      - REDIS_HOST=redis
+    <<: *env-file
+    networks:
+      - lumidoc_network
+    depends_on:
+      - rag_service
+      - redis
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '0.75'
+          memory: 768M
+      restart_policy:
+        condition: on-failure
+
+  question_service:
+    build:
+      context: .
+      dockerfile: src/modules/question/Dockerfile
+    ports:
+      - "${QUESTION_SERVICE_PORT:-8002}:8002"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - PYTHONPATH=/app
+      - RAG_DIR=/app/data/rag
+      - REDIS_HOST=redis
+    <<: *env-file
+    networks:
+      - lumidoc_network
+    depends_on:
+      - rag_service
+      - redis
+
+  monitoring_service:
+    build:
+      context: .
+      dockerfile: src/modules/monitoring/Dockerfile
+    ports:
+      - "${MONITORING_SERVICE_PORT:-8008}:8008"
+    environment:
+      - PYTHONPATH=/app
+    <<: *env-file
+    networks:
+      - lumidoc_network
+
+  # 前端和API网关
+  webui_backend:
+    build:
+      context: ./Lumidoc_webui/backend
+      dockerfile: Dockerfile
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    environment:
+      - PYTHONPATH=/app
+    <<: *env-file
+    volumes:
+      - ./Lumidoc_webui/backend:/app
+    networks:
+      - lumidoc_network
+    depends_on:
+      - file_service
+      - rag_service
+      - chat_service
+      - graph_service
+      - auth_service
+      - question_service
+      - monitoring_service
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+
+  webui_frontend:
+    build:
+      context: ./Lumidoc_webui/frontend
+      dockerfile: Dockerfile
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    volumes:
+      - ./Lumidoc_webui/frontend:/app
+    <<: *env-file
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    networks:
+      - lumidoc_network
+    depends_on:
+      - webui_backend
+
+  fileproc_service:
+    build:
+      context: .
+      dockerfile: src/modules/fileproc/Dockerfile
+    ports:
+      - "${FILEPROC_SERVICE_PORT:-8005}:8005"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./temp:/app/temp
+    environment:
+      - PYTHONPATH=/app
+      - UPLOAD_DIR=/app/uploads
+      - TEMP_DIR=/app/temp
+      - FILE_PROCESSING_QUEUE=file_processing
+      - REDIS_HOST=redis
+    <<: *env-file
+    networks:
+      - lumidoc_network
+    depends_on:
+      - redis
+      - minio
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+
+  redis:
+    image: redis:7
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-123456789}"]
+    networks:
+      - lumidoc_network
+
+  neo4j:
+    image: neo4j:5
+    environment:
+      - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-123456789}
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+    networks:
+      - lumidoc_network
+
+  minio:
+    image: minio/minio:latest
+    container_name: lumidoc_minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=${S3_ACCESS_KEY:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${S3_SECRET_KEY:-minioadmin}
+    volumes:
+      - minio_data:/data
+    networks:
+      - lumidoc_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  llm_service:
+    build:
+      context: .
+      dockerfile: src/modules/llm/Dockerfile
+    ports:
+      - "${LLM_SERVICE_PORT:-8010}:8010"
+    environment:
+      - PYTHONPATH=/app
+      - REDIS_HOST=redis
+    <<: *env-file
+    networks:
+      - lumidoc_network
+    depends_on:
+      - redis
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+      restart_policy:
+        condition: on-failure
+
+networks:
+  lumidoc_network:
+    driver: bridge
+
+volumes:
+  db_data:
+  redis_data:
+  neo4j_data:
+  minio_data: 
