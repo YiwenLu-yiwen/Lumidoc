@@ -1,0 +1,26 @@
+/* 思考中动画样式 */
+.thinking-dots {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+}
+
+.thinking-dots:after {
+  content: '...';
+  width: 24px;
+  text-align: left;
+  animation: thinking 1.5s infinite;
+  display: inline-block;
+}
+
+@keyframes thinking {
+  0%, 20% {
+    content: '.';
+  }
+  40% {
+    content: '..';
+  }
+  60%, 100% {
+    content: '...';
+  }
+} 

@@ -1,0 +1,263 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;  /* 白色 */
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222.2 84% 4.9%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222.2 84% 4.9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+
+    font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+    font-weight: 400;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .dark {
+    --background: 217 15% 20%; /* #343541 */
+    --foreground: 210 40% 98%; /* 白色文字 */
+    --card: 215 15% 18%; /* #2d2d30 卡片背景 */
+    --card-foreground: 210 40% 98%;
+    --popover: 215 15% 18%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 217 15% 20%;
+    --secondary: 217 10% 25%; /* #40414f 次要背景 */
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 10% 25%;
+    --muted-foreground: 0 0% 71%; /* #b4b4b4 次要文字 */
+    --accent: 217 10% 25%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 0 0% 29%; /* #4a4a4a 边框 */
+    --input: 217 10% 25%;
+    --ring: 224.3 76.3% 94.1%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+  }
+}
+
+/* 思考中动画 */
+.thinking-dots {
+  display: flex;
+  align-items: center;
+  padding: 10px 15px;
+  background-color: rgba(0, 102, 255, 0.1);
+  border-radius: 10px;
+  box-shadow: 0 0 8px rgba(0, 102, 255, 0.15);
+}
+
+.thinking-dots .dot {
+  margin: 0 4px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: #0066ff;
+  display: inline-block;
+}
+
+.thinking-dots .dot:nth-child(1) {
+  animation: pulse 1s infinite ease-in-out;
+}
+
+.thinking-dots .dot:nth-child(2) {
+  animation: pulse 1s infinite ease-in-out 0.3s;
+}
+
+.thinking-dots .dot:nth-child(3) {
+  animation: pulse 1s infinite ease-in-out 0.6s;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.5);
+  }
+}
+
+a {
+  font-weight: 500;
+  color: #646cff;
+  text-decoration: inherit;
+}
+a:hover {
+  color: #535bf2;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+h1 {
+  font-size: 3.2em;
+  line-height: 1.1;
+}
+
+button {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  font-weight: 500;
+  font-family: inherit;
+  background-color: transparent;
+  cursor: pointer;
+  transition: border-color 0.25s;
+}
+button:hover {
+  border-color: #646cff;
+}
+button:focus,
+button:focus-visible {
+  outline: 4px auto -webkit-focus-ring-color;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color: #213547;
+    background-color: #ffffff;
+  }
+  a:hover {
+    color: #747bff;
+  }
+  button {
+    background-color: transparent;
+  }
+}
+
+/* 让 number input 的 spin button 一直可见（Chrome/Edge） */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  opacity: 1;
+}
+
+/* 文件表格样式增强 */
+.file-table .el-table {
+  --el-table-header-bg-color: #f0f2f5;
+  --el-table-row-hover-bg-color: #f5f7fa;
+}
+
+.file-table .el-table th {
+  background-color: #f0f2f5;
+  color: #303133;
+  font-weight: 600;
+}
+
+.file-table .el-table td {
+  color: #333;
+  font-weight: 500;
+}
+
+/* 增强文件名对比度 */
+.file-table .el-table .cell {
+  color: #303133;
+  font-weight: 500;
+}
+
+/* 确保标签文字清晰可见 */
+.file-table .el-tag {
+  font-weight: 500;
+}
+
+/* 黑暗模式下的表格样式 */
+@media (prefers-color-scheme: dark) {
+  .file-table .el-table {
+    --el-table-header-bg-color: #1a1a1a;
+    --el-table-row-hover-bg-color: #2c2c2c;
+  }
+  
+  .file-table .el-table th {
+    background-color: #1a1a1a;
+    color: #e0e0e0;
+  }
+  
+  .file-table .el-table td,
+  .file-table .el-table .cell {
+    color: #e0e0e0;
+  }
+  
+  /* 确保暗模式下标签文字清晰 */
+  .file-table .el-tag {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+}
+
+/* 首页聊天演示动画 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.6s ease-out forwards;
+}
+
+/* 思考过程动画 */
+@keyframes typewriter {
+  from {
+    width: 0;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+.animate-typewriter {
+  overflow: hidden;
+  white-space: nowrap;
+  animation: typewriter 2s linear;
+}
