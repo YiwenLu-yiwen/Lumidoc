@@ -1,3 +1,2 @@
-from .routes.question_routes import router as question_router
-
-__all__ = ["question_router"] 
+# 避免循环导入，不在模块级别导入路由
+# 路由将在main.py中直接导入 

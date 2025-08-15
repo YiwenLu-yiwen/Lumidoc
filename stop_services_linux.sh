@@ -59,8 +59,7 @@ stop_service() {
 # 停止前端服务
 stop_service "前端服务" "npm.*run dev"
 
-# 停止后端服务
-stop_service "后端API服务" "uvicorn.*main:app"
+# 后端API服务已合并到微服务架构中，无需单独停止
 stop_service "认证服务" "python.*src.modules.auth.main"
 stop_service "文件服务" "python.*src.modules.file.main"
 stop_service "聊天服务" "python.*src.modules.chat.main"

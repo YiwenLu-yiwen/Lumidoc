@@ -278,7 +278,7 @@ async def cleanup_project(project_id: str):
         logger.error(f"项目清理失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/health", response_model=HealthCheckResponse)
+@router.get("/healthz", response_model=HealthCheckResponse)
 async def health_check():
     """
     服务健康检查

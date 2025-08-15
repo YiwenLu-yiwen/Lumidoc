@@ -17,8 +17,9 @@ class User(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     
-    class Config:
-        from_attributes = True
+    model_config = {
+        "from_attributes": True
+    }
 
 # UserResponse 作为 User 的别名，保持兼容性
 UserResponse = User

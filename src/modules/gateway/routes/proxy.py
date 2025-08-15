@@ -83,6 +83,7 @@ def create_service_route(service_name: str, prefix: str):
 
 # 健康检查路由
 @router.get("/health", tags=["健康检查"])
+@router.get("/gateway/health", tags=["健康检查"])  # 添加gateway前缀的路由
 async def gateway_health():
     """Gateway健康检查"""
     from src.modules.gateway.services.service_discovery import get_service_discovery

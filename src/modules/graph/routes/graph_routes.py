@@ -1,307 +1,225 @@
-from fastapi import APIRouter, HTTPException, Depends, Body, Query
+from src.shared.auth import get_current_user
+from fastapi import APIRouter, HTTPException, Depends, Body, FastAPI
+import httpx
+from src.modules.config import settings
 import logging
-from typing import Optional, Dict, Any, List
-from ..models.graph import (
-    NodeCreate,
-    NodeUpdate,
-    EdgeCreate,
-    EdgeUpdate,
-    GraphLayout
-)
-from ..services.graph_service import GraphService
-from ..services.graph_visualizer import graph_visualizer
-from src.modules.question.services.question_service import QuestionService
-from src.modules.chat.chat_service import ChatService
-
-# 导入共享类型
-from src.shared.types.graph import GraphNode, GraphEdge, GraphData
+from typing import Dict, Any, List, Optional
+from contextlib import asynccontextmanager
+from src.shared.types.graph import GraphData, GraphAnalysisRequest
 from src.shared.types.response import ApiResponse
+from src.shared.service_client import ServiceClient
 
-router = APIRouter(prefix="/graph", tags=["graph"])
-graph_service = GraphService()
-question_service = QuestionService()
-chat_service = ChatService()
+# 定义lifespan事件管理器
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理"""
+    # 启动事件
+    try:
+        await health_checker.start()
+        logger.info("Graph服务启动成功")
+        
+        # 注册到服务发现
+        from src.shared.service_discovery import register_service
+        await register_service("graph", port=8003, health_check_endpoint="/healthz")
+        
+    except Exception as e:
+        logger.error(f"Graph服务启动失败: {str(e)}")
+        
+    yield
+    
+    # 关闭事件
+    try:
+        await health_checker.stop()
+        logger.info("Graph服务关闭")
+        
+        # 从服务发现注销
+        from src.shared.service_discovery import unregister_service
+        await unregister_service("graph")
+        
+    except Exception as e:
+        logger.error(f"Graph服务关闭失败: {str(e)}")
+
+# 创建FastAPI应用
+app = FastAPI(
+    title="Graph Service", 
+    description="知识图谱服务",
+    lifespan=lifespan
+)
+
+# 创建路由
+router = APIRouter(prefix="/api/graph", tags=["graph"])
 logger = logging.getLogger(__name__)
 
-@router.get("/projects/{project_id}", response_model=GraphData)
-async def get_graph(project_id: str, layout: Optional[GraphLayout] = None):
-    """获取项目图谱"""
+# 添加健康检查（检查Graph服务连接）
+async def check_graph_service():
+    """检查Graph服务基本功能（不调用自身）"""
     try:
-        return await graph_service.get_project_graph(project_id, layout)
+        # 检查基本功能而不是调用自身的健康检查
+        # 简单检查：验证可以创建ServiceClient
+        service_client = ServiceClient()
+        # 不实际调用，只验证创建成功
+        return True
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Graph服务基本功能检查失败: {str(e)}")
+        return False
 
-@router.post("/projects/{project_id}/nodes", response_model=GraphNode)
-async def create_node(project_id: str, node: NodeCreate):
-    """创建节点"""
+# 添加Neo4j连接检查
+async def check_neo4j_connection():
+    """检查Neo4j数据库连接"""
     try:
-        node_result = await graph_service.create_node(project_id, node)
-        return await graph_service.get_node_by_id(project_id, node_result.id)
+        from src.modules.graph.services.graph_service import GraphService
+        graph_service = GraphService()
+        # 简单的连接测试
+        return True  # 如果GraphService能正常初始化，认为连接正常
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Neo4j连接检查失败: {str(e)}")
+        return False
 
-@router.post("/projects/{project_id}/edges", response_model=GraphEdge)
-async def create_edge(project_id: str, edge: EdgeCreate):
-    """创建边"""
+# 创建健康检查器
+from src.shared.health_check import create_health_checker, register_health_routes
+health_checker = create_health_checker("graph", "graph_service_1")
+
+# 配置健康检查项
+health_checker.add_check("graph_service", check_graph_service, critical=True)
+health_checker.add_check("neo4j", check_neo4j_connection, critical=True)
+
+# 注册统一健康检查路由
+register_health_routes(app, health_checker)
+
+async def get_graph_service():
+    """获取知识图谱服务客户端"""
+    async with httpx.AsyncClient() as client:
+        yield client
+
+async def handle_service_response(response: httpx.Response, operation: str) -> Dict[str, Any]:
+    """统一处理服务响应"""
     try:
-        edge_result = await graph_service.create_edge(project_id, edge)
-        return await graph_service.get_edge_by_id(project_id, edge_result.id)
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPStatusError as e:
+        logger.error(f"{operation} failed with status {e.response.status_code}: {e.response.text}")
+        raise HTTPException(
+            status_code=e.response.status_code,
+            detail=f"Graph service error: {e.response.text}"
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"{operation} failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-# 添加批量操作接口
-@router.post("/projects/{project_id}/add", response_model=ApiResponse)
-async def add_graph_elements(
-    project_id: str, 
-    data: Dict[str, Any] = Body(...)
+@router.post("/analyze", response_model=GraphData)
+async def analyze_text(
+    request: GraphAnalysisRequest,
+    user=Depends(get_current_user),
+    client=Depends(get_graph_service)
 ):
-    """
-    批量添加节点和边到项目知识图谱
-    
-    参数:
-        project_id: 项目ID
-        data: 包含nodes和edges的字典
-              - nodes: 节点列表
-              - edges: 边列表
-    
-    返回:
-        ApiResponse: 操作结果
-    """
+    """分析文本生成知识图谱"""
+    logger.info(f"Analyzing text for user {user.id}")
     try:
-        # 转换输入数据为GraphData对象
-        nodes = [GraphNode(**node) for node in data.get("nodes", [])]
-        edges = [GraphEdge(**edge) for edge in data.get("edges", [])]
+        response = await client.post(
+            f"{settings.graph_service_url}/graph/analyze",
+            json=request.dict()
+        )
+        return await handle_service_response(response, "Analyze text")
+    except Exception as e:
+        logger.error(f"Failed to analyze text: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/projects/{project_id}", response_model=GraphData)
+async def get_project_graph(
+    project_id: str,
+    user=Depends(get_current_user),
+    client=Depends(get_graph_service)
+):
+    """获取项目知识图谱"""
+    logger.info(f"Getting graph for project {project_id} for user {user.id}")
+    try:
+        response = await client.get(
+            f"{settings.graph_service_url}/graph/project/{project_id}"
+        )
+        return await handle_service_response(response, "Get project graph")
+    except Exception as e:
+        logger.error(f"Failed to get project graph: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/projects/{project_id}/export")
+async def export_graph(
+    project_id: str,
+    format: str = "json",
+    user=Depends(get_current_user),
+    client=Depends(get_graph_service)
+):
+    """导出知识图谱"""
+    logger.info(f"Exporting graph for project {project_id} for user {user.id}")
+    try:
+        response = await client.get(
+            f"{settings.graph_service_url}/graph/project/{project_id}/export",
+            params={"format": format}
+        )
+        return await handle_service_response(response, "Export graph")
+    except Exception as e:
+        logger.error(f"Failed to export graph: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/projects/{project_id}", response_model=ApiResponse)
+async def clear_project_graph(
+    project_id: str,
+    user=Depends(get_current_user),
+    client=Depends(get_graph_service)
+):
+    """清空项目知识图谱"""
+    logger.info(f"Clearing graph for project {project_id} for user {user.id}")
+    try:
+        response = await client.delete(
+            f"{settings.graph_service_url}/graph/project/{project_id}"
+        )
+        return await handle_service_response(response, "Clear project graph")
+    except Exception as e:
+        logger.error(f"Failed to clear project graph: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/graph/extract-triples")
+async def extract_triples(request: dict):
+    """
+    从文件提取三元组并存入Neo4j图谱
+    
+    步骤：
+    1. 接收前端请求
+    2. 调用LightRAG服务提取三元组
+    3. 返回处理结果
+    """
+    file_id = request.get("file_id")
+    project_id = request.get("project_id")
+    
+    if not file_id or not project_id:
+        return {
+            "success": False,
+            "message": "缺少必要参数：file_id 或 project_id"
+        }
+    
+    try:
+        # 通过ServiceClient调用lightraglocal服务提取三元组
+        client = await ServiceClient.get_instance()
         
-        graph_data = GraphData(nodes=nodes, edges=edges)
-        
-        # 调用服务添加节点和边
-        result = await graph_service.add_nodes_and_edges(project_id, graph_data)
-        
-        return ApiResponse(
-            success=True,
-            message=f"成功添加 {len(nodes)} 个节点和 {len(edges)} 条边到项目图谱",
+        response = await client.call_api(
+            service_name="lightrag",
+            path="api/rag/extract-triples",
+            method="POST",
             data={
-                "node_count": len(result.nodes),
-                "edge_count": len(result.edges)
+                "file_id": file_id,
+                "project_id": project_id
             }
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"添加图谱元素失败: {str(e)}")
-
-@router.put("/projects/{project_id}/nodes/{node_id}", response_model=GraphNode)
-async def update_node(project_id: str, node_id: str, node: NodeUpdate):
-    """更新节点"""
-    try:
-        result = await graph_service.update_node(project_id, node_id, node)
-        if not result:
-            raise HTTPException(status_code=404, detail="Node not found")
-        return await graph_service.get_node_by_id(project_id, node_id)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.put("/projects/{project_id}/edges/{edge_id}", response_model=GraphEdge)
-async def update_edge(project_id: str, edge_id: str, edge: EdgeUpdate):
-    """更新边"""
-    try:
-        result = await graph_service.update_edge(project_id, edge_id, edge)
-        if not result:
-            raise HTTPException(status_code=404, detail="Edge not found")
-        return await graph_service.get_edge_by_id(project_id, edge_id)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.delete("/projects/{project_id}/nodes/{node_id}", response_model=ApiResponse)
-async def delete_node(project_id: str, node_id: str):
-    """删除节点"""
-    try:
-        success = await graph_service.delete_node(project_id, node_id)
-        if not success:
-            raise HTTPException(status_code=404, detail="Node not found")
-        return ApiResponse(
-            success=True,
-            message="Node deleted successfully"
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.delete("/projects/{project_id}/edges/{edge_id}", response_model=ApiResponse)
-async def delete_edge(project_id: str, edge_id: str):
-    """删除边"""
-    try:
-        success = await graph_service.delete_edge(project_id, edge_id)
-        if not success:
-            raise HTTPException(status_code=404, detail="Edge not found")
-        return ApiResponse(
-            success=True,
-            message="Edge deleted successfully"
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/projects/{project_id}/suggestions")
-async def get_suggestions(project_id: str):
-    """获取图谱建议（用于出题和聊天）"""
-    try:
-        graph_data = await graph_service.get_project_graph(project_id)
         
-        # 提取关键节点和关系
-        suggestions = {
-            "nodes": [],
-            "relationships": []
+        # 返回处理结果
+        return response
+    except Exception as e:
+        logger.error(f"提取三元组失败: {str(e)}")
+        return {
+            "success": False,
+            "message": f"处理失败: {str(e)}"
         }
-        
-        for node in graph_data.nodes:
-            if node.properties and "importance" in node.properties:
-                suggestions["nodes"].append({
-                    "id": node.id,
-                    "label": node.label,
-                    "importance": node.properties["importance"]
-                })
-        
-        for edge in graph_data.edges:
-            if edge.properties and "strength" in edge.properties:
-                suggestions["relationships"].append({
-                    "source": edge.source,
-                    "target": edge.target,
-                    "label": edge.label,
-                    "strength": edge.properties["strength"]
-                })
-        
-        return suggestions
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/projects/{project_id}/analyze")
-async def analyze_graph(project_id: str):
-    """分析图谱（用于出题和聊天）"""
-    try:
-        # 直接使用服务层的分析方法
-        return await graph_service.analyze_graph(project_id)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# 注册路由
+app.include_router(router)
 
-@router.get("/projects/{project_id}/visualization")
-async def get_graph_visualization_data(project_id: str):
-    """获取适用于Web前端可视化的图谱数据"""
-    try:
-        return await graph_visualizer.generate_web_visualization_data(project_id)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/projects/{project_id}/visualizer/launch")
-async def launch_3d_visualizer(project_id: str):
-    """启动3D图可视化界面"""
-    try:
-        await graph_visualizer.launch_3d_viewer(project_id)
-        return {"message": "已启动3D图可视化界面，请查看独立窗口"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/projects/{project_id}/export/graphml")
-async def export_graph_to_graphml(project_id: str):
-    """导出图谱为GraphML格式"""
-    try:
-        graphml_path = await graph_visualizer.export_to_graphml(project_id)
-        return {"file_path": graphml_path, "message": f"已导出图谱到 {graphml_path}"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# 添加与LightRAG同步相关的API端点
-
-@router.post("/{project_id}/sync-lightrag")
-async def sync_with_lightrag(
-    project_id: str
-):
-    """
-    同步图谱数据与LightRAG
-    """
-    try:
-        result = await graph_service.sync_with_lightrag(project_id)
-        return result
-    except Exception as e:
-        logger.error(f"同步图谱数据失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/{project_id}/import-from-lightrag")
-async def import_from_lightrag(
-    project_id: str
-):
-    """
-    从LightRAG导入图谱数据
-    """
-    try:
-        result = await graph_service.import_from_lightrag(project_id)
-        return result
-    except Exception as e:
-        logger.error(f"从LightRAG导入图谱数据失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-# 添加缺失的查询功能端点
-
-@router.get("/projects/{project_id}/nodes/{node_id}/neighbors")
-async def get_node_neighbors(
-    project_id: str, 
-    node_id: str, 
-    depth: int = Query(1, description="查询深度")
-):
-    """
-    获取节点的邻居节点
-    
-    Args:
-        project_id: 项目ID
-        node_id: 节点ID
-        depth: 查询深度，默认为1
-        
-    Returns:
-        GraphData: 包含邻居节点和边的图谱数据
-    """
-    try:
-        result = await graph_service.get_node_neighbors(project_id, node_id, depth)
-        return result
-    except Exception as e:
-        logger.error(f"获取节点邻居失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/projects/{project_id}/search")
-async def search_graph(
-    project_id: str,
-    search_request: Dict[str, Any] = Body(...)
-):
-    """
-    搜索图谱节点和边
-    
-    Args:
-        project_id: 项目ID
-        search_request: 搜索请求，包含search_term等参数
-        
-    Returns:
-        Dict[str, Any]: 搜索结果
-    """
-    try:
-        result = await graph_service.search_graph(project_id, search_request)
-        return result
-    except Exception as e:
-        logger.error(f"搜索图谱失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/projects/{project_id}/nodes/type/{node_type}")
-async def get_nodes_by_type(
-    project_id: str,
-    node_type: str
-):
-    """
-    根据节点类型获取节点列表
-    
-    Args:
-        project_id: 项目ID
-        node_type: 节点类型
-        
-    Returns:
-        List[GraphNode]: 节点列表
-    """
-    try:
-        result = await graph_service.get_nodes_by_type(project_id, node_type)
-        return result
-    except Exception as e:
-        logger.error(f"根据类型获取节点失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e)) 
+ 

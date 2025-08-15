@@ -34,7 +34,7 @@ HEARTBEAT_INTERVAL = int(os.environ.get("HEARTBEAT_INTERVAL", "10"))  # 心跳�
 HEALTH_CHECK_INTERVAL = int(os.environ.get("HEALTH_CHECK_INTERVAL", "60"))  # 健康检查间隔(秒)
 HEALTH_CHECK_TIMEOUT = int(os.environ.get("HEALTH_CHECK_TIMEOUT", "10"))  # 健康检查超时(秒), 从5秒提高到10秒
 HEALTH_CHECK_RETRIES = int(os.environ.get("HEALTH_CHECK_RETRIES", "3"))  # 健康检查重试次数
-DEFAULT_HEALTH_CHECK_ENDPOINT = "/api/health"  # 默认健康检查端点
+DEFAULT_HEALTH_CHECK_ENDPOINT = "/healthz"  # 默认健康检查端点 (Kubernetes标准)
 
 # 故障转移配置
 FAILOVER_RETRY_INTERVAL = int(os.environ.get("FAILOVER_RETRY_INTERVAL", "5"))  # 故障转移重试间隔(秒)
@@ -176,6 +176,7 @@ class ServiceRegistry:
                               port: int = None, 
                               metadata: Dict[str, Any] = None,
                               endpoints: Dict[str, str] = None,
+                              websocket_endpoints: Dict[str, str] = None,
                               health_check_endpoint: str = None) -> str:
         """
         注册服务实例
@@ -187,6 +188,7 @@ class ServiceRegistry:
             port: 服务端口
             metadata: 服务元数据
             endpoints: 服务端点字典
+            websocket_endpoints: WebSocket端点字典，格式: {"endpoint_name": "path"}
             health_check_endpoint: 健康检查端点，如/health
             
         Returns:
@@ -221,6 +223,7 @@ class ServiceRegistry:
             "port": port,
             "metadata": metadata or {},
             "endpoints": endpoints or {},
+            "websocket_endpoints": websocket_endpoints or {},
             "health_check_endpoint": health_check_endpoint,
             "health_status": ServiceHealth.STARTING,
             "last_heartbeat": int(time.time()),
@@ -419,6 +422,65 @@ class ServiceRegistry:
             logger.warning(f"从本地缓存返回{len(local_instances)}个{service_name}实例")
             return local_instances
     
+    async def get_websocket_url(self, service_name: str, endpoint_name: str, preferred_host: Optional[str] = None, healthy_only: bool = True) -> Optional[str]:
+        """
+        获取服务的WebSocket URL
+        
+        Args:
+            service_name: 服务名称
+            endpoint_name: WebSocket端点名称
+            preferred_host: 优先选择的主机
+            healthy_only: 是否只返回健康的实例
+            
+        Returns:
+            Optional[str]: WebSocket URL
+        """
+        try:
+            instances = await self.get_service_instances(service_name, healthy_only)
+            
+            if not instances:
+                logger.warning(f"无法找到服务: {service_name}")
+                return None
+            
+            # 如果有preferred_host，优先选择该主机
+            if preferred_host:
+                preferred_instances = [instance for instance in instances if instance["host"] == preferred_host]
+                if preferred_instances:
+                    instance = preferred_instances[0]
+                else:
+                    instance = random.choice(instances)
+            else:
+                # 随机选择一个实例，但偏向健康实例
+                healthy_instances = [instance for instance in instances if instance.get("health_status") == ServiceHealth.HEALTHY]
+                if healthy_instances:
+                    instance = random.choice(healthy_instances)
+                else:
+                    instance = random.choice(instances)
+            
+            # 检查实例是否有指定的WebSocket端点
+            websocket_endpoints = instance.get("websocket_endpoints", {})
+            if endpoint_name not in websocket_endpoints:
+                logger.warning(f"服务 {service_name} 实例 {instance['service_id']} 没有WebSocket端点: {endpoint_name}")
+                return None
+            
+            endpoint_path = websocket_endpoints[endpoint_name]
+            host = instance["host"]
+            port = instance["port"]
+            
+            # 构建WebSocket URL
+            if port == 80:
+                ws_url = f"ws://{host}{endpoint_path}"
+            elif port == 443:
+                ws_url = f"wss://{host}{endpoint_path}"
+            else:
+                ws_url = f"ws://{host}:{port}{endpoint_path}"
+            
+            return ws_url
+            
+        except Exception as e:
+            logger.error(f"获取WebSocket URL失败: {service_name}/{endpoint_name}, 错误: {str(e)}")
+            return None
+
     async def get_service_url(self, service_name: str, preferred_host: Optional[str] = None, healthy_only: bool = True) -> Optional[str]:
         """
         获取服务URL
@@ -546,6 +608,15 @@ class ServiceRegistry:
         except Exception as e:
             logger.error(f"获取所有服务失败: {str(e)}")
             return {}
+    
+    async def list_services(self) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        列出所有注册的服务 (get_all_services的别名)
+        
+        Returns:
+            Dict[str, List[Dict[str, Any]]]: 按服务名分组的服务实例列表
+        """
+        return await self.get_all_services()
     
     def _is_circuit_open(self, service_name: str) -> bool:
         """检查服务的熔断器是否打开"""
@@ -865,6 +936,28 @@ class ServiceClient:
             if url:
                 logger.info(f"使用环境变量中的服务URL: {url}")
                 return url
+            return None
+
+    async def get_websocket_url(self, service_name: str, endpoint_name: str, preferred_host: Optional[str] = None, healthy_only: bool = True) -> Optional[str]:
+        """
+        获取服务的WebSocket URL
+        
+        Args:
+            service_name: 服务名称  
+            endpoint_name: WebSocket端点名称
+            preferred_host: 优先选择的主机
+            healthy_only: 是否只返回健康的实例
+            
+        Returns:
+            Optional[str]: WebSocket URL
+        """
+        if not self._registry:
+            await self._init_registry()
+        
+        try:
+            return await self._registry.get_websocket_url(service_name, endpoint_name, preferred_host, healthy_only)
+        except Exception as e:
+            logger.error(f"获取WebSocket URL失败: {service_name}/{endpoint_name}, 错误: {str(e)}")
             return None
     
     async def call_service(self, service_name: str, endpoint: str, method: str = "GET", 
@@ -1220,6 +1313,12 @@ async def get_service_url(service_name: str, preferred_host: Optional[str] = Non
     client = await get_service_client()
     return await client.get_service_url(service_name, preferred_host, healthy_only)
 
+# 获取WebSocket URL的便捷函数
+async def get_websocket_url(service_name: str, endpoint_name: str, preferred_host: Optional[str] = None, healthy_only: bool = True) -> Optional[str]:
+    """获取WebSocket URL"""
+    client = await get_service_client()
+    return await client.get_websocket_url(service_name, endpoint_name, preferred_host, healthy_only)
+
 # 获取服务注册表实例，便于其他服务使用
 async def get_service_registry():
     """
@@ -1494,6 +1593,7 @@ async def register_service(service_name: str,
                           port: int = None, 
                           metadata: Dict[str, Any] = None,
                           endpoints: Dict[str, str] = None,
+                          websocket_endpoints: Dict[str, str] = None,
                           health_check_endpoint: str = None) -> str:
     """
     注册服务实例
@@ -1505,6 +1605,7 @@ async def register_service(service_name: str,
         port: 服务端口
         metadata: 服务元数据
         endpoints: 服务端点字典
+        websocket_endpoints: WebSocket端点字典
         health_check_endpoint: 健康检查端点，如/health
         
     Returns:
@@ -1518,6 +1619,7 @@ async def register_service(service_name: str,
         port=port,
         metadata=metadata,
         endpoints=endpoints,
+        websocket_endpoints=websocket_endpoints,
         health_check_endpoint=health_check_endpoint
     )
 

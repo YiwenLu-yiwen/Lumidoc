@@ -1,21 +1,15 @@
 import logging
 from typing import Dict, Any, List, Optional
+from contextlib import asynccontextmanager
 from fastapi import APIRouter, HTTPException, Depends, Body, FastAPI
 import httpx
 from src.modules.config import settings
-from .auth_routes import get_current_user
+from src.shared.auth import get_current_user
 from src.shared.types.response import ApiResponse
-from src.shared.health_check import register_health_routes, create_health_checker
-
-# 创建FastAPI应用
-app = FastAPI(title="Monitoring Service", description="监控服务")
 
 # 创建路由
 router = APIRouter(prefix="/api/monitoring", tags=["monitoring"])
 logger = logging.getLogger(__name__)
-
-# 创建健康检查器
-health_checker = create_health_checker("monitoring", "monitoring_service_1")
 
 # 添加监控服务连接检查
 async def check_monitoring_service():
@@ -166,24 +160,25 @@ async def get_alerts(
 # 注册路由
 app.include_router(router)
 
-# 启动和关闭事件
-@app.on_event("startup")
-async def startup_event():
-    """服务启动事件"""
+# 定义lifespan事件管理器
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理"""
+    # 启动事件
     try:
         await health_checker.start()
         logger.info("Monitoring服务启动成功")
         
         # 注册到服务发现
         from src.shared.service_discovery import register_service
-        await register_service("monitoring", port=8008, health_check_endpoint="/api/health")
+        await register_service("monitoring", port=8008, health_check_endpoint="/healthz")
         
     except Exception as e:
         logger.error(f"Monitoring服务启动失败: {str(e)}")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """服务关闭事件"""
+        
+    yield
+    
+    # 关闭事件
     try:
         await health_checker.stop()
         logger.info("Monitoring服务关闭")
@@ -193,4 +188,11 @@ async def shutdown_event():
         await unregister_service("monitoring")
         
     except Exception as e:
-        logger.error(f"Monitoring服务关闭失败: {str(e)}") 
+        logger.error(f"Monitoring服务关闭失败: {str(e)}")
+
+# 创建FastAPI应用
+app = FastAPI(
+    title="Monitoring Service", 
+    description="监控服务",
+    lifespan=lifespan
+) 

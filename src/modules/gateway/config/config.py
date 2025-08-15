@@ -39,7 +39,7 @@ class GatewaySettings:
         "auth": {
             "url": get_env("AUTH_SERVICE_URL", "http://localhost:8007"),
             "prefix": "/api/auth",
-            "health_check": "/api/health",
+            "health_check": "/health",
             "timeout": 30.0,
             "retries": 3,
             "strip_prefix": True  # 移除前缀后转发到认证服务
@@ -55,7 +55,7 @@ class GatewaySettings:
         "file": {
             "url": get_env("FILE_SERVICE_URL", "http://localhost:8004"),
             "prefix": "/api/file",
-            "health_check": "/api/health",
+            "health_check": "/health",
             "timeout": 60.0,  # 文件上传可能需要更长时间
             "retries": 3,
             "strip_prefix": True  # 移除前缀后转发到文件服务
@@ -63,7 +63,7 @@ class GatewaySettings:
         "fileproc": {
             "url": get_env("FILEPROC_SERVICE_URL", "http://localhost:8005"),
             "prefix": "/fileproc",
-            "health_check": "/api/health",  # 修正健康检查路径
+            "health_check": "/health",
             "timeout": 300.0,  # 文件处理可能需要更长时间
             "retries": 2,
             "strip_prefix": True  # 添加标记，表示需要移除前缀
@@ -78,7 +78,7 @@ class GatewaySettings:
         "lightrag": {
             "url": get_env("RAG_SERVICE_URL", "http://localhost:8006"),
             "prefix": "/api/lightrag",
-            "health_check": "/healthz",
+            "health_check": "/health",
             "timeout": 7200.0,  # RAG检索超时时间，2小时适配本地模型
             "retries": 1,     # 本地模型稳定，保持1次重试
             "retry_interval": 2.0,  # 添加重试间隔
@@ -143,6 +143,7 @@ class GatewaySettings:
     auth_exclude_paths: List[str] = [
         "/",
         "/health",
+        "/gateway/health",  # 网关健康检查端点
         "/info",
         "/services",
         "/metrics",

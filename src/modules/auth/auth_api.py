@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from datetime import timedelta, datetime
 from typing import Optional
+from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
 from src.modules.auth.user_model import User, UserCreate
 from src.modules.auth.auth_service import AuthService
@@ -28,7 +29,28 @@ class LoginRequest(BaseModel):
     username: str = Field(..., min_length=1, description="用户名")
     password: str = Field(..., min_length=1, description="密码")
 
-app = FastAPI(title="Auth Service")
+# 定义lifespan事件管理器
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理"""
+    # 启动事件
+    try:
+        await auth_service._init_db_pool()
+        logger.info("认证服务启动成功")
+    except Exception as e:
+        logger.error(f"认证服务启动失败: {str(e)}")
+        raise
+        
+    yield
+    
+    # 关闭事件
+    try:
+        await auth_service.close()
+        logger.info("认证服务已关闭")
+    except Exception as e:
+        logger.error(f"认证服务关闭时出错: {str(e)}")
+
+app = FastAPI(title="Auth Service", lifespan=lifespan)
 
 # 配置CORS
 app.add_middleware(
@@ -45,24 +67,6 @@ auth_service = AuthService()
 # OAuth2 密码流
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/token")
 
-@app.on_event("startup")
-async def startup_event():
-    """服务启动时初始化数据库"""
-    try:
-        await auth_service._init_db_pool()
-        logger.info("认证服务启动成功")
-    except Exception as e:
-        logger.error(f"认证服务启动失败: {str(e)}")
-        raise
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """服务关闭时清理资源"""
-    try:
-        await auth_service.close()
-        logger.info("认证服务已关闭")
-    except Exception as e:
-        logger.error(f"认证服务关闭时出错: {str(e)}")
 
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
     """获取当前用户"""

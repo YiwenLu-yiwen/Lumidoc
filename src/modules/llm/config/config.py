@@ -35,10 +35,11 @@ class LLMServiceSettings(BaseSettings):
     summary_max_length: int = Field(llm_base_config.summary_max_length, env="SUMMARY_MAX_LENGTH")
     summary_min_compression: float = Field(llm_base_config.summary_min_compression, env="SUMMARY_MIN_COMPRESSION")
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
-        extra = "ignore"  # 忽略额外的环境变量
+    model_config = {
+        "env_file": ".env",
+        "case_sensitive": False,
+        "extra": "ignore"  # 忽略额外的环境变量
+    }
 
 # 创建配置实例
 settings = LLMServiceSettings() 

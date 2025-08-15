@@ -64,8 +64,9 @@ class ProjectFile(FileInfo):
     file_metadata: Optional[Dict[str, Any]] = None  # 文件元数据
     type: Optional[str] = None  # 文件类型，使用数据库字段
     
-    class Config:
-        from_attributes = True
+    model_config = {
+        "from_attributes": True
+    }
 
 # 添加RAG文件状态响应模型
 class RagFileStatus(BaseModel):
@@ -81,8 +82,9 @@ class RagFileStatus(BaseModel):
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
     
-    class Config:
-        from_attributes = True
+    model_config = {
+        "from_attributes": True
+    }
 
 class RagFileUpdate(BaseModel):
     """RAG文件状态更新模型"""

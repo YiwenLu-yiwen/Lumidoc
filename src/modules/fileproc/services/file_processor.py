@@ -36,6 +36,16 @@ from src.shared.models.api_models import ApiResponse
 
 logger = logging.getLogger(__name__)
 
+# WebSocket连接管理器的延迟导入
+def get_connection_manager():
+    """延迟导入WebSocket连接管理器以避免循环导入"""
+    try:
+        from ..routes.websocket_routes import connection_manager
+        return connection_manager
+    except ImportError:
+        logger.warning("无法导入WebSocket连接管理器，进度推送功能不可用")
+        return None
+
 class FileProcessor:
     """
     文件处理器 - 处理通过队列接收的文件任务
@@ -394,6 +404,24 @@ class FileProcessor:
         start_time = time.time()
         
         logger.info(f"开始处理文件: ID={file_id}, 项目ID={project_id}, 任务ID={task_id}")
+        
+        # 获取WebSocket连接管理器并注册任务
+        connection_manager = get_connection_manager()
+        if connection_manager and project_id:
+            connection_manager.register_task_project(task_id, project_id)
+            
+            # 发送任务开始通知
+            await self._send_progress_update(
+                connection_manager, project_id, task_id,
+                {
+                    "status": "started",
+                    "progress": 0,
+                    "stage": "initialization",
+                    "message": "开始处理文件",
+                    "file_id": file_id,
+                    "timestamp": datetime.now().isoformat()
+                }
+            )
         
         try:
             # 初始化客户端
@@ -967,6 +995,22 @@ class FileProcessor:
                 final_time = time.time() - start_time
                 logger.info(f"文件处理完成明细 - {file_path}: 总时间={final_time:.2f}秒, 内容处理={processing_duration:.2f}秒, 文件注册={register_time:.2f}秒")
                 
+                # 发送任务完成通知
+                if connection_manager and project_id:
+                    await self._send_task_completion(
+                        connection_manager, project_id, task_id,
+                        {
+                            "status": "completed",
+                            "progress": 100,
+                            "stage": "finished",
+                            "message": "文件处理完成",
+                            "file_id": file_id,
+                            "processing_time": final_time,
+                            "timestamp": datetime.now().isoformat(),
+                            "result": result
+                        }
+                    )
+                
                 return result
                 
             except Exception as e:
@@ -996,6 +1040,22 @@ class FileProcessor:
                     use_service_auth=True
                 )
                 
+                # 发送错误通知
+                if connection_manager and project_id:
+                    await self._send_error_notification(
+                        connection_manager, project_id, task_id,
+                        {
+                            "status": "failed",
+                            "progress": 100,
+                            "stage": "error",
+                            "message": f"文件处理失败: {error_message}",
+                            "file_id": file_id,
+                            "error": error_message,
+                            "processing_time": error_time,
+                            "timestamp": datetime.now().isoformat()
+                        }
+                    )
+                
                 return {
                     "success": False,
                     "error": f"处理文件时出错: {error_message}",
@@ -1022,6 +1082,22 @@ class FileProcessor:
             # 计算处理时间
             end_time = time.time()
             processing_time = end_time - start_time if 'start_time' in locals() else 0
+            
+            # 发送错误通知
+            if connection_manager and project_id:
+                await self._send_error_notification(
+                    connection_manager, project_id, task_id,
+                    {
+                        "status": "failed",
+                        "progress": 100,
+                        "stage": "error",
+                        "message": f"文件处理失败: {error_message}",
+                        "file_id": file_id,
+                        "error": error_message,
+                        "processing_time": processing_time,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                )
             
             return {
                 "success": False,
@@ -2139,6 +2215,30 @@ class FileProcessor:
             # 默认作为文本处理
             logger.warning(f"未知文件类型: {content_type}，尝试作为文本处理")
             return await self._process_pdf_file(file_path, metadata, task_id, enable_ocr=False)
+    
+    async def _send_progress_update(self, connection_manager, project_id: str, task_id: str, progress_data: dict):
+        """发送进度更新到WebSocket客户端"""
+        try:
+            if connection_manager:
+                await connection_manager.send_progress_update(project_id, task_id, progress_data)
+        except Exception as e:
+            logger.warning(f"发送进度更新失败: {str(e)}")
+    
+    async def _send_task_completion(self, connection_manager, project_id: str, task_id: str, result_data: dict):
+        """发送任务完成通知到WebSocket客户端"""
+        try:
+            if connection_manager:
+                await connection_manager.send_task_completion(project_id, task_id, result_data)
+        except Exception as e:
+            logger.warning(f"发送任务完成通知失败: {str(e)}")
+    
+    async def _send_error_notification(self, connection_manager, project_id: str, task_id: str, error_data: dict):
+        """发送错误通知到WebSocket客户端"""
+        try:
+            if connection_manager:
+                await connection_manager.send_error_notification(project_id, task_id, error_data)
+        except Exception as e:
+            logger.warning(f"发送错误通知失败: {str(e)}")
 
 # 创建全局实例，供其他模块导入
 file_processor = FileProcessor() 

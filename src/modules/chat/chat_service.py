@@ -786,43 +786,7 @@ async def api_save_chat_message(
 # 在应用程序最后添加API前缀路由
 app.include_router(api_router)
 
-# 添加定期迁移任务
-@app.on_event("startup")
-async def setup_periodic_tasks():
-    """设置定期执行的任务"""
-    # 使用asyncio实现定期任务，替代fastapi_utils.tasks.repeat_every
-    import asyncio
-    
-    async def periodic_migration():
-        """定期将旧聊天记录从Redis迁移到PostgreSQL"""
-        while True:
-            logger.info("开始执行定期迁移任务")
-            try:
-                # 🔧 修复：正确获取数据库会话
-                from src.shared.database import get_db
-                db_generator = get_db()
-                db = next(db_generator)
-                
-                try:
-                    # 执行迁移 - 确保在try-finally中关闭数据库连接
-                    result = migrate_old_messages_to_db(db, days=30)
-                    logger.info(f"定期迁移完成: {result}")
-                finally:
-                    # 确保数据库连接关闭
-                    db.close()
-                    
-            except StopIteration:
-                # 🔧 修复：处理生成器迭代结束的情况
-                logger.warning("数据库会话生成器迭代结束")
-            except Exception as e:
-                logger.error(f"定期迁移任务执行失败: {str(e)}")
-                logger.error(f"错误详情: {traceback.format_exc()}")
-            
-            # 等待24小时
-            await asyncio.sleep(60 * 60 * 24)  # 每24小时执行一次
-    
-    # 在后台启动定期任务
-    asyncio.create_task(periodic_migration())
+# 注意：定期任务已移动到main.py的lifespan中管理
 
 class ChatService:
     def __init__(self):

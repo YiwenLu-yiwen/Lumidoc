@@ -231,7 +231,7 @@ class HealthChecker:
             try:
                 async with httpx.AsyncClient(timeout=2.0) as client:
                     headers = {"X-Service-Discovery-Check": "true"}
-                    response = await client.get(f"{service_url}/health", headers=headers)
+                    response = await client.get(f"{service_url}/healthz", headers=headers)
                     
                     if response.status_code == 200:
                         # 如果返回200，则服务正常
@@ -303,10 +303,11 @@ def register_health_routes(app: FastAPI, checker: HealthChecker):
         # 如果超过限制，返回True表示应该限流
         return request_counts[client_ip] > max_requests_per_minute
     
-    @router.get("/health")
-    async def health_check(request: Request, response: Response):
+    # 只保留 Kubernetes 标准的 /healthz 端点
+    @router.get("/healthz")
+    async def kubernetes_health_check(request: Request, response: Response):
         """
-        健康检查端点
+        Kubernetes健康检查端点 (/healthz)
         返回服务健康状态
         """
         client_ip = request.client.host
@@ -321,58 +322,17 @@ def register_health_routes(app: FastAPI, checker: HealthChecker):
             
         health_data = await checker.check_health()
         return health_data
-
-    @router.get("/api/health", response_model=HealthResponse)
-    async def api_health_check(request: Request, response: Response):
-        """
-        API健康检查端点
-        返回服务健康状态
-        """
-        # 获取客户端IP
-        client_ip = request.client.host
-        
-        # 检查是否应该限流
-        if "X-Service-Discovery-Check" not in request.headers and should_throttle(client_ip):
-            response.status_code = status.HTTP_429_TOO_MANY_REQUESTS
-            return {
-                "status": "error", 
-                "message": "Too many requests", 
-                "service": checker.service_name,
-                "version": checker.version,
-                "timestamp": datetime.now().isoformat(),
-                "checks": {}
-            }
-        
-        try:
-            # 执行健康检查
-            health_data = await checker.check_health()
-            
-            # 直接使用health_data构建HealthResponse
-            return HealthResponse(
-                status=health_data["status"],
-                service=health_data["service_name"],
-                version=health_data["version"],
-                timestamp=health_data["timestamp"],
-                checks=health_data["checks"]
-            )
-        except Exception as e:
-            logger.error(f"健康检查失败: {str(e)}")
-            logger.error(traceback.format_exc())
-            response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-            return {
-                "status": "error",
-                "message": str(e), 
-                "service": checker.service_name,
-                "version": checker.version,
-                "timestamp": datetime.now().isoformat(),
-                "checks": {}
-            }
         
     # 注册路由
     app.include_router(router, tags=["health"])
 
 async def register_health_service(app: FastAPI, service_name: str, service_id: str = None):
-    """向服务发现注册健康检查服务"""
+    """
+    向服务发现注册健康检查服务
+    
+    WARNING: 此函数使用已废弃的 @app.on_event 装饰器。
+    建议使用 lifespan 事件管理器代替。
+    """
     # 创建健康检查器
     checker = await get_health_checker(service_name, service_id)
     
@@ -471,7 +431,7 @@ async def check_service_health(service_name: str) -> Tuple[bool, Dict[str, Any]]
         if not service_url:
             return False, {"error": f"无法找到服务: {service_name}"}
         
-        health_url = f"{service_url}/health"
+        health_url = f"{service_url}/healthz"
         
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.get(health_url)
@@ -580,13 +540,8 @@ def create_health_middleware():
     
     return health_middleware 
 
-# 创建默认的健康检查路由器
+# 创建默认的健康检查路由器 - 只保留 Kubernetes 标准端点
 health_check_router = APIRouter()
-
-@health_check_router.get("/health")
-async def default_health_check():
-    """默认健康检查端点"""
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
 @health_check_router.get("/healthz")
 async def kubernetes_health_check():

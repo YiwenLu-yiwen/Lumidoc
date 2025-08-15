@@ -140,9 +140,10 @@ class Settings(BaseSettings):
     OLLAMA_EMBEDDING_URL: str = os.getenv("OLLAMA_EMBEDDING_URL", "http://localhost:11434")
     OLLAMA_EMBEDDING_MODEL: str = os.getenv("OLLAMA_EMBEDDING_MODEL", "bge-m3")
 
-    class Config:
-        env_file = str(ENV_FILE)
-        case_sensitive = True
-        extra = "allow"  # 允许额外字段
+    model_config = {
+        "env_file": str(ENV_FILE),
+        "case_sensitive": True,
+        "extra": "allow"  # 允许额外字段
+    }
 
 settings = Settings() 

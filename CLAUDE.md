@@ -18,7 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Frontend development:**
 ```bash
-cd Lumidoc_webui/frontend
+cd frontend
 npm run dev                    # Development server
 npm run build                  # Production build
 npm run lint                   # Lint TypeScript/React code
@@ -28,8 +28,8 @@ npm run clean                  # Clean compiled files
 
 **Backend development:**
 ```bash
-cd Lumidoc_webui/backend
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+# 所有后端服务现在都在微服务架构中
+./start_services.sh  # 启动所有微服务
 ```
 
 **Individual microservice testing:**
@@ -56,7 +56,7 @@ pytest -x                          # Stop on first failure
 
 **Frontend tests:**
 ```bash
-cd Lumidoc_webui/frontend
+cd frontend
 npm run test                       # Run vitest tests
 npm run clean                      # Clean compiled files before build
 ```
@@ -71,7 +71,7 @@ ruff format src/             # Format code
 
 **Frontend:**
 ```bash
-cd Lumidoc_webui/frontend
+cd frontend
 npm run lint                 # ESLint + TypeScript checking
 npm run clean                # Remove compiled files
 npm run clean-build          # Clean + build for development
@@ -264,7 +264,7 @@ llm_response = await client.call_service(
 
 1. **Prerequisites**: Python 3.9+, Node.js 16+, Docker
 2. **Conda Environment**: Activate the Lumidoc conda environment: `conda activate Lumidoc` (not base)
-3. **Install dependencies**: `pip install -r requirements.txt` and `cd Lumidoc_webui/frontend && npm install`
+3. **Install dependencies**: `pip install -r requirements.txt` and `cd frontend && npm install`
 4. **Setup environment**: Copy `.env.example` to `.env` and configure
 5. **Auto-initialization**: Run `./start_services.sh` - MinIO containers start automatically
 6. **Verify setup**: `python scripts/diagnose_services.py`

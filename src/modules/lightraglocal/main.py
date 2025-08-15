@@ -308,7 +308,6 @@ async def root_search(
         rerank=rerank
     )
 
-@app.get("/health")
 @app.get("/healthz")
 async def root_health_check():
     """

@@ -25,7 +25,7 @@ from .adapters import (
 )
 
 # LangChain集成
-from .langchain import STPLangChainLLM
+from .langchain import LumidocLangChainLLM
 
 # 旧版客户端（保留向后兼容）
 from .client import LLMClient, default_client
@@ -49,7 +49,7 @@ __all__ = [
     "create_llm_adapter",
     
     # LangChain集成
-    "STPLangChainLLM",
+    "LumidocLangChainLLM",
     
     # 旧版客户端
     "LLMClient",

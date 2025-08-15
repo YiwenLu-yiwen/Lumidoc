@@ -33,13 +33,14 @@ class DiagnosticRequest(BaseModel):
     project_id: Optional[str] = None
     components: Optional[List[str]] = None
     
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "project_id": "project_123",
                 "components": ["redis", "postgres", "storage", "system"]
             }
         }
+    }
 
 # 定义路由
 @diagnostics_router.post("/run", response_model=Dict[str, Any])

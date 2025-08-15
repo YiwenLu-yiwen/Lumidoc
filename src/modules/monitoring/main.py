@@ -8,6 +8,10 @@
 import uvicorn
 import sys
 import os
+import asyncio
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 # 确保路径正确
 current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -19,9 +23,128 @@ modules_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if modules_dir not in sys.path:
     sys.path.insert(0, modules_dir)
 
-# 导入原有路由模块
-from STP_webui.backend.api.monitoring_routes import app
-from config import settings
+# 服务注册生命周期管理
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """服务生命周期管理"""
+    service_id = None
+    metrics_task = None
+    
+    try:
+        # 启动时注册服务
+        from src.shared.service_discovery import get_service_registry
+        try:
+            from config import settings
+            port = settings.monitoring_service_port
+        except:
+            from src.shared.config import get_settings
+            settings = get_settings()
+            port = getattr(settings, 'monitoring_service_port', 8008)
+        
+        sr = await get_service_registry()
+        
+        if sr:
+            # 定义WebSocket端点
+            websocket_endpoints = {
+                "monitoring": "/api/ws/monitoring/admin",
+                "project": "/api/ws/monitoring/project/{project_id}"
+            }
+            
+            service_id = await sr.register_service(
+                service_name="monitoring",
+                host=None,  # 自动检测
+                port=port,
+                websocket_endpoints=websocket_endpoints,
+                health_check_endpoint="/api/health"
+            )
+            print(f"Monitoring服务已注册到服务发现，ID: {service_id}")
+        
+        # 启动系统指标推送任务
+        metrics_task = asyncio.create_task(start_system_metrics_task())
+        print("系统指标推送任务已启动")
+        
+    except Exception as e:
+        print(f"Monitoring服务注册失败: {str(e)}")
+    
+    yield
+    
+    # 服务关闭时清理
+    try:
+        # 停止指标推送任务
+        if metrics_task and not metrics_task.done():
+            metrics_task.cancel()
+            try:
+                await metrics_task
+            except asyncio.CancelledError:
+                pass
+            print("系统指标推送任务已停止")
+        
+        # 注销服务
+        if service_id and sr:
+            await sr.deregister_service("monitoring", service_id)
+            print(f"Monitoring服务已注销，ID: {service_id}")
+    except Exception as e:
+        print(f"Monitoring服务关闭失败: {str(e)}")
+
+# 创建健康检查器
+from src.shared.health_check import create_health_checker, register_health_routes
+health_checker = create_health_checker("monitoring", "monitoring_service_1")
+
+# 创建FastAPI应用
+app = FastAPI(
+    title="监控服务",
+    description="提供系统监控和告警功能",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# 导入WebSocket路由
+from src.modules.monitoring.routes.websocket_routes import monitoring_websocket_router
+
+# 注册WebSocket路由
+app.include_router(monitoring_websocket_router, prefix="/api")
+
+# 注册健康检查路由
+register_health_routes(app, health_checker)
+
+# 设置CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://115.29.191.36:3000", "http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+    expose_headers=["Content-Type", "Authorization", "Content-Disposition"],
+)
+
+# 导入配置
+try:
+    from config import settings
+    port = settings.monitoring_service_port
+except:
+    from src.shared.config import get_settings
+    settings = get_settings()
+    port = getattr(settings, 'monitoring_service_port', 8008)
+
+# 系统指标定时推送任务
+async def start_system_metrics_task():
+    """启动系统指标定时推送任务"""
+    from src.modules.monitoring.routes.websocket_routes import monitoring_connection_manager, get_current_system_metrics
+    
+    while True:
+        try:
+            # 如果有管理员连接，获取并推送系统指标
+            if monitoring_connection_manager.admin_connections:
+                metrics = await get_current_system_metrics()
+                if metrics:
+                    await monitoring_connection_manager.send_system_metrics(metrics)
+            
+            # 每30秒推送一次
+            await asyncio.sleep(30)
+        except Exception as e:
+            print(f"系统指标推送任务错误: {str(e)}")
+            await asyncio.sleep(60)  # 出错时等待更长时间
+
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=settings.monitoring_service_port) 
+    uvicorn.run(app, host="0.0.0.0", port=port) 

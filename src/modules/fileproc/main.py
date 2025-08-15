@@ -51,6 +51,7 @@ try:
     from src.modules.fileproc.routes import process_router  # 导入处理路由模块
     from src.modules.fileproc.routes.diagnostic_routes import diagnostics_router  # 导入诊断路由模块
     from src.modules.fileproc.routes.stream_routes import stream_router  # 导入流处理路由模块
+    from src.modules.fileproc.routes.websocket_routes import websocket_router  # 导入WebSocket路由模块
     from src.shared.service_discovery import call_service
 
     # 创建任务服务，使用全局文件处理器实例
@@ -101,12 +102,19 @@ try:
                 # 获取当前端口
                 port = int(settings.port)
                 
+                # 定义WebSocket端点
+                websocket_endpoints = {
+                    "progress": "/api/ws/progress/{project_id}",
+                    "status": "/api/ws/status/{project_id}"
+                }
+                
                 # 注册服务
                 service_id = await sr.register_service(
                     service_name="fileproc",
                     service_id=service_id,
                     host=None,  # 自动检测
                     port=port,
+                    websocket_endpoints=websocket_endpoints,
                     health_check_endpoint="/api/health"
                 )
                 logger.info(f"服务已注册到服务发现，ID: {service_id}")
@@ -180,11 +188,15 @@ try:
     app.include_router(process_router, prefix="/api")  # 添加/api前缀
     app.include_router(diagnostics_router, prefix="/api")  # 保留诊断路由的/api前缀
     app.include_router(stream_router, prefix="/api")  # 保留流处理路由的/api前缀
+    app.include_router(websocket_router, prefix="/api")  # 添加WebSocket路由
     logger.info("所有路由已注册")
     
     # 打印所有注册的路由，便于调试
     for route in app.routes:
-        logger.info(f"已注册路由: {route.path} [{', '.join(route.methods)}]")
+        if hasattr(route, 'methods'):
+            logger.info(f"已注册路由: {route.path} [{', '.join(route.methods)}]")
+        else:
+            logger.info(f"已注册路由: {route.path} [WebSocket]")
 
     # 注册健康检查路由
     health_checker = HealthChecker(service_name="fileproc")
@@ -251,45 +263,6 @@ try:
             logger.error(traceback.format_exc())
             raise
 
-    @app.on_event("startup")
-    async def startup_event():
-        """FastAPI启动事件处理程序，初始化服务组件"""
-        try:
-            logger.info("初始化文件处理器...")
-            # 使用已导入的file_processor实例而非新建实例
-            if not file_processor.is_initialized:
-                await file_processor.initialize()
-                logger.info("文件处理器已初始化")
-            else:
-                logger.info("文件处理器已经初始化")
-                
-            # 确保所有模块使用同一个实例
-            import src.modules.fileproc.services.file_processor as fp_module
-            fp_module.file_processor = file_processor
-            import src.modules.fileproc.routes.process_routes as routes_module
-            routes_module.file_processor = file_processor
-            
-            # 确保任务服务也已初始化
-            if not task_service._initialized:
-                await task_service.initialize()
-                logger.info("任务服务已初始化")
-            
-            # 确保队列连接已建立
-            if not task_service.queue._redis:
-                await task_service.queue.connect()
-                logger.info("队列Redis连接已建立")
-            else:
-                logger.info("队列Redis连接已存在")
-                
-            # 确保摘要客户端已可用
-            import src.modules.fileproc.routes.process_routes as routes_module
-            if not hasattr(routes_module, 'summary_client') or routes_module.summary_client is None:
-                from src.modules.fileproc.services.summary_client import SummaryClient
-                routes_module.summary_client = SummaryClient()
-                logger.info("摘要客户端已初始化")
-        except Exception as e:
-            logger.error(f"启动事件处理失败: {str(e)}")
-            logger.error(traceback.format_exc())
 
 except Exception as e:
     logger.error(f"服务启动失败: {str(e)}")

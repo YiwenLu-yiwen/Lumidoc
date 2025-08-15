@@ -12,7 +12,7 @@ from ..config.config import settings
 
 # 导入共享LLM适配器
 from src.shared.llm.adapters import create_llm_adapter
-from src.shared.llm.langchain import STPLangChainLLM
+from src.shared.llm.langchain import LumidocLangChainLLM
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ class LLMService:
         LLMService._initialized = True
         
         # 创建LangChain LLM
-        self.langchain_llm = STPLangChainLLM(
+        self.langchain_llm = LumidocLangChainLLM(
             model_type=settings.llm_model_type,
             model_name=settings.llm_model_name,
             temperature=settings.llm_temperature,

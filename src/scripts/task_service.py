@@ -30,6 +30,7 @@ if env_file.exists():
 from fastapi import FastAPI, Request, Response, HTTPException, Depends, BackgroundTasks
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 
 # 导入任务管理相关模块
 from src.shared.task_manager import TaskManager, TaskStatus, get_task_manager
@@ -42,11 +43,39 @@ SERVICE_NAME = os.environ.get("SERVICE_NAME", "task-service")
 SERVICE_PORT = int(os.environ.get("SERVICE_PORT", "8085"))
 DEBUG_MODE = os.environ.get("DEBUG_MODE", "false").lower() == "true"
 
+# 定义lifespan事件管理器
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理"""
+    global task_manager, task_monitor
+    
+    # 启动事件
+    # 初始化任务管理器
+    task_manager = await get_task_manager()
+    
+    # 初始化任务监控器
+    task_monitor = await get_task_monitor()
+    
+    # 注册健康检查服务
+    await register_health_service(app, SERVICE_NAME)
+    
+    print(f"任务管理服务已启动，端口: {SERVICE_PORT}")
+    
+    yield
+    
+    # 关闭事件
+    # 任务监控器关闭
+    if task_monitor:
+        await task_monitor.stop()
+    
+    print("任务管理服务已关闭")
+
 # 创建FastAPI应用
 app = FastAPI(
     title="STP Task Service",
     description="STP 任务管理服务",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # CORS配置
@@ -69,30 +98,6 @@ async def get_tm():
 async def get_tm_monitor():
     return await get_task_monitor()
 
-@app.on_event("startup")
-async def startup_event():
-    """启动事件"""
-    global task_manager, task_monitor
-    
-    # 初始化任务管理器
-    task_manager = await get_task_manager()
-    
-    # 初始化任务监控器
-    task_monitor = await get_task_monitor()
-    
-    # 注册健康检查服务
-    await register_health_service(app, SERVICE_NAME)
-    
-    print(f"任务管理服务已启动，端口: {SERVICE_PORT}")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """关闭事件"""
-    # 任务监控器关闭
-    if task_monitor:
-        await task_monitor.stop()
-    
-    print("任务管理服务已关闭")
 
 @app.get("/")
 async def root():

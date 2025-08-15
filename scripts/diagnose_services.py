@@ -67,7 +67,7 @@ async def check_service_health(service_name: str, port: int):
     try:
         import aiohttp
         
-        url = f"http://localhost:{port}/api/health"
+        url = f"http://localhost:{port}/healthz"
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 if response.status == 200:

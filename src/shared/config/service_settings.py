@@ -49,8 +49,9 @@ class AuthServiceSettings(ServiceSettings):
     storage_mode: str = Field(default_factory=lambda: get_env("AUTH_STORAGE_MODE", "POSTGRES"))
     local_storage_dir: str = Field(default_factory=lambda: get_env("AUTH_LOCAL_STORAGE_DIR", "data/auth"))
     
-    class Config:
-        env_prefix = "AUTH_"
+    model_config = {
+        "env_prefix": "AUTH_"
+    }
 
 
 class FileServiceSettings(ServiceSettings):
@@ -105,8 +106,9 @@ class FileServiceSettings(ServiceSettings):
             return path
         return ROOT_DIR / self.temp_dir
     
-    class Config:
-        env_prefix = "FILE_"
+    model_config = {
+        "env_prefix": "FILE_"
+    }
 
 
 class FileProcServiceSettings(ServiceSettings):
@@ -165,8 +167,9 @@ class FileProcServiceSettings(ServiceSettings):
             return path
         return ROOT_DIR / self.temp_dir
     
-    class Config:
-        env_prefix = "FILEPROC_"
+    model_config = {
+        "env_prefix": "FILEPROC_"
+    }
 
 
 class RAGServiceSettings(ServiceSettings):
@@ -240,8 +243,9 @@ class RAGServiceSettings(ServiceSettings):
             return base_path / project_id
         return base_path
     
-    class Config:
-        env_prefix = "RAG_"
+    model_config = {
+        "env_prefix": "RAG_"
+    }
 
 
 class ChatServiceSettings(ServiceSettings):
@@ -261,8 +265,9 @@ class ChatServiceSettings(ServiceSettings):
     # 存储配置
     storage_mode: str = Field(default_factory=lambda: get_env("CHAT_STORAGE_MODE", "POSTGRES"))
     
-    class Config:
-        env_prefix = "CHAT_"
+    model_config = {
+        "env_prefix": "CHAT_"
+    }
 
 
 class LLMSummaryServiceSettings(ServiceSettings):
@@ -281,8 +286,9 @@ class LLMSummaryServiceSettings(ServiceSettings):
     enable_cache: bool = Field(default_factory=lambda: get_env("ENABLE_CACHE", True, env_type=bool))
     cache_ttl: int = Field(default_factory=lambda: get_env("CACHE_TTL", 86400, env_type=int))
     
-    class Config:
-        env_prefix = "LLM_SUMMARY_"
+    model_config = {
+        "env_prefix": "LLM_SUMMARY_"
+    }
 
 
 class QuestionServiceSettings(ServiceSettings):
@@ -299,8 +305,9 @@ class QuestionServiceSettings(ServiceSettings):
     storage_mode: str = Field(default_factory=lambda: get_env("QUESTION_STORAGE_MODE", "POSTGRES"))
     local_storage_dir: str = Field(default_factory=lambda: get_env("QUESTION_LOCAL_STORAGE_DIR", "data/questions"))
     
-    class Config:
-        env_prefix = "QUESTION_"
+    model_config = {
+        "env_prefix": "QUESTION_"
+    }
 
 
 class GraphServiceSettings(ServiceSettings):
@@ -316,8 +323,9 @@ class GraphServiceSettings(ServiceSettings):
     # 存储配置
     storage_mode: str = Field(default_factory=lambda: get_env("GRAPH_STORAGE_MODE", "NEO4J"))
     
-    class Config:
-        env_prefix = "GRAPH_"
+    model_config = {
+        "env_prefix": "GRAPH_"
+    }
 
 
 class ProjectServiceSettings(ServiceSettings):
@@ -333,8 +341,9 @@ class ProjectServiceSettings(ServiceSettings):
     # 项目存储配置
     local_storage_dir: str = Field(default_factory=lambda: get_env("PROJECT_LOCAL_STORAGE_DIR", "data/projects"))
     
-    class Config:
-        env_prefix = "PROJECT_"
+    model_config = {
+        "env_prefix": "PROJECT_"
+    }
 
 
 # 定义全局常量
@@ -419,10 +428,11 @@ class LLMSettings(SettingsBase):
         else:
             return ""
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
-        env_prefix = "LLM_"
+    model_config = {
+        "env_file": ".env",
+        "case_sensitive": False,
+        "env_prefix": "LLM_"
+    }
 
 # 创建全局LLM配置实例
 llm_settings_global = LLMSettings()
@@ -437,10 +447,11 @@ class LLMServiceSettings(ServiceSettings):
     # 服务端口
     port: int = Field(default_factory=lambda: get_env("LLM_SERVICE_PORT", 8080, env_type=int))
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
-        env_prefix = "LLM_"
+    model_config = {
+        "env_file": ".env",
+        "case_sensitive": False,
+        "env_prefix": "LLM_"
+    }
 
 # 创建各服务设置实例
 auth_settings = AuthServiceSettings()

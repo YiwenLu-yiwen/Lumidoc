@@ -20,7 +20,7 @@ if modules_dir not in sys.path:
     sys.path.insert(0, modules_dir)
 
 # 更新配置导入
-from STP_webui.backend.api.question_routes import app
+from src.modules.question.routes.question_routes import app
 from src.shared.config import QuestionServiceSettings
 settings_base = QuestionServiceSettings()
 from .config.config import settings

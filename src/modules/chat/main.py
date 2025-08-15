@@ -9,6 +9,7 @@ import uvicorn
 import sys
 import os
 import logging
+from contextlib import asynccontextmanager
 from src.shared.logger import initialize_logging, get_logger
 from fastapi import FastAPI, Depends, HTTPException, Body, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -60,8 +61,87 @@ if os.path.exists(env_path):
     load_dotenv(env_path)
     logger.info(f"已从 {env_path} 加载环境变量")
 
+# 定义定期任务函数
+async def migrate_old_messages_background_task() -> None:
+    """背景任务：自动迁移30天前的聊天记录到数据库"""
+    while True:
+        try:
+            logger.info("开始执行自动聊天记录迁移任务")
+            
+            # 获取数据库会话 - 正确的异步方式
+            async for db in get_db():
+                try:
+                    # 执行迁移，默认迁移30天前的消息
+                    result = migrate_old_messages_to_db(db, days=30)
+                    logger.info(f"自动迁移任务完成: 已迁移 {result['messages_migrated']} 条消息")
+                except Exception as e:
+                    logger.error(f"自动迁移任务失败: {str(e)}")
+                finally:
+                    # 数据库连接会在异步生成器中自动管理
+                    break
+            
+            # 等待24小时（86400秒）
+            await asyncio.sleep(86400)
+        except Exception as e:
+            logger.error(f"定期任务错误: {str(e)}")
+            await asyncio.sleep(3600)  # 出错时等待1小时再重试
+
+# 定义lifespan事件管理器
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理"""
+    migration_task = None
+    
+    # 启动事件
+    try:
+        # 初始化服务
+        # 数据库连接由shared.database模块自动管理
+        
+        # 注册服务
+        from src.shared.service_discovery import register_service
+        await register_service("chat", port=settings.port, health_check_endpoint="/healthz")
+        
+        # 迁移老聊天数据
+        asyncio.create_task(migrate_old_chat_messages())
+        
+        # 启动定期任务
+        migration_task = asyncio.create_task(migrate_old_messages_background_task())
+        
+        logger.info("聊天服务启动成功")
+    except Exception as e:
+        logger.error(f"聊天服务启动失败: {str(e)}")
+        traceback.print_exc()
+        # 不要直接退出，让服务继续运行
+        
+    yield
+    
+    # 关闭事件
+    try:
+        # 停止定期任务
+        if migration_task and not migration_task.done():
+            migration_task.cancel()
+            try:
+                await migration_task
+            except asyncio.CancelledError:
+                pass
+        
+        # 关闭数据库连接池
+        await close_db_pool()
+        
+        # 注销服务
+        from src.shared.service_discovery import unregister_service
+        await unregister_service("chat")
+        
+        logger.info("聊天服务关闭")
+    except Exception as e:
+        logger.error(f"聊天服务关闭失败: {str(e)}")
+
 # 创建FastAPI实例
-app = FastAPI(title="聊天服务", description="提供聊天和消息处理服务")
+app = FastAPI(
+    title="聊天服务", 
+    description="提供聊天和消息处理服务",
+    lifespan=lifespan
+)
 
 # 设置CORS
 app.add_middleware(
@@ -83,57 +163,6 @@ setup_openapi(app)
 
 # 健康检查端点已在chat_service.py中通过共享HealthChecker配置
 
-# 添加定期任务：每天自动迁移旧聊天记录
-@app.on_event("startup")
-@repeat_every(seconds=86400)  # 每24小时执行一次
-async def migrate_old_messages_task() -> None:
-    """自动迁移30天前的聊天记录到数据库"""
-    logger.info("开始执行自动聊天记录迁移任务")
-    
-    # 获取数据库会话
-    db = next(get_db())
-    
-    try:
-        # 执行迁移，默认迁移30天前的消息
-        result = migrate_old_messages_to_db(db, days=30)
-        logger.info(f"自动迁移任务完成: 已迁移 {result['messages_migrated']} 条消息")
-    except Exception as e:
-        logger.error(f"自动迁移任务失败: {str(e)}")
-    finally:
-        db.close()
-
-@app.on_event("startup")
-async def startup_event():
-    try:
-        # 初始化服务
-        # 数据库连接由shared.database模块自动管理
-        
-        # 注册服务
-        from src.shared.service_discovery import register_service
-        await register_service("chat", port=settings.port, health_check_endpoint="/health")
-        
-        # 迁移老聊天数据
-        asyncio.create_task(migrate_old_chat_messages())
-        
-        logger.info("聊天服务启动成功")
-    except Exception as e:
-        logger.error(f"聊天服务启动失败: {str(e)}")
-        traceback.print_exc()
-        # 不要直接退出，让服务继续运行
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    try:
-        # 关闭数据库连接池
-        await close_db_pool()
-        
-        # 注销服务
-        from src.shared.service_discovery import unregister_service
-        await unregister_service("chat")
-        
-        logger.info("聊天服务关闭")
-    except Exception as e:
-        logger.error(f"聊天服务关闭失败: {str(e)}")
 
 # 获取版本信息
 @app.get("/version", tags=["基础信息"])

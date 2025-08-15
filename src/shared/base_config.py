@@ -142,9 +142,9 @@ class ServiceBaseSettings(BaseSettings):
             return [origin.strip() for origin in v.split(",")]
         return v
     
-    class Config:
-        """Pydantic配置类"""
-        env_file = ".env"
-        case_sensitive = False
-        validate_assignment = True
-        arbitrary_types_allowed = True 
+    model_config = {
+        "env_file": ".env",
+        "case_sensitive": False,
+        "validate_assignment": True,
+        "arbitrary_types_allowed": True
+    } 

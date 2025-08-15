@@ -14,15 +14,12 @@ class SettingsBase(BaseSettings):
     提供从环境变量读取配置的功能
     """
     
-    class Config:
-        """配置元数据"""
-        # 自动从环境变量读取值
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        # 大小写敏感
-        case_sensitive = False
-        # 额外配置
-        extra = "ignore"
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "case_sensitive": False,
+        "extra": "ignore"
+    }
 
 
 class DatabaseSettings(BaseModel):
@@ -115,6 +112,6 @@ class ServiceSettings(SettingsBase):
             return [origin.strip() for origin in v.split(",")]
         return v
     
-    class Config:
-        """配置元数据"""
-        env_prefix = ""  # 各服务应覆盖此值，如 "LLM_" 
+    model_config = {
+        "env_prefix": ""  # 各服务应覆盖此值，如 "LLM_"
+    } 

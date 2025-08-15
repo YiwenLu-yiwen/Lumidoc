@@ -498,12 +498,12 @@ MONITORING_PORT=$(extract_port "${MONITORING_SERVICE_URL:-http://localhost:8008}
 LLM_PORT=$(extract_port "${LLM_SERVICE_URL:-http://localhost:8080}" 8080)
 TASK_SERVICE_PORT=$(extract_port "${TASK_SERVICE_URL:-http://localhost:8085}" 8085)
 FRONTEND_PORT=3000
-BACKEND_PORT=8000
+# BACKEND_PORT=8000  # 已移除独立后端服务
 
 # 检查并释放端口
 echo -e "${CYAN}▶ 检查服务端口状态...${RESET}"
 check_and_free_port $GATEWAY_PORT "API网关服务"
-check_and_free_port $BACKEND_PORT "主后端服务"
+# 主后端服务已移除，端口检查也移除
 check_and_free_port $AUTH_PORT "认证服务"
 check_and_free_port $FILE_PORT "文件服务"
 check_and_free_port $CHAT_PORT "聊天服务"
@@ -540,10 +540,8 @@ start_service "API网关服务" $GATEWAY_PORT \
     "$CONDA_INIT && conda activate $CONDA_ENV && cd '$CURRENT_DIR' && PYTHONPATH=$CURRENT_DIR python -m src.modules.gateway.main --port $GATEWAY_PORT" \
     "$LOG_DIR/gateway.log"
 
-# 启动主后端服务
-start_service "主后端服务" $BACKEND_PORT \
-    "$CONDA_INIT && conda activate $CONDA_ENV && cd '$CURRENT_DIR/Lumidoc_webui/backend' && PYTHONPATH=$CURRENT_DIR uvicorn main:app --host 0.0.0.0 --port $BACKEND_PORT" \
-    "$LOG_DIR/backend.log"
+# 主后端服务已合并到微服务架构中，无需单独启动
+# 原后端功能现在分布在各个微服务中
 
 # 启动认证服务
 start_service "认证服务" $AUTH_PORT \
@@ -656,7 +654,7 @@ start_service "任务监控服务" "N/A" \
 
 # 启动前端服务
 echo -e "${CYAN}▶ 启动前端服务${RESET} [端口: ${WHITE}$FRONTEND_PORT${RESET}]"
-nohup bash -c "cd '$CURRENT_DIR/Lumidoc_webui/frontend' && npm run dev -- --host 0.0.0.0" > "$LOG_DIR/frontend.log" 2>&1 &
+nohup bash -c "cd '$CURRENT_DIR/frontend' && npm run dev -- --host 0.0.0.0" > "$LOG_DIR/frontend.log" 2>&1 &
 FRONTEND_PID=$!
 echo -ne "  "
 show_progress 2 "前端启动中" "success"
@@ -705,7 +703,7 @@ echo
 echo -e "${GREEN}========== Lumidoc平台启动成功 ==========${RESET}"
 echo -e "${CYAN}▶ 系统状态:${RESET}"
 echo -e "  ${WHITE}基础设施:${RESET} ${GREEN}已启动${RESET} (PostgreSQL, Neo4j, Redis, RabbitMQ, MinIO)"
-echo -e "  ${WHITE}微服务:${RESET} ${GREEN}已启动${RESET} (12个微服务)"
+echo -e "  ${WHITE}微服务:${RESET} ${GREEN}已启动${RESET} (11个微服务)"
 echo -e "  ${WHITE}前端:${RESET} ${GREEN}已启动${RESET} (http://localhost:$FRONTEND_PORT)"
 
 # 添加FAISS存储模式信息
@@ -735,7 +733,7 @@ fi
 echo
 echo -e "${YELLOW}▶ 访问地址:${RESET}"
 echo -e "  ${WHITE}前端:${RESET} ${BLUE}http://localhost:$FRONTEND_PORT${RESET}"
-echo -e "  ${WHITE}API:${RESET} ${BLUE}http://localhost:$BACKEND_PORT/docs${RESET}"
+echo -e "  ${WHITE}API网关:${RESET} ${BLUE}http://localhost:$GATEWAY_PORT/docs${RESET}"
 echo -e "  ${WHITE}Neo4j浏览器:${RESET} ${BLUE}http://localhost:7474${RESET}"
 echo -e "  ${WHITE}MinIO控制台:${RESET} ${BLUE}http://localhost:9001${RESET}"
 echo

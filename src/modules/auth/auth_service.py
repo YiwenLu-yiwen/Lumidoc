@@ -1,9 +1,15 @@
 import os
 import jwt
+import warnings
 from datetime import datetime, timedelta
 from typing import Optional, Union
 import asyncpg
-from passlib.context import CryptContext
+
+# 抑制bcrypt版本警告
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", category=UserWarning, module="passlib.*")
+    from passlib.context import CryptContext
+
 from .user_model import User, UserCreate, UserInDB
 from .config.config import settings
 import asyncio

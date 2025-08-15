@@ -11,6 +11,7 @@ import os
 import logging
 import traceback
 import asyncio
+from contextlib import asynccontextmanager
 from src.shared.logger import initialize_logging, get_logger
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, Form, File, Request, Query, Header
 from typing import Optional
@@ -62,11 +63,79 @@ try:
         logger.error(f"导入模块失败: {str(e)}")
         raise RuntimeError(f"无法导入必要模块: {str(e)}")
 
+    # 定义lifespan事件管理器
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        """应用生命周期管理"""
+        # 启动事件
+        logger.info("文件服务启动中...")
+        
+        try:
+            # 初始化数据库表
+            await init_database()
+            logger.info("已初始化数据库表结构")
+            
+            # 确保存储目录存在
+            if not os.path.exists(settings.storage_dir):
+                os.makedirs(settings.storage_dir, exist_ok=True)
+                logger.info(f"已创建存储目录: {settings.storage_dir}")
+            else:
+                logger.info(f"已确保存储目录存在: {settings.storage_dir}")
+            
+            # 注册服务到服务发现
+            try:
+                service_registry = ServiceRegistry()
+                await service_registry.connect()
+                
+                service_id = await service_registry.register_service(
+                    service_name="file",
+                    host="localhost",
+                    port=settings.port,
+                    metadata={"version": "1.0.0"},
+                    health_check_endpoint="/healthz"
+                )
+                logger.info(f"服务已注册到服务发现，ID: {service_id}")
+                app.state.service_registry = service_registry
+                app.state.service_id = service_id
+            except Exception as e:
+                logger.error(f"服务注册失败: {str(e)}")
+                logger.error(traceback.format_exc())
+                logger.warning("服务将以独立模式运行")
+        except Exception as e:
+            logger.error(f"服务启动失败: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise
+            
+        yield
+        
+        # 关闭事件
+        logger.info("文件服务正在关闭...")
+        
+        try:
+            # 注销服务
+            if hasattr(app.state, "service_registry") and hasattr(app.state, "service_id"):
+                service_registry = app.state.service_registry
+                service_id = app.state.service_id
+                
+                if service_registry and service_id:
+                    try:
+                        await service_registry.deregister_service("file", service_id)
+                        logger.info(f"服务已从服务发现注销，ID: {service_id}")
+                    except Exception as e:
+                        logger.error(f"服务注销失败: {str(e)}")
+                        logger.error(traceback.format_exc())
+            
+            logger.info("文件服务已关闭")
+        except Exception as e:
+            logger.error(f"服务关闭过程中发生错误: {str(e)}")
+            logger.error(traceback.format_exc())
+
     # 创建应用
     app = FastAPI(
         title="文件服务", 
         description="提供文件管理和存储功能，处理逻辑由fileproc服务提供",
-        version="0.1.0"
+        version="0.1.0",
+        lifespan=lifespan
     )
 
     # 设置CORS
@@ -325,72 +394,6 @@ try:
     # 注册统一健康检查路由
     register_health_routes(app, health_checker)
 
-    # 启动时执行的事件
-    @app.on_event("startup")
-    async def startup_event():
-        """服务启动时执行"""
-        logger.info("文件服务启动中...")
-        
-        try:
-            # 初始化数据库表
-            await init_database()
-            logger.info("已初始化数据库表结构")
-            
-            # 确保存储目录存在
-            if not os.path.exists(settings.storage_dir):
-                os.makedirs(settings.storage_dir, exist_ok=True)
-                logger.info(f"已创建存储目录: {settings.storage_dir}")
-            else:
-                logger.info(f"已确保存储目录存在: {settings.storage_dir}")
-            
-            # 注册服务到服务发现
-            try:
-                service_registry = ServiceRegistry()
-                await service_registry.connect()
-                
-                service_id = await service_registry.register_service(
-                    service_name="file",
-                    host="localhost",
-                    port=settings.port,
-                    metadata={"version": "1.0.0"},
-                    health_check_endpoint="/api/health"
-                )
-                logger.info(f"服务已注册到服务发现，ID: {service_id}")
-                app.state.service_registry = service_registry
-                app.state.service_id = service_id
-            except Exception as e:
-                logger.error(f"服务注册失败: {str(e)}")
-                logger.error(traceback.format_exc())
-                logger.warning("服务将以独立模式运行")
-        except Exception as e:
-            logger.error(f"服务启动失败: {str(e)}")
-            logger.error(traceback.format_exc())
-            raise
-
-    # 关闭时执行的事件
-    @app.on_event("shutdown")
-    async def shutdown_event():
-        """服务关闭时执行"""
-        logger.info("文件服务正在关闭...")
-        
-        try:
-            # 注销服务
-            if hasattr(app.state, "service_registry") and hasattr(app.state, "service_id"):
-                service_registry = app.state.service_registry
-                service_id = app.state.service_id
-                
-                if service_registry and service_id:
-                    try:
-                        await service_registry.deregister_service("file", service_id)
-                        logger.info(f"服务已从服务发现注销，ID: {service_id}")
-                    except Exception as e:
-                        logger.error(f"服务注销失败: {str(e)}")
-                        logger.error(traceback.format_exc())
-            
-            logger.info("文件服务已关闭")
-        except Exception as e:
-            logger.error(f"服务关闭过程中发生错误: {str(e)}")
-            logger.error(traceback.format_exc())
 
     # 错误处理
     @app.exception_handler(Exception)

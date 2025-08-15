@@ -17,7 +17,7 @@ from src.shared.config import llm_settings
 
 logger = logging.getLogger(__name__)
 
-class STPLangChainLLM(LLM):
+class LumidocLangChainLLM(LLM):
     """
     STP项目的LangChain LLM实现
     使用共享LLM适配器
