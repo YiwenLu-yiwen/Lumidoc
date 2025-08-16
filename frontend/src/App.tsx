@@ -248,7 +248,7 @@ const AppContent = () => {
   return (
     <ProjectProvider>
       <TokenChecker>
-        <BackendStatusWrapper enableHealthCheck={import.meta.env.VITE_ENABLE_BACKEND_HEALTH_CHECK !== 'false'}>
+        <BackendStatusWrapper enableHealthCheck={true}>
           <div className="min-h-screen">
             <Toaster
               position="bottom-center"

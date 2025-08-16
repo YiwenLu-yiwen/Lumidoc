@@ -932,14 +932,20 @@ async def migrate_old_chat_messages():
     try:
         logger.info("开始迁移旧聊天消息")
         from src.shared.database import get_db
-        db_generator = get_db()
-        db = next(db_generator)
         
-        # 执行迁移
-        result = migrate_old_messages_to_db(db, days=30)
-        logger.info(f"迁移完成: {result}")
-        
-        db.close()
+        # 使用async for正确处理异步生成器
+        async for db in get_db():
+            try:
+                # 执行迁移
+                result = migrate_old_messages_to_db(db, days=30)
+                logger.info(f"迁移完成: {result}")
+                break  # 成功后退出循环
+            except Exception as migration_error:
+                logger.error(f"迁移执行失败: {str(migration_error)}")
+                raise
+            finally:
+                await db.close()  # 确保连接关闭
+                
     except Exception as e:
         logger.error(f"迁移旧聊天消息失败: {str(e)}")
 

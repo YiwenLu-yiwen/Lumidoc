@@ -83,7 +83,7 @@ class FileServiceSettings(ServiceSettings):
     s3_region: str = Field(default_factory=lambda: get_env("S3_REGION", "us-east-1"))
     
     # 健康检查配置
-    health_check_endpoint: str = Field(default_factory=lambda: get_env("HEALTH_CHECK_ENDPOINT", "/api/health"))
+    health_check_endpoint: str = Field(default_factory=lambda: get_env("HEALTH_CHECK_ENDPOINT", "/healthz"))
     
     def get_absolute_storage_dir(self) -> Path:
         """获取绝对存储目录路径"""
@@ -136,7 +136,7 @@ class FileProcServiceSettings(ServiceSettings):
     use_gpu: bool = Field(default_factory=lambda: get_env("USE_GPU", False, env_type=bool))
     
     # 健康检查配置
-    health_check_endpoint: str = Field(default_factory=lambda: get_env("HEALTH_CHECK_ENDPOINT", "/api/health"))
+    health_check_endpoint: str = Field(default_factory=lambda: get_env("HEALTH_CHECK_ENDPOINT", "/healthz"))
     
     # 允许的文件扩展名
     allowed_extensions: List[str] = [

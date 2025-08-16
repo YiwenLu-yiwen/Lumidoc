@@ -43,7 +43,7 @@ export const BackendOfflineError: React.FC<BackendOfflineErrorProps> = ({
   const waitForBackendStartup = async () => {
     setIsWaiting(true);
     try {
-      const success = await waitForBackend(120000, 3000); // 等待2分钟
+      const success = await waitForBackend(120000, 10000); // 等待2分钟，但检查间隔改为10秒
       if (success) {
         await checkStatus();
       }
@@ -54,10 +54,10 @@ export const BackendOfflineError: React.FC<BackendOfflineErrorProps> = ({
     }
   };
 
-  // 组件挂载时检查一次状态
-  useEffect(() => {
-    checkStatus();
-  }, []);
+  // 移除自动检查，避免与BackendStatusWrapper重复检查
+  // useEffect(() => {
+  //   checkStatus();
+  // }, []);
 
   // 渲染服务状态列表
   const renderServiceStatus = (services: ServiceStatus[]) => {

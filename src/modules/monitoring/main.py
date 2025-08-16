@@ -55,7 +55,7 @@ async def lifespan(app: FastAPI):
                 host=None,  # 自动检测
                 port=port,
                 websocket_endpoints=websocket_endpoints,
-                health_check_endpoint="/api/health"
+                health_check_endpoint="/healthz"
             )
             print(f"Monitoring服务已注册到服务发现，ID: {service_id}")
         

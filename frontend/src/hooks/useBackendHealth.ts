@@ -1,10 +1,11 @@
 /**
  * 后端健康检查Hook
- * 监控后端服务状态，自动处理离线情况
+ * 通过全局管理器监控后端服务状态，避免重复检查
  */
 
-import { useEffect, useState, useCallback } from 'react';
-import { checkBackendHealth, quickBackendCheck, BackendHealthStatus } from '../api/health';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { quickBackendCheck, BackendHealthStatus } from '../api/health';
+import HealthCheckManager from '../services/HealthCheckManager';
 
 interface UseBackendHealthOptions {
   checkInterval?: number;
@@ -15,8 +16,8 @@ interface UseBackendHealthOptions {
 
 export function useBackendHealth(options: UseBackendHealthOptions = {}) {
   const {
-    checkInterval = Number(import.meta.env.VITE_BACKEND_HEALTH_CHECK_INTERVAL) || 60000, // 从环境变量获取检查间隔
-    autoCheck = true,
+    checkInterval = Number(import.meta.env.VITE_BACKEND_HEALTH_CHECK_INTERVAL) || 300000, // 5分钟检查一次
+    autoCheck = true, // 启用自动检查，但频率合理
     onBackendOffline,
     onBackendOnline
   } = options;
@@ -25,6 +26,8 @@ export function useBackendHealth(options: UseBackendHealthOptions = {}) {
   const [healthStatus, setHealthStatus] = useState<BackendHealthStatus | null>(null);
   const [isChecking, setIsChecking] = useState(false);
   const [lastCheckTime, setLastCheckTime] = useState<Date | null>(null);
+  // 使用useRef保证subscriberId在组件生命周期内保持不变
+  const subscriberIdRef = useRef<string>(`health-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
 
   // 快速检查后端状态
   const quickCheck = useCallback(async (): Promise<boolean> => {
@@ -37,69 +40,78 @@ export function useBackendHealth(options: UseBackendHealthOptions = {}) {
     }
   }, []);
 
-  // 全面健康检查
+  // 全面健康检查 - 通过全局管理器执行
   const fullHealthCheck = useCallback(async (): Promise<BackendHealthStatus | null> => {
-    if (isChecking) return null;
+    const manager = HealthCheckManager.getInstance();
+    return await manager.checkHealth();
+  }, []);
+
+  // 使用ref保存最新的回调函数
+  const callbacksRef = useRef({ onBackendOnline, onBackendOffline });
+  callbacksRef.current = { onBackendOnline, onBackendOffline };
+
+  // 订阅全局健康检查管理器 - 只在组件挂载时执行一次
+  useEffect(() => {
+    const manager = HealthCheckManager.getInstance();
     
-    setIsChecking(true);
-    try {
-      const status = await checkBackendHealth();
-      setHealthStatus(status);
-      setLastCheckTime(new Date());
-      
-      const isOnline = status.overall === 'healthy' || status.overall === 'degraded';
-      
-      // 状态变化时触发回调
-      if (isBackendOnline !== null && isBackendOnline !== isOnline) {
-        if (isOnline) {
-          onBackendOnline?.();
-        } else {
-          onBackendOffline?.();
+    console.log(`[Backend Health] 订阅全局健康检查管理器: ${subscriberIdRef.current}`);
+    
+    // 订阅健康状态变化
+    const unsubscribe = manager.subscribe({
+      id: subscriberIdRef.current,
+      onHealthChange: (status) => {
+        setHealthStatus(status);
+        if (status) {
+          setLastCheckTime(new Date());
         }
+      },
+      onOnlineChange: (isOnline) => {
+        setIsBackendOnline(prevOnline => {
+          // 状态变化时触发回调
+          if (prevOnline !== null && prevOnline !== isOnline) {
+            if (isOnline) {
+              callbacksRef.current.onBackendOnline?.();
+            } else {
+              callbacksRef.current.onBackendOffline?.();
+            }
+          }
+          return isOnline;
+        });
       }
-      
-      setIsBackendOnline(isOnline);
-      return status;
-    } catch (error) {
-      console.error('[Backend Health] 全面检查失败:', error);
-      setIsBackendOnline(false);
-      onBackendOffline?.();
-      return null;
-    } finally {
-      setIsChecking(false);
-    }
-  }, [isChecking, isBackendOnline, onBackendOnline, onBackendOffline]);
+    });
 
-  // 初始化检查
-  useEffect(() => {
+    // 如果启用自动检查，则启用全局管理器
     if (autoCheck) {
-      fullHealthCheck();
+      manager.enable(checkInterval);
     }
-  }, [autoCheck, fullHealthCheck]);
 
-  // 定期检查
+    // 获取当前状态
+    const currentState = manager.getCurrentStatus();
+    if (currentState.status) {
+      setHealthStatus(currentState.status);
+    }
+    if (currentState.isOnline !== null) {
+      setIsBackendOnline(currentState.isOnline);
+    }
+    if (currentState.lastCheckTime > 0) {
+      setLastCheckTime(new Date(currentState.lastCheckTime));
+    }
+
+    return () => {
+      console.log(`[Backend Health] 取消订阅: ${subscriberIdRef.current}`);
+      unsubscribe();
+    };
+  }, []); // 空依赖数组，只在组件挂载时执行一次
+
+  // 单独的effect来处理autoCheck和checkInterval的变化
   useEffect(() => {
-    if (!autoCheck || checkInterval <= 0) return;
-
-    const interval = setInterval(async () => {
-      // 只做快速检查，减少网络开销
-      const isOnline = await quickCheck();
-      
-      // 如果状态发生变化，进行全面检查
-      if (isBackendOnline !== null && isBackendOnline !== isOnline) {
-        await fullHealthCheck();
-      } else if (isBackendOnline === null) {
-        // 初始状态未知时，进行全面检查
-        await fullHealthCheck();
-      } else {
-        // 状态未变化时，只更新在线状态
-        setIsBackendOnline(isOnline);
-        setLastCheckTime(new Date());
-      }
-    }, checkInterval);
-
-    return () => clearInterval(interval);
-  }, [autoCheck, checkInterval, quickCheck, fullHealthCheck, isBackendOnline]);
+    const manager = HealthCheckManager.getInstance();
+    if (autoCheck) {
+      manager.enable(checkInterval);
+    } else {
+      manager.disable();
+    }
+  }, [autoCheck, checkInterval]);
 
   return {
     isBackendOnline,

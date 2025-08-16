@@ -69,7 +69,7 @@ async def lifespan(app: FastAPI):
             service_name="project",
             host="localhost",
             port=settings.service_port,
-            health_check_endpoint="/api/health",
+            health_check_endpoint="/healthz",
             metadata={
                 "version": settings.version,
                 "environment": os.environ.get("ENVIRONMENT", "development")

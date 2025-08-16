@@ -115,7 +115,7 @@ try:
                     host=None,  # 自动检测
                     port=port,
                     websocket_endpoints=websocket_endpoints,
-                    health_check_endpoint="/api/health"
+                    health_check_endpoint="/healthz"
                 )
                 logger.info(f"服务已注册到服务发现，ID: {service_id}")
             else:

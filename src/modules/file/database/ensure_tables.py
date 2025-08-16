@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS question_sets (
 CREATE_QUESTIONS_TABLE = """
 CREATE TABLE IF NOT EXISTS questions (
     id SERIAL PRIMARY KEY,
-    question_set_id INTEGER NOT NULL,
+    set_id INTEGER NOT NULL,
     text TEXT NOT NULL,
     answer TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -179,7 +179,7 @@ INDICES = [
     "CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)",
     "CREATE INDEX IF NOT EXISTS idx_projects_name ON projects(name)",
     "CREATE INDEX IF NOT EXISTS idx_chat_messages_project_id ON chat_messages(project_id)",
-    "CREATE INDEX IF NOT EXISTS idx_questions_question_set_id ON questions(question_set_id)",
+    "CREATE INDEX IF NOT EXISTS idx_questions_set_id ON questions(set_id)",
     "CREATE INDEX IF NOT EXISTS idx_project_rag_files_project_id ON project_rag_files(project_id)",
     "CREATE INDEX IF NOT EXISTS idx_project_rag_files_file_hash ON project_rag_files(file_hash)",
     "CREATE INDEX IF NOT EXISTS idx_project_rag_files_status ON project_rag_files(status)",
@@ -190,7 +190,7 @@ INDICES = [
 ]
 
 # 定义问题索引创建语句
-CREATE_QUESTIONS_INDEX = "CREATE INDEX IF NOT EXISTS idx_questions_question_set_id ON questions(question_set_id)"
+CREATE_QUESTIONS_INDEX = "CREATE INDEX IF NOT EXISTS idx_questions_set_id ON questions(set_id)"
 
 async def ensure_file_contents_table():
     """

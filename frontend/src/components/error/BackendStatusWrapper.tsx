@@ -14,53 +14,38 @@ interface BackendStatusWrapperProps {
 
 export const BackendStatusWrapper: React.FC<BackendStatusWrapperProps> = ({
   children,
-  enableHealthCheck = true
+  enableHealthCheck = true  // 启用合理的健康检查
 }) => {
   const [initialCheckCompleted, setInitialCheckCompleted] = useState(false);
   const [showOfflineError, setShowOfflineError] = useState(false);
 
   const { isBackendOnline, isChecking, fullHealthCheck } = useBackendHealth({
     autoCheck: enableHealthCheck,
-    checkInterval: 60000, // 检查频率降低到1分钟，减少网络开销
+    checkInterval: 300000, // 5分钟检查一次，合理的频率
     onBackendOffline: () => {
-      if (initialCheckCompleted) {
+      if (initialCheckCompleted && enableHealthCheck) {
         console.log('[Backend Status] 后端服务离线，显示错误页面');
         setShowOfflineError(true);
       }
     },
     onBackendOnline: () => {
-      console.log('[Backend Status] 后端服务恢复在线，隐藏错误页面');
-      setShowOfflineError(false);
+      if (enableHealthCheck) {
+        console.log('[Backend Status] 后端服务恢复在线，隐藏错误页面');
+        setShowOfflineError(false);
+      }
     }
   });
 
-  // 初始化检查
+  // 简化初始化检查
   useEffect(() => {
     if (!enableHealthCheck) {
       setInitialCheckCompleted(true);
       return;
     }
 
-    const performInitialCheck = async () => {
-      console.log('[Backend Status] 开始初始化后端检查');
-      
-      try {
-        // 执行一次全面检查
-        await fullHealthCheck();
-        
-        // 标记初始检查完成
-        setInitialCheckCompleted(true);
-        
-        console.log('[Backend Status] 初始化检查完成');
-      } catch (error) {
-        console.error('[Backend Status] 初始化检查失败:', error);
-        setInitialCheckCompleted(true);
-        setShowOfflineError(true);
-      }
-    };
-
-    performInitialCheck();
-  }, [enableHealthCheck, fullHealthCheck]);
+    console.log('[Backend Status] 启用健康检查模式');
+    setInitialCheckCompleted(true);
+  }, [enableHealthCheck]);
 
   // 后端状态变化处理
   useEffect(() => {

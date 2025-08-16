@@ -184,7 +184,7 @@ def create_app() -> FastAPI:
         try:
             # 检查服务发现是否正常
             service_discovery = await get_service_discovery()
-            services = await service_discovery.get_all_services()
+            services = await service_discovery.get_all_services_status()
             
             healthy_services = 0
             total_services = 0

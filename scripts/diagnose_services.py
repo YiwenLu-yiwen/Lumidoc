@@ -17,6 +17,10 @@ current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
+# 加载环境变量
+from dotenv import load_dotenv
+load_dotenv(dotenv_path=os.path.join(current_dir, '.env'))
+
 from src.shared.service_discovery import ServiceRegistry, ServiceHealth
 from src.shared.logger import initialize_logging, get_logger
 

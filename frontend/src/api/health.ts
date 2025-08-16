@@ -20,20 +20,26 @@ export interface BackendHealthStatus {
   timestamp: string;
 }
 
-// 核心服务配置
+// 核心服务配置 - 仅检查关键服务，避免资源耗尽
 const CORE_SERVICES = [
-  { name: 'Gateway', url: 'http://localhost:8888', path: '/health' },
-  { name: 'Auth', url: 'http://localhost:8007', path: '/health' },
-  { name: 'Backend', url: 'http://localhost:8000', path: '/health' },
-  { name: 'File', url: 'http://localhost:8004', path: '/health' },
-  { name: 'FileProc', url: 'http://localhost:8005', path: '/health' },
-  { name: 'LightRAG', url: 'http://localhost:8006', path: '/health' },
-  { name: 'Graph', url: 'http://localhost:8003', path: '/health' },
-  { name: 'Chat', url: 'http://localhost:8001', path: '/health' },
-  { name: 'Question', url: 'http://localhost:8002', path: '/health' },
-  { name: 'Monitoring', url: 'http://localhost:8008', path: '/health' },
-  { name: 'Project', url: 'http://localhost:8020', path: '/health' },
-  { name: 'LLM', url: 'http://localhost:8080', path: '/health' }
+  { name: 'Gateway', url: 'http://localhost:8888', path: '/healthz' },
+  { name: 'Auth', url: 'http://localhost:8007', path: '/healthz' },
+  { name: 'LightRAG', url: 'http://localhost:8006', path: '/healthz' }
+];
+
+// 完整服务列表 - 仅用于详细状态显示
+const ALL_SERVICES = [
+  { name: 'Gateway', url: 'http://localhost:8888', path: '/healthz' },
+  { name: 'Auth', url: 'http://localhost:8007', path: '/healthz' },
+  { name: 'File', url: 'http://localhost:8004', path: '/healthz' },
+  { name: 'FileProc', url: 'http://localhost:8005', path: '/healthz' },
+  { name: 'LightRAG', url: 'http://localhost:8006', path: '/healthz' },
+  { name: 'Graph', url: 'http://localhost:8003', path: '/healthz' },
+  { name: 'Chat', url: 'http://localhost:8001', path: '/healthz' },
+  { name: 'Question', url: 'http://localhost:8002', path: '/healthz' },
+  { name: 'Monitoring', url: 'http://localhost:8008', path: '/healthz' },
+  { name: 'Project', url: 'http://localhost:8020', path: '/healthz' },
+  { name: 'LLM', url: 'http://localhost:8080', path: '/healthz' }
 ];
 
 /**
@@ -51,7 +57,8 @@ async function checkServiceHealth(service: typeof CORE_SERVICES[0]): Promise<Ser
       method: 'GET',
       signal: controller.signal,
       headers: {
-        'Accept': 'application/json'
+        'Accept': 'application/json',
+        'X-Service-Discovery-Check': 'true'
       }
     });
     
@@ -114,67 +121,84 @@ export async function checkGatewayHealth(): Promise<ServiceStatus> {
 }
 
 /**
- * 快速检查后端是否启动（只检查Gateway和Backend）
+ * 快速检查后端是否启动（只检查Gateway）
  */
 export async function quickBackendCheck(): Promise<boolean> {
   try {
-    const gatewayStatus = await checkGatewayHealth();
-    return gatewayStatus.status === 'online';
+    // 只检查Gateway，避免过多请求
+    const response = await fetch('http://localhost:8888/healthz', {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'X-Service-Discovery-Check': 'true'
+      },
+      signal: AbortSignal.timeout(3000) // 3秒超时
+    });
+    return response.ok;
   } catch {
     return false;
   }
 }
 
 /**
- * 全面的后端健康检查
+ * 简化的后端健康检查 - 只检查Gateway
  */
 export async function checkBackendHealth(): Promise<BackendHealthStatus> {
-  console.log('[Health Check] 开始检查后端服务状态');
+  console.log('[Health Check] 执行简化健康检查（仅Gateway）');
   
-  // 并发检查所有服务
-  const servicePromises = CORE_SERVICES.map(service => checkServiceHealth(service));
-  const serviceStatuses = await Promise.all(servicePromises);
-  
-  // 分离Gateway和其他服务
-  const gatewayStatus = serviceStatuses.find(s => s.name === 'Gateway') || {
-    name: 'Gateway',
-    url: 'http://localhost:8888',
-    status: 'offline' as const,
-    error: '未找到Gateway状态'
-  };
-  
-  const otherServices = serviceStatuses.filter(s => s.name !== 'Gateway');
-  
-  // 计算整体状态
-  const onlineCount = serviceStatuses.filter(s => s.status === 'online').length;
-  const totalCount = serviceStatuses.length;
-  
-  let overall: 'healthy' | 'degraded' | 'offline';
-  if (gatewayStatus.status === 'offline') {
-    overall = 'offline'; // Gateway离线则整体离线
-  } else if (onlineCount === totalCount) {
-    overall = 'healthy';
-  } else if (onlineCount >= totalCount * 0.7) {
-    overall = 'degraded'; // 70%以上服务在线视为降级
-  } else {
-    overall = 'offline';
+  try {
+    const gatewayStatus = await checkGatewayHealth();
+    
+    // 基于Gateway状态推断其他服务状态
+    const mockServices: ServiceStatus[] = [
+      { name: 'Auth', url: 'http://localhost:8007', status: gatewayStatus.status, response_time: 0 },
+      { name: 'File', url: 'http://localhost:8004', status: gatewayStatus.status, response_time: 0 },
+      { name: 'LightRAG', url: 'http://localhost:8006', status: gatewayStatus.status, response_time: 0 }
+    ];
+    
+    // 计算整体状态
+    const overall = gatewayStatus.status === 'online' ? 'healthy' : 'offline';
+    
+    const result = {
+      gateway: gatewayStatus,
+      services: mockServices,
+      overall,
+      timestamp: new Date().toISOString()
+    };
+    
+    console.log('[Health Check] 后端状态检查完成:', result);
+    return result;
+    
+  } catch (error) {
+    console.error('[Health Check] Gateway检查失败:', error);
+    
+    // 错误情况下返回离线状态
+    const offlineGateway: ServiceStatus = {
+      name: 'Gateway',
+      url: 'http://localhost:8888',
+      status: 'offline',
+      error: error instanceof Error ? error.message : '检查失败'
+    };
+    
+    const offlineServices: ServiceStatus[] = [
+      { name: 'Auth', url: 'http://localhost:8007', status: 'offline', error: '无法连接' },
+      { name: 'File', url: 'http://localhost:8004', status: 'offline', error: '无法连接' },
+      { name: 'LightRAG', url: 'http://localhost:8006', status: 'offline', error: '无法连接' }
+    ];
+    
+    return {
+      gateway: offlineGateway,
+      services: offlineServices,
+      overall: 'offline',
+      timestamp: new Date().toISOString()
+    };
   }
-  
-  const result = {
-    gateway: gatewayStatus,
-    services: otherServices,
-    overall,
-    timestamp: new Date().toISOString()
-  };
-  
-  console.log('[Health Check] 后端状态检查完成:', result);
-  return result;
 }
 
 /**
  * 等待后端服务启动
  */
-export async function waitForBackend(maxWaitTime = 60000, checkInterval = 2000): Promise<boolean> {
+export async function waitForBackend(maxWaitTime = 60000, checkInterval = 10000): Promise<boolean> {
   console.log('[Health Check] 等待后端服务启动...');
   
   const startTime = Date.now();

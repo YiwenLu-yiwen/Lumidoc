@@ -29,7 +29,7 @@ function getServiceUrl(env: any, baseUrl: string, serverUrl?: string): string {
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   // 加载项目根目录的.env文件
-  const env = loadEnv(mode, path.resolve(__dirname, '../..'), '')
+  const env = loadEnv(mode, path.resolve(__dirname, '..'), '')
   
   // 根据DEPLOYMENT_MODE动态配置URL
   const deploymentMode = env.DEPLOYMENT_MODE || 'localhost';

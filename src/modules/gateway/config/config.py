@@ -39,7 +39,7 @@ class GatewaySettings:
         "auth": {
             "url": get_env("AUTH_SERVICE_URL", "http://localhost:8007"),
             "prefix": "/api/auth",
-            "health_check": "/health",
+            "health_check": "/healthz",
             "timeout": 30.0,
             "retries": 3,
             "strip_prefix": True  # 移除前缀后转发到认证服务
@@ -47,7 +47,7 @@ class GatewaySettings:
         "chat": {
             "url": get_env("CHAT_SERVICE_URL", "http://localhost:8001"),
             "prefix": "/chat",
-            "health_check": "/health",
+            "health_check": "/healthz",
             "timeout": 300.0,  # 聊天服务需要更长时间，增加到5分钟
             "retries": 3,
             "retry_interval": 2.0  # 添加重试间隔
@@ -55,7 +55,7 @@ class GatewaySettings:
         "file": {
             "url": get_env("FILE_SERVICE_URL", "http://localhost:8004"),
             "prefix": "/api/file",
-            "health_check": "/health",
+            "health_check": "/healthz",
             "timeout": 60.0,  # 文件上传可能需要更长时间
             "retries": 3,
             "strip_prefix": True  # 移除前缀后转发到文件服务
@@ -63,7 +63,7 @@ class GatewaySettings:
         "fileproc": {
             "url": get_env("FILEPROC_SERVICE_URL", "http://localhost:8005"),
             "prefix": "/fileproc",
-            "health_check": "/health",
+            "health_check": "/healthz",
             "timeout": 300.0,  # 文件处理可能需要更长时间
             "retries": 2,
             "strip_prefix": True  # 添加标记，表示需要移除前缀
@@ -71,14 +71,14 @@ class GatewaySettings:
         "graph": {
             "url": get_env("GRAPH_SERVICE_URL", "http://localhost:8003"),
             "prefix": "/graph",
-            "health_check": "/health",
+            "health_check": "/healthz",
             "timeout": 30.0,
             "retries": 3
         },
         "lightrag": {
             "url": get_env("RAG_SERVICE_URL", "http://localhost:8006"),
             "prefix": "/api/lightrag",
-            "health_check": "/health",
+            "health_check": "/healthz",
             "timeout": 7200.0,  # RAG检索超时时间，2小时适配本地模型
             "retries": 1,     # 本地模型稳定，保持1次重试
             "retry_interval": 2.0,  # 添加重试间隔
@@ -88,7 +88,7 @@ class GatewaySettings:
         "llm": {
             "url": get_env("LLM_SERVICE_URL", "http://localhost:8080"),
             "prefix": "/api/v1/llm",
-            "health_check": "/health",
+            "health_check": "/healthz",
             "timeout": 7200.0,  # LLM处理超时时间，2小时适配本地模型
             "retries": 1,  # 本地模型稳定，保持1次重试
             "strip_prefix": False  # 保持完整路径转发到LLM服务
@@ -96,14 +96,14 @@ class GatewaySettings:
         "monitoring": {
             "url": get_env("MONITORING_SERVICE_URL", "http://localhost:8008"),
             "prefix": "/monitoring",
-            "health_check": "/health",
+            "health_check": "/healthz",
             "timeout": 30.0,
             "retries": 3
         },
         "project": {
             "url": get_env("PROJECT_SERVICE_URL", "http://localhost:8020"),
             "prefix": "/api/projects",  # 匹配前端请求路径
-            "health_check": "/health",
+            "health_check": "/healthz",
             "timeout": 30.0,
             "retries": 3,
             "strip_prefix": False  # 不移除前缀，直接转发完整路径
@@ -111,7 +111,7 @@ class GatewaySettings:
         "question": {
             "url": get_env("QUESTION_SERVICE_URL", "http://localhost:8002"),
             "prefix": "/question",
-            "health_check": "/health",
+            "health_check": "/healthz",
             "timeout": 30.0,
             "retries": 3
         }

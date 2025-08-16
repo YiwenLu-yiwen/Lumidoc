@@ -285,7 +285,7 @@ def register_health_routes(app: FastAPI, checker: HealthChecker):
     # 用于请求限流的计数器和时间
     request_counts = {}
     last_reset_time = datetime.now()
-    max_requests_per_minute = 30  # 每分钟最大请求数
+    max_requests_per_minute = 200  # 每分钟最大请求数，增加以支持前端健康检查
     
     # 添加限流函数
     def should_throttle(client_ip):
