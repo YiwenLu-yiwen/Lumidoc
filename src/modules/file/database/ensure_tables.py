@@ -9,26 +9,27 @@ from ..config.database import FileServiceDatabase
 
 logger = logging.getLogger(__name__)
 
-# 创建项目表
+# 创建项目表 - 使用UUID主键
 CREATE_PROJECTS_TABLE = """
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE IF NOT EXISTS projects (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,
     description TEXT,
-    user_id INTEGER,
+    user_id INTEGER NOT NULL,
     status TEXT DEFAULT 'active',
     project_metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    created_by INTEGER
+    CONSTRAINT unique_user_project_name UNIQUE (user_id, name)
 )
 """
 
-# 创建项目合作者表
+# 创建项目合作者表 - 支持UUID项目ID
 CREATE_PROJECT_COLLABORATORS_TABLE = """
 CREATE TABLE IF NOT EXISTS project_collaborators (
     id SERIAL PRIMARY KEY,
-    project_id INTEGER NOT NULL,
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     user_id INTEGER NOT NULL,
     role TEXT NOT NULL DEFAULT 'viewer',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -37,11 +38,11 @@ CREATE TABLE IF NOT EXISTS project_collaborators (
 )
 """
 
-# 创建问题集表
+# 创建问题集表 - 支持UUID项目ID
 CREATE_QUESTION_SETS_TABLE = """
 CREATE TABLE IF NOT EXISTS question_sets (
     id SERIAL PRIMARY KEY,
-    project_id INTEGER NOT NULL,
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     description TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -65,11 +66,11 @@ CREATE TABLE IF NOT EXISTS questions (
 )
 """
 
-# 创建聊天消息表
+# 创建聊天消息表 - 支持UUID项目ID
 CREATE_CHAT_MESSAGES_TABLE = """
 CREATE TABLE IF NOT EXISTS chat_messages (
     id SERIAL PRIMARY KEY,
-    project_id INTEGER NOT NULL,
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     user_id INTEGER,
     role TEXT NOT NULL,
     content TEXT NOT NULL,
@@ -78,11 +79,11 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 )
 """
 
-# 创建项目文件表
+# 创建项目文件表 - 支持UUID项目ID
 CREATE_PROJECT_FILES_TABLE = """
 CREATE TABLE IF NOT EXISTS project_files (
     id SERIAL PRIMARY KEY,
-    project_id INTEGER NOT NULL,
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     path TEXT NOT NULL,
     size BIGINT NOT NULL,
@@ -145,11 +146,11 @@ CREATE TABLE IF NOT EXISTS tasks (
 )
 """
 
-# 创建项目RAG文件关联表
+# 创建项目RAG文件关联表 - 支持UUID项目ID
 CREATE_PROJECT_RAG_FILES_TABLE = """
 CREATE TABLE IF NOT EXISTS project_rag_files (
     id SERIAL PRIMARY KEY,
-    project_id INTEGER NOT NULL,
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     file_hash TEXT NOT NULL,
     doc_id TEXT NOT NULL,
     selected_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -297,10 +298,10 @@ async def ensure_project_files_table_structure(conn):
         
         logger.info(f"当前project_files表列: {', '.join(column_names)}")
         
-        # 定义必要的列及其类型
+        # 定义必要的列及其类型 - 更新为UUID项目ID
         required_columns = {
             'id': 'SERIAL PRIMARY KEY',
-            'project_id': 'INTEGER NOT NULL',
+            'project_id': 'UUID NOT NULL',
             'name': 'TEXT NOT NULL',
             'path': 'TEXT NOT NULL', 
             'size': 'BIGINT NOT NULL',
