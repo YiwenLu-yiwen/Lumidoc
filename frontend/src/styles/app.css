@@ -3,6 +3,48 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 自定义动画 - 登录成功体验增强 */
+@keyframes bounce-once {
+  0%, 20%, 50%, 80%, 100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-8px);
+  }
+  60% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+@keyframes fade-slide-in {
+  0% {
+    opacity: 0;
+    transform: translateX(100px) scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+.animate-bounce-once {
+  animation: bounce-once 0.8s ease-out;
+}
+
+.animate-shake {
+  animation: shake 0.5s ease-in-out;
+}
+
+.animate-fade-slide-in {
+  animation: fade-slide-in 0.6s ease-out;
+}
+
 /* 聊天布局样式修复 */
 .chat-container {
   padding-bottom: 80px;

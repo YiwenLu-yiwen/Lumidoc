@@ -481,7 +481,7 @@ export default function ProjectSelect() {
                                 <div>
                                   <h3 className={`font-semibold text-lg ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{project.name}</h3>
                                   <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                                    {currentLanguage === 'zh-CN' ? '项目ID' : 'Project ID'}: {project.id.slice(0, 8)}...
+                                    {currentLanguage === 'zh-CN' ? '项目ID' : 'Project ID'}: {String(project.id).slice(0, 8)}...
                                   </p>
                                 </div>
                               </div>

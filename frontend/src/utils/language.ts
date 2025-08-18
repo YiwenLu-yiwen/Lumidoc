@@ -37,11 +37,25 @@ const languageMap: { [key: string]: string } = {
 };
 
 // 自动检测浏览器语言
+// 缓存检测到的语言，避免频繁调用
+let cachedLanguage: string | null = null;
+let lastCheckTime = 0;
+const CACHE_DURATION = 30000; // 30秒缓存
+
 export function detectBrowserLanguage(): string {
+  const now = Date.now();
+  
+  // 如果有缓存且未过期，直接返回缓存结果
+  if (cachedLanguage && (now - lastCheckTime) < CACHE_DURATION) {
+    return cachedLanguage;
+  }
+
   // 优先从 localStorage 获取用户设置的语言
   const savedLanguage = localStorage.getItem('stp_language');
   if (savedLanguage && supportedLanguages.some(lang => lang.code === savedLanguage)) {
     console.log('🔍 使用localStorage语言:', savedLanguage);
+    cachedLanguage = savedLanguage;
+    lastCheckTime = now;
     return savedLanguage;
   }
 
@@ -57,6 +71,8 @@ export function detectBrowserLanguage(): string {
     // 直接匹配
     if (languageMap[browserLang]) {
       console.log('🎯 匹配语言:', browserLang, '->', languageMap[browserLang]);
+      cachedLanguage = languageMap[browserLang];
+      lastCheckTime = now;
       return languageMap[browserLang];
     }
     
@@ -64,13 +80,23 @@ export function detectBrowserLanguage(): string {
     const langPrefix = browserLang.split('-')[0];
     if (languageMap[langPrefix]) {
       console.log('🎯 前缀匹配:', langPrefix, '->', languageMap[langPrefix]);
+      cachedLanguage = languageMap[langPrefix];
+      lastCheckTime = now;
       return languageMap[langPrefix];
     }
   }
 
   // 默认返回中文
   console.log('🔄 使用默认语言: zh-CN');
+  cachedLanguage = 'zh-CN';
+  lastCheckTime = now;
   return 'zh-CN';
+}
+
+// 清除语言缓存的函数，当用户手动切换语言时调用
+export function clearLanguageCache(): void {
+  cachedLanguage = null;
+  lastCheckTime = 0;
 }
 
 // 根据时间自动判断主题
@@ -84,6 +110,8 @@ export function detectAutoTheme(): 'light' | 'dark' {
 // 保存语言设置
 export function saveLanguage(languageCode: string) {
   localStorage.setItem('stp_language', languageCode);
+  // 清除缓存，强制重新检测
+  clearLanguageCache();
 }
 
 // 多语言文本
@@ -188,6 +216,22 @@ export const translations = {
     pleaseEnterPassword: '请输入密码',
     passwordMinLength: '密码至少需要6位',
     pleaseEnterUsername: '请输入用户名',
+    usernameMinLength: '用户名至少4位字符',
+    passwordRequirementsNotMet: '密码不符合要求',
+    passwordStrengthRequirements: '密码强度要求：',
+    atLeastSixCharacters: '至少6位字符',
+    containsLetters: '包含字母',
+    containsNumbers: '包含数字',
+    // 登录错误提示
+    loginFailedCheckCredentials: '登录失败，请检查邮箱和密码',
+    loginSuccess: '登录成功！正在跳转...',
+    registerSuccess: '注册成功！正在跳转...',
+    accountOrPasswordIncorrect: '账号或密码错误',
+    loginResponseIncomplete: '登录响应数据不完整，请重试',
+    registrationFailed: '注册失败，请重试',
+    userExistsOrInvalidInput: '用户已存在或输入信息有误',
+    serverError: '服务器错误，请稍后重试',
+    networkError: '网络连接失败，请检查网络',
     // 项目界面翻译
     projectIdNotExist: '项目ID不存在',
     loadingProjectInfo: '加载项目信息...',
@@ -498,6 +542,22 @@ export const translations = {
     pleaseEnterPassword: 'Please enter password',
     passwordMinLength: 'Password must be at least 6 characters',
     pleaseEnterUsername: 'Please enter username',
+    usernameMinLength: 'Username must be at least 4 characters',
+    passwordRequirementsNotMet: 'Password does not meet requirements',
+    passwordStrengthRequirements: 'Password strength requirements:',
+    atLeastSixCharacters: 'At least 6 characters',
+    containsLetters: 'Contains letters',
+    containsNumbers: 'Contains numbers',
+    // 登录错误提示
+    loginFailedCheckCredentials: 'Login failed, please check your email and password',
+    loginSuccess: 'Login successful! Redirecting...',
+    registerSuccess: 'Registration successful! Redirecting...',
+    accountOrPasswordIncorrect: 'Account or password incorrect',
+    loginResponseIncomplete: 'Login response data incomplete, please retry',
+    registrationFailed: 'Registration failed, please try again',
+    userExistsOrInvalidInput: 'User exists or invalid input',
+    serverError: 'Server error, please try again later',
+    networkError: 'Network connection failed, please check your connection',
     // 项目界面翻译
     projectIdNotExist: 'Project ID does not exist',
     loadingProjectInfo: 'Loading project information...',
@@ -755,7 +815,46 @@ export const translations = {
     manageAccountInfo: 'アカウント情報と設定を管理',
     configureNotifications: 'メッセージ通知とリマインダー方法を設定',
     managePasswords: 'パスワード、APIキー、セキュリティオプションを管理',
-    importExportData: 'データのインポート・エクスポート、ストレージ領域の管理'
+    importExportData: 'データのインポート・エクスポート、ストレージ領域の管理',
+    // 登録ログイン画面翻訳
+    login: 'ログイン',
+    email: 'メール',
+    password: 'パスワード',
+    loginButton: 'ログイン',
+    register: '登録',
+    forgotPassword: 'パスワードを忘れましたか？',
+    username: 'ユーザー名',
+    emailAddress: 'メールアドレス',
+    enterUsername: 'ユーザー名を入力',
+    enterEmail: 'メールアドレスを入力',
+    enterPassword: 'パスワードを入力',
+    loginLoading: 'ログイン中...',
+    registerLoading: '登録中...',
+    noAccount: 'アカウントをお持ちでないですか？',
+    hasAccount: 'すでにアカウントをお持ちですか？',
+    registerNow: '今すぐ登録',
+    loginNow: '今すぐログイン',
+    pleaseEnterEmail: 'メールアドレスを入力してください',
+    pleaseEnterValidEmail: '有効なメールアドレスを入力してください',
+    pleaseEnterPassword: 'パスワードを入力してください',
+    passwordMinLength: 'パスワードは少なくとも6文字である必要があります',
+    pleaseEnterUsername: 'ユーザー名を入力してください',
+    usernameMinLength: 'ユーザー名は少なくとも4文字である必要があります',
+    passwordRequirementsNotMet: 'パスワードが要件を満たしていません',
+    passwordStrengthRequirements: 'パスワード強度要件：',
+    atLeastSixCharacters: '少なくとも6文字',
+    containsLetters: '文字を含む',
+    containsNumbers: '数字を含む',
+    // ログイン成功メッセージ
+    loginFailedCheckCredentials: 'ログインに失敗しました。メールアドレスとパスワードを確認してください',
+    loginSuccess: 'ログイン成功！リダイレクト中...',
+    registerSuccess: '登録成功！リダイレクト中...',
+    accountOrPasswordIncorrect: 'アカウントまたはパスワードが正しくありません',
+    loginResponseIncomplete: 'ログイン応答データが不完全です。再試行してください',
+    registrationFailed: '登録に失敗しました。再試行してください',
+    userExistsOrInvalidInput: 'ユーザーが存在するか、入力が無効です',
+    serverError: 'サーバーエラー、後でもう一度お試しください',
+    networkError: 'ネットワーク接続に失敗しました。接続を確認してください'
   },
   'ko-KR': {
     newChat: '새 채팅',
@@ -804,7 +903,46 @@ export const translations = {
     manageAccountInfo: '계정 정보 및 환경 설정 관리',
     configureNotifications: '메시지 알림 및 리마인더 방법 구성',
     managePasswords: '비밀번호, API 키 및 보안 옵션 관리',
-    importExportData: '데이터 가져오기/내보내기, 저장 공간 관리'
+    importExportData: '데이터 가져오기/내보내기, 저장 공간 관리',
+    // 로그인 회원가입 화면 번역
+    login: '로그인',
+    email: '이메일',
+    password: '비밀번호',
+    loginButton: '로그인',
+    register: '회원가입',
+    forgotPassword: '비밀번호를 잊으셨나요?',
+    username: '사용자명',
+    emailAddress: '이메일 주소',
+    enterUsername: '사용자명 입력',
+    enterEmail: '이메일 주소 입력',
+    enterPassword: '비밀번호 입력',
+    loginLoading: '로그인 중...',
+    registerLoading: '회원가입 중...',
+    noAccount: '계정이 없으신가요?',
+    hasAccount: '이미 계정이 있으신가요?',
+    registerNow: '지금 회원가입',
+    loginNow: '지금 로그인',
+    pleaseEnterEmail: '이메일 주소를 입력해주세요',
+    pleaseEnterValidEmail: '유효한 이메일 주소를 입력해주세요',
+    pleaseEnterPassword: '비밀번호를 입력해주세요',
+    passwordMinLength: '비밀번호는 최소 6자 이상이어야 합니다',
+    pleaseEnterUsername: '사용자명을 입력해주세요',
+    usernameMinLength: '사용자명은 최소 4자 이상이어야 합니다',
+    passwordRequirementsNotMet: '비밀번호가 요구사항을 충족하지 않습니다',
+    passwordStrengthRequirements: '비밀번호 강도 요구사항:',
+    atLeastSixCharacters: '최소 6자',
+    containsLetters: '문자 포함',
+    containsNumbers: '숫자 포함',
+    // 로그인 성공 메시지
+    loginFailedCheckCredentials: '로그인 실패, 이메일과 비밀번호를 확인해주세요',
+    loginSuccess: '로그인 성공! 리디렉션 중...',
+    registerSuccess: '회원가입 성공! 리디렉션 중...',
+    accountOrPasswordIncorrect: '계정 또는 비밀번호가 틀렸습니다',
+    loginResponseIncomplete: '로그인 응답 데이터가 불완전합니다. 다시 시도해주세요',
+    registrationFailed: '회원가입 실패, 다시 시도해주세요',
+    userExistsOrInvalidInput: '사용자가 존재하거나 입력이 유효하지 않습니다',
+    serverError: '서버 오류, 나중에 다시 시도해주세요',
+    networkError: '네트워크 연결 실패, 연결을 확인해주세요'
   },
   'fr-FR': {
     newChat: 'Nouveau Chat',
@@ -853,7 +991,46 @@ export const translations = {
     manageAccountInfo: 'Gérer les informations de votre compte et les préférences',
     configureNotifications: 'Configurer les notifications de messages et les méthodes de rappel',
     managePasswords: 'Gérer les mots de passe, les clés API et les options de sécurité',
-    importExportData: 'Importer et exporter des données, gérer l\'espace de stockage'
+    importExportData: 'Importer et exporter des données, gérer l\'espace de stockage',
+    // Traductions d'écran de connexion et d'inscription
+    login: 'Connexion',
+    email: 'Email',
+    password: 'Mot de passe',
+    loginButton: 'Connexion',
+    register: 'S\'inscrire',
+    forgotPassword: 'Mot de passe oublié ?',
+    username: 'Nom d\'utilisateur',
+    emailAddress: 'Adresse email',
+    enterUsername: 'Entrer le nom d\'utilisateur',
+    enterEmail: 'Entrer l\'adresse email',
+    enterPassword: 'Entrer le mot de passe',
+    loginLoading: 'Connexion en cours...',
+    registerLoading: 'Inscription en cours...',
+    noAccount: 'Vous n\'avez pas de compte ?',
+    hasAccount: 'Vous avez déjà un compte ?',
+    registerNow: 'S\'inscrire maintenant',
+    loginNow: 'Se connecter maintenant',
+    pleaseEnterEmail: 'Veuillez entrer l\'adresse email',
+    pleaseEnterValidEmail: 'Veuillez entrer une adresse email valide',
+    pleaseEnterPassword: 'Veuillez entrer le mot de passe',
+    passwordMinLength: 'Le mot de passe doit comporter au moins 6 caractères',
+    pleaseEnterUsername: 'Veuillez entrer le nom d\'utilisateur',
+    usernameMinLength: 'Le nom d\'utilisateur doit comporter au moins 4 caractères',
+    passwordRequirementsNotMet: 'Le mot de passe ne satisfait pas aux exigences',
+    passwordStrengthRequirements: 'Exigences de force du mot de passe :',
+    atLeastSixCharacters: 'Au moins 6 caractères',
+    containsLetters: 'Contient des lettres',
+    containsNumbers: 'Contient des chiffres',
+    // Messages de succès de connexion
+    loginFailedCheckCredentials: 'Échec de la connexion, veuillez vérifier votre email et mot de passe',
+    loginSuccess: 'Connexion réussie ! Redirection en cours...',
+    registerSuccess: 'Inscription réussie ! Redirection en cours...',
+    accountOrPasswordIncorrect: 'Compte ou mot de passe incorrect',
+    loginResponseIncomplete: 'Données de réponse de connexion incomplètes, veuillez réessayer',
+    registrationFailed: 'Échec de l\'inscription, veuillez réessayer',
+    userExistsOrInvalidInput: 'L\'utilisateur existe ou entrée invalide',
+    serverError: 'Erreur serveur, veuillez réessayer plus tard',
+    networkError: 'Échec de la connexion réseau, veuillez vérifier votre connexion'
   },
   'de-DE': {
     newChat: 'Neuer Chat',
@@ -902,7 +1079,46 @@ export const translations = {
     manageAccountInfo: 'Ihre Kontoinformationen und Einstellungen verwalten',
     configureNotifications: 'Nachrichten-Benachrichtigungen und Erinnerungsmethoden konfigurieren',
     managePasswords: 'Passwörter, API-Schlüssel und Sicherheitsoptionen verwalten',
-    importExportData: 'Daten importieren und exportieren, Speicherplatz verwalten'
+    importExportData: 'Daten importieren und exportieren, Speicherplatz verwalten',
+    // Anmelde- und Registrierungsbildschirmübersetzungen
+    login: 'Anmeldung',
+    email: 'E-Mail',
+    password: 'Passwort',
+    loginButton: 'Anmeldung',
+    register: 'Registrieren',
+    forgotPassword: 'Passwort vergessen?',
+    username: 'Benutzername',
+    emailAddress: 'E-Mail-Adresse',
+    enterUsername: 'Benutzername eingeben',
+    enterEmail: 'E-Mail-Adresse eingeben',
+    enterPassword: 'Passwort eingeben',
+    loginLoading: 'Anmeldung läuft...',
+    registerLoading: 'Registrierung läuft...',
+    noAccount: 'Haben Sie noch kein Konto?',
+    hasAccount: 'Haben Sie bereits ein Konto?',
+    registerNow: 'Jetzt registrieren',
+    loginNow: 'Jetzt anmelden',
+    pleaseEnterEmail: 'Bitte geben Sie Ihre E-Mail-Adresse ein',
+    pleaseEnterValidEmail: 'Bitte geben Sie eine gültige E-Mail-Adresse ein',
+    pleaseEnterPassword: 'Bitte geben Sie Ihr Passwort ein',
+    passwordMinLength: 'Das Passwort muss mindestens 6 Zeichen lang sein',
+    pleaseEnterUsername: 'Bitte geben Sie den Benutzernamen ein',
+    usernameMinLength: 'Der Benutzername muss mindestens 4 Zeichen lang sein',
+    passwordRequirementsNotMet: 'Das Passwort erfüllt nicht die Anforderungen',
+    passwordStrengthRequirements: 'Passwort-Stärke-Anforderungen:',
+    atLeastSixCharacters: 'Mindestens 6 Zeichen',
+    containsLetters: 'Enthält Buchstaben',
+    containsNumbers: 'Enthält Zahlen',
+    // Anmeldeerfolgsmeldungen
+    loginFailedCheckCredentials: 'Anmeldung fehlgeschlagen, bitte überprüfen Sie Ihre E-Mail und Passwort',
+    loginSuccess: 'Anmeldung erfolgreich! Umleitung läuft...',
+    registerSuccess: 'Registrierung erfolgreich! Umleitung läuft...',
+    accountOrPasswordIncorrect: 'Konto oder Passwort falsch',
+    loginResponseIncomplete: 'Anmelderesponse-Daten unvollständig, bitte versuchen Sie es erneut',
+    registrationFailed: 'Registrierung fehlgeschlagen, bitte versuchen Sie es erneut',
+    userExistsOrInvalidInput: 'Benutzer existiert oder ungültige Eingabe',
+    serverError: 'Server-Fehler, bitte versuchen Sie es später erneut',
+    networkError: 'Netzwerkverbindung fehlgeschlagen, bitte überprüfen Sie Ihre Verbindung'
   },
   'es-ES': {
     newChat: 'Nuevo Chat',
@@ -951,7 +1167,46 @@ export const translations = {
     manageAccountInfo: 'Administrar la información de su cuenta y preferencias',
     configureNotifications: 'Configurar notificaciones de mensajes y métodos de recordatorio',
     managePasswords: 'Administrar contraseñas, claves API y opciones de seguridad',
-    importExportData: 'Importar y exportar datos, administrar espacio de almacenamiento'
+    importExportData: 'Importar y exportar datos, administrar espacio de almacenamiento',
+    // Traducciones de pantalla de inicio de sesión y registro
+    login: 'Iniciar Sesión',
+    email: 'Correo Electrónico',
+    password: 'Contraseña',
+    loginButton: 'Iniciar Sesión',
+    register: 'Registrarse',
+    forgotPassword: '¿Olvidó su contraseña?',
+    username: 'Nombre de Usuario',
+    emailAddress: 'Dirección de Correo Electrónico',
+    enterUsername: 'Ingrese nombre de usuario',
+    enterEmail: 'Ingrese dirección de correo electrónico',
+    enterPassword: 'Ingrese contraseña',
+    loginLoading: 'Iniciando sesión...',
+    registerLoading: 'Registrándose...',
+    noAccount: '¿No tiene una cuenta?',
+    hasAccount: '¿Ya tiene una cuenta?',
+    registerNow: 'Registrarse ahora',
+    loginNow: 'Iniciar sesión ahora',
+    pleaseEnterEmail: 'Por favor ingrese la dirección de correo electrónico',
+    pleaseEnterValidEmail: 'Por favor ingrese una dirección de correo electrónico válida',
+    pleaseEnterPassword: 'Por favor ingrese la contraseña',
+    passwordMinLength: 'La contraseña debe tener al menos 6 caracteres',
+    pleaseEnterUsername: 'Por favor ingrese el nombre de usuario',
+    usernameMinLength: 'El nombre de usuario debe tener al menos 4 caracteres',
+    passwordRequirementsNotMet: 'La contraseña no cumple con los requisitos',
+    passwordStrengthRequirements: 'Requisitos de fortaleza de contraseña:',
+    atLeastSixCharacters: 'Al menos 6 caracteres',
+    containsLetters: 'Contiene letras',
+    containsNumbers: 'Contiene números',
+    // Mensajes de éxito de inicio de sesión
+    loginFailedCheckCredentials: 'Error de inicio de sesión, verifique su correo electrónico y contraseña',
+    loginSuccess: '¡Inicio de sesión exitoso! Redirigiendo...',
+    registerSuccess: '¡Registro exitoso! Redirigiendo...',
+    accountOrPasswordIncorrect: 'Cuenta o contraseña incorrecta',
+    loginResponseIncomplete: 'Datos de respuesta de inicio de sesión incompletos, intente nuevamente',
+    registrationFailed: 'Error de registro, intente nuevamente',
+    userExistsOrInvalidInput: 'El usuario existe o entrada inválida',
+    serverError: 'Error del servidor, intente nuevamente más tarde',
+    networkError: 'Error de conexión de red, verifique su conexión'
   }
 };
 

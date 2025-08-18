@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Depends, APIRouter, Query, Path as F
 from src.shared.health_check import get_system_info, ServiceStatus, HealthResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Dict, Any, Optional, Union
+import uuid
 from datetime import datetime
 from src.database import get_db
 from sqlalchemy.orm import Session
@@ -60,7 +61,7 @@ class ProjectPermissionResponse(BaseModel):
 class ProjectFile(FileInfo):
     """项目文件响应模型"""
     id: int  # 文件ID
-    project_id: int  # 项目ID
+    project_id: str  # 项目ID (UUID)
     file_metadata: Optional[Dict[str, Any]] = None  # 文件元数据
     type: Optional[str] = None  # 文件类型，使用数据库字段
     
@@ -124,8 +125,8 @@ class ProjectService:
             self.db.refresh(db_project)
             logger.info(f"Project created successfully with ID: {db_project.id}")
             
-            # 创建项目目录
-            project_id = str(db_project.id)
+            # 创建项目目录 - ID已经是UUID字符串
+            project_id_str = str(db_project.id)
             upload_dir = os.environ.get("UPLOAD_DIR", "./uploads")
             
             # 确保uploads基础目录存在
@@ -135,7 +136,7 @@ class ProjectService:
                 base_dir.mkdir(parents=True, exist_ok=True)
             
             # 创建项目特定目录
-            project_dir = base_dir / project_id
+            project_dir = base_dir / project_id_str
             logger.info(f"准备创建项目目录: {project_dir}")
             
             try:
@@ -160,7 +161,7 @@ class ProjectService:
             updated_at_str = db_project.updated_at.isoformat() if db_project.updated_at else None
             
             return ProjectResponse(
-                id=db_project.id,
+                id=str(db_project.id),  # 将UUID转换为字符串
                 name=db_project.name,
                 description=db_project.description,
                 status=ProjectStatus(db_project.status),
@@ -196,7 +197,7 @@ class ProjectService:
             # 转换为ProjectResponse对象列表
             return [
                 ProjectResponse(
-                    id=project.id,
+                    id=str(project.id),
                     name=project.name,
                     description=project.description,
                     status=ProjectStatus(project.status),
@@ -211,12 +212,12 @@ class ProjectService:
             raise
 
     @dedupe_task(task_name="get_project")
-    async def get_project(self, project_id: int, user_id: int) -> ProjectResponse:
+    async def get_project(self, project_id: str, user_id: int) -> ProjectResponse:
         """获取项目详情"""
         logger.info(f"Getting project details for project_id={project_id}, user_id={user_id}")
         try:
             project = self.db.query(DBProject).filter(
-                DBProject.id == project_id,
+                DBProject.id == uuid.UUID(project_id),
                 DBProject.user_id == user_id
             ).first()
             if not project:
@@ -226,7 +227,7 @@ class ProjectService:
             
             # 转换为ProjectResponse对象
             return ProjectResponse(
-                id=project.id,
+                id=str(project.id),
                 name=project.name,
                 description=project.description,
                 status=ProjectStatus(project.status),
@@ -240,12 +241,12 @@ class ProjectService:
             raise
 
     @dedupe_task(task_name="update_project")
-    async def update_project(self, project_id: int, project: ProjectUpdate, user_id: int) -> ProjectResponse:
+    async def update_project(self, project_id: str, project: ProjectUpdate, user_id: int) -> ProjectResponse:
         """更新项目信息"""
         logger.info(f"Updating project {project_id} for user {user_id}")
         try:
             db_project = self.db.query(DBProject).filter(
-                DBProject.id == project_id,
+                DBProject.id == uuid.UUID(project_id),
                 DBProject.user_id == user_id
             ).first()
             if not db_project:
@@ -264,7 +265,7 @@ class ProjectService:
             
             # 转换为ProjectResponse对象
             return ProjectResponse(
-                id=db_project.id,
+                id=str(db_project.id),
                 name=db_project.name,
                 description=db_project.description,
                 status=ProjectStatus(db_project.status),
@@ -279,13 +280,13 @@ class ProjectService:
             raise
 
     @dedupe_task(task_name="delete_project")
-    async def delete_project(self, project_id: int, user_id: int) -> None:
+    async def delete_project(self, project_id: str, user_id: int) -> None:
         """删除项目及其相关资源"""
         logger.info(f"Deleting project {project_id} for user {user_id}")
         try:
             # 删除项目数据，增加用户ID验证
             project = self.db.query(DBProject).filter(
-                DBProject.id == project_id,
+                DBProject.id == uuid.UUID(project_id),
                 DBProject.user_id == user_id
             ).first()
             if not project:
@@ -294,8 +295,8 @@ class ProjectService:
             
             # 删除项目文件
             logger.debug(f"Deleting files for project {project_id}")
-            file_count = self.db.query(DBProjectFile).filter(DBProjectFile.project_id == project_id).count()
-            self.db.query(DBProjectFile).filter(DBProjectFile.project_id == project_id).delete()
+            file_count = self.db.query(DBProjectFile).filter(DBProjectFile.project_id == uuid.UUID(project_id)).count()
+            self.db.query(DBProjectFile).filter(DBProjectFile.project_id == uuid.UUID(project_id)).delete()
             logger.info(f"Deleted {file_count} files from project {project_id}")
             
             # 删除项目
@@ -311,20 +312,20 @@ class ProjectService:
             self.db.rollback()
             raise
 
-    async def get_project_files(self, project_id: int, user_id: int) -> List[ProjectFile]:
+    async def get_project_files(self, project_id: str, user_id: int) -> List[ProjectFile]:
         """获取项目文件列表"""
         logger.info(f"Getting files for project {project_id}, user {user_id}")
         try:
             # 验证项目归属
             project = self.db.query(DBProject).filter(
-                DBProject.id == project_id,
+                DBProject.id == uuid.UUID(project_id),
                 DBProject.user_id == user_id
             ).first()
             if not project:
                 logger.warning(f"Project {project_id} not found for user {user_id}")
                 raise HTTPException(status_code=404, detail="Project not found")
                 
-            files = self.db.query(DBProjectFile).filter(DBProjectFile.project_id == project_id).all()
+            files = self.db.query(DBProjectFile).filter(DBProjectFile.project_id == uuid.UUID(project_id)).all()
             logger.info(f"Found {len(files)} files for project {project_id}")
             return files
         except Exception as e:
@@ -332,7 +333,7 @@ class ProjectService:
             logger.error(traceback.format_exc())
             raise
 
-    async def _cleanup_project_resources(self, project_id: int):
+    async def _cleanup_project_resources(self, project_id: str):
         """清理项目相关的资源"""
         logger.info(f"Cleaning up resources for project {project_id}")
         
@@ -360,20 +361,20 @@ class ProjectService:
         except Exception as e:
             logger.error(f"Error deleting chat sessions for project {project_id}: {e}")
 
-    async def get_project_rag_files(self, project_id: int, user_id: int) -> List[RagFileStatus]:
+    async def get_project_rag_files(self, project_id: str, user_id: int) -> List[RagFileStatus]:
         """获取项目RAG文件状态列表"""
         logger.info(f"Getting RAG files status for project {project_id}, user {user_id}")
         try:
             # 验证项目归属
             project = self.db.query(DBProject).filter(
-                DBProject.id == project_id,
+                DBProject.id == uuid.UUID(project_id),
                 DBProject.user_id == user_id
             ).first()
             if not project:
                 logger.warning(f"Project {project_id} not found for user {user_id}")
                 raise HTTPException(status_code=404, detail="Project not found")
                 
-            files = self.db.query(DBProjectFile).filter(DBProjectFile.project_id == project_id).all()
+            files = self.db.query(DBProjectFile).filter(DBProjectFile.project_id == uuid.UUID(project_id)).all()
             logger.info(f"Found {len(files)} files for project {project_id}")
             
             # 转换为RAG文件状态响应
@@ -400,7 +401,7 @@ class ProjectService:
 
     async def update_file_rag_status(
         self, 
-        project_id: int, 
+        project_id: str, 
         file_id: int, 
         user_id: int, 
         status_update: RagFileUpdate
@@ -410,7 +411,7 @@ class ProjectService:
         try:
             # 验证项目归属
             project = self.db.query(DBProject).filter(
-                DBProject.id == project_id,
+                DBProject.id == uuid.UUID(project_id),
                 DBProject.user_id == user_id
             ).first()
             if not project:
@@ -420,7 +421,7 @@ class ProjectService:
             # 查找文件
             file = self.db.query(DBProjectFile).filter(
                 DBProjectFile.id == file_id,
-                DBProjectFile.project_id == project_id
+                DBProjectFile.project_id == uuid.UUID(project_id)
             ).first()
             if not file:
                 logger.warning(f"File {file_id} not found in project {project_id}")
@@ -524,7 +525,7 @@ async def get_projects(
         result = []
         for project in projects:
             result.append(ProjectResponse(
-                id=project.id,
+                id=str(project.id),
                 name=project.name,
                 description=project.description,
                 status=ProjectStatus(project.status),
@@ -540,7 +541,7 @@ async def get_projects(
 
 @router.get("/projects/{project_id}", response_model=ProjectResponse)
 async def get_project(
-    project_id: int = FastAPIPath(..., description="项目ID"),
+    project_id: str = FastAPIPath(..., description="项目ID (UUID)"),
     user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -581,7 +582,7 @@ async def create_project(
 @router.put("/projects/{project_id}", response_model=ProjectResponse)
 async def update_project(
     project: ProjectUpdate,
-    project_id: int = FastAPIPath(..., description="项目ID"),
+    project_id: str = FastAPIPath(..., description="项目ID (UUID)"),
     user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -601,7 +602,7 @@ async def update_project(
 # 添加删除项目的路由
 @router.delete("/projects/{project_id}", response_model=dict)
 async def delete_project(
-    project_id: int = FastAPIPath(..., description="项目ID"),
+    project_id: str = FastAPIPath(..., description="项目ID (UUID)"),
     user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -621,7 +622,7 @@ async def delete_project(
 
 # 添加OPTIONS支持，确保CORS预检请求能够正确处理
 @router.options("/projects/{project_id}")
-async def options_project(project_id: int = FastAPIPath(..., description="项目ID")):
+async def options_project(project_id: str = FastAPIPath(..., description="项目ID (UUID)")):
     """处理项目的OPTIONS预检请求"""
     return {"message": "OK"}
 
@@ -633,7 +634,7 @@ async def options_projects():
 # 添加RAG文件相关路由
 @router.get("/projects/{project_id}/lightrag/files", response_model=List[RagFileStatus])
 async def get_project_lightrag_files(
-    project_id: int = FastAPIPath(..., description="项目ID"),
+    project_id: str = FastAPIPath(..., description="项目ID (UUID)"),
     user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -653,7 +654,7 @@ async def get_project_lightrag_files(
 @router.put("/projects/{project_id}/lightrag/files/{file_id}", response_model=RagFileStatus)
 async def update_file_lightrag_status(
     status_update: RagFileUpdate,
-    project_id: int = FastAPIPath(..., description="项目ID"),
+    project_id: str = FastAPIPath(..., description="项目ID (UUID)"),
     file_id: int = FastAPIPath(..., description="文件ID"),
     user=Depends(get_current_user),
     db: Session = Depends(get_db)

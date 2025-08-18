@@ -30,7 +30,7 @@ class ProjectUpdate(ProjectBase):
 
 class ProjectResponse(ProjectBase):
     """项目响应模型"""
-    id: int
+    id: str  # 修改为 str 类型以支持 UUID
     status: ProjectStatus
     project_metadata: dict = {}
     created_at: str

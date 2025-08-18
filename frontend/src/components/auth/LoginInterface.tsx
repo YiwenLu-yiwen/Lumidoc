@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Eye, EyeOff, Mail, Lock, User } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Eye, EyeOff, Mail, Lock, User, Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { detectBrowserLanguage, getTranslation } from '@/utils/language';
@@ -20,11 +20,13 @@ export function LoginInterface({ onLogin, onRegister, isLoading = false }: Login
     username: ''
   });
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const [validationStatus, setValidationStatus] = useState<{ [key: string]: boolean }>({});
   
   // 重置错误状态当切换模式时
   const switchMode = (mode: boolean) => {
     setIsLoginMode(mode);
     setErrors({});
+    setValidationStatus({});
     setFormData({ email: '', password: '', username: '' });
   };
 
@@ -36,6 +38,85 @@ export function LoginInterface({ onLogin, onRegister, isLoading = false }: Login
   const t = (key: keyof typeof import('@/utils/language').translations['zh-CN']) => {
     return getTranslation(currentLanguage, key);
   };
+
+  // 密码强度检查规则 - 在t函数定义后
+  const passwordRules = [
+    { key: 'length', test: (pwd: string) => pwd.length >= 6, label: t('atLeastSixCharacters') },
+    { key: 'letter', test: (pwd: string) => /[a-zA-Z]/.test(pwd), label: t('containsLetters') },
+    { key: 'number', test: (pwd: string) => /\d/.test(pwd), label: t('containsNumbers') },
+  ];
+
+  // 实时验证函数
+  const validateField = (field: string, value: string) => {
+    const newErrors = { ...errors };
+    const newValidationStatus = { ...validationStatus };
+
+    switch (field) {
+      case 'email':
+        if (!value) {
+          newErrors.email = t('pleaseEnterEmail');
+          newValidationStatus.email = false;
+        } else if (!/\S+@\S+\.\S+/.test(value)) {
+          newErrors.email = t('pleaseEnterValidEmail');
+          newValidationStatus.email = false;
+        } else {
+          delete newErrors.email;
+          newValidationStatus.email = true;
+        }
+        break;
+      
+      case 'username':
+        if (!isLoginMode) {
+          if (!value) {
+            newErrors.username = t('pleaseEnterUsername');
+            newValidationStatus.username = false;
+          } else if (value.length < 4) {
+            newErrors.username = t('usernameMinLength');
+            newValidationStatus.username = false;
+          } else {
+            delete newErrors.username;
+            newValidationStatus.username = true;
+          }
+        }
+        break;
+      
+      case 'password':
+        if (!value) {
+          newErrors.password = t('pleaseEnterPassword');
+          newValidationStatus.password = false;
+        } else if (!isLoginMode) {
+          // 注册模式下检查密码强度
+          const failedRules = passwordRules.filter(rule => !rule.test(value));
+          if (failedRules.length > 0) {
+            newErrors.password = `${t('passwordRequirementsNotMet')}：${failedRules.map(r => r.label).join('、')}`;
+            newValidationStatus.password = false;
+          } else {
+            delete newErrors.password;
+            newValidationStatus.password = true;
+          }
+        } else if (value.length < 6) {
+          newErrors.password = t('passwordMinLength');
+          newValidationStatus.password = false;
+        } else {
+          delete newErrors.password;
+          newValidationStatus.password = true;
+        }
+        break;
+    }
+
+    setErrors(newErrors);
+    setValidationStatus(newValidationStatus);
+  };
+
+  // 实时检查输入
+  useEffect(() => {
+    if (!isLoginMode) {
+      // 注册模式下实时验证所有字段
+      validateField('email', formData.email);
+      validateField('username', formData.username);
+      validateField('password', formData.password);
+    }
+  }, [formData, isLoginMode]);
 
   // 表单验证
   const validateForm = () => {
@@ -77,10 +158,8 @@ export function LoginInterface({ onLogin, onRegister, isLoading = false }: Login
   // 更新表单数据
   const updateFormData = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
-    // 清除对应字段的错误
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
-    }
+    // 实时验证
+    setTimeout(() => validateField(field, value), 100);
   };
 
   return (
@@ -137,10 +216,21 @@ export function LoginInterface({ onLogin, onRegister, isLoading = false }: Login
                   type="text"
                   value={formData.username}
                   onChange={(e) => updateFormData('username', e.target.value)}
-                  className={`pl-10 ${isDarkMode ? 'bg-gray-600 border-gray-500 text-white placeholder-gray-300' : 'bg-white border-gray-300'}`}
+                  className={`pl-10 pr-10 ${isDarkMode ? 'bg-gray-600 border-gray-500 text-white placeholder-gray-300' : 'bg-white border-gray-300'} ${
+                    formData.username && (validationStatus.username === true ? 'border-green-500' : validationStatus.username === false ? 'border-red-500' : '')
+                  }`}
                   placeholder={t('enterUsername')}
                   disabled={isLoading}
                 />
+                {formData.username && (
+                  <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                    {validationStatus.username === true ? (
+                      <Check className="w-4 h-4 text-green-500" />
+                    ) : validationStatus.username === false ? (
+                      <X className="w-4 h-4 text-red-500" />
+                    ) : null}
+                  </div>
+                )}
               </div>
               {errors.username && (
                 <p className="mt-1 text-sm text-red-500">{errors.username}</p>
@@ -159,10 +249,21 @@ export function LoginInterface({ onLogin, onRegister, isLoading = false }: Login
                 type="email"
                 value={formData.email}
                 onChange={(e) => updateFormData('email', e.target.value)}
-                className={`pl-10 ${isDarkMode ? 'bg-gray-600 border-gray-500 text-white placeholder-gray-300' : 'bg-white border-gray-300'}`}
+                className={`pl-10 pr-10 ${isDarkMode ? 'bg-gray-600 border-gray-500 text-white placeholder-gray-300' : 'bg-white border-gray-300'} ${
+                  formData.email && (validationStatus.email === true ? 'border-green-500' : validationStatus.email === false ? 'border-red-500' : '')
+                }`}
                 placeholder={t('enterEmail')}
                 disabled={isLoading}
               />
+              {formData.email && (
+                <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                  {validationStatus.email === true ? (
+                    <Check className="w-4 h-4 text-green-500" />
+                  ) : validationStatus.email === false ? (
+                    <X className="w-4 h-4 text-red-500" />
+                  ) : null}
+                </div>
+              )}
             </div>
             {errors.email && (
               <p className="mt-1 text-sm text-red-500">{errors.email}</p>
@@ -180,7 +281,9 @@ export function LoginInterface({ onLogin, onRegister, isLoading = false }: Login
                 type={showPassword ? 'text' : 'password'}
                 value={formData.password}
                 onChange={(e) => updateFormData('password', e.target.value)}
-                className={`pl-10 pr-10 ${isDarkMode ? 'bg-gray-600 border-gray-500 text-white placeholder-gray-300' : 'bg-white border-gray-300'}`}
+                className={`pl-10 pr-10 ${isDarkMode ? 'bg-gray-600 border-gray-500 text-white placeholder-gray-300' : 'bg-white border-gray-300'} ${
+                  formData.password && (validationStatus.password === true ? 'border-green-500' : validationStatus.password === false ? 'border-red-500' : '')
+                }`}
                 placeholder={t('enterPassword')}
                 disabled={isLoading}
               />
@@ -192,6 +295,27 @@ export function LoginInterface({ onLogin, onRegister, isLoading = false }: Login
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
+            
+            {/* 密码强度指示器（仅注册模式） */}
+            {!isLoginMode && formData.password && (
+              <div className="mt-2 space-y-1">
+                <div className="text-xs font-medium text-gray-600 dark:text-gray-400">{t('passwordStrengthRequirements')}</div>
+                {passwordRules.map((rule) => {
+                  const passed = rule.test(formData.password);
+                  return (
+                    <div key={rule.key} className={`flex items-center text-xs ${passed ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                      {passed ? (
+                        <Check className="w-3 h-3 mr-1" />
+                      ) : (
+                        <X className="w-3 h-3 mr-1" />
+                      )}
+                      {rule.label}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            
             {errors.password && (
               <p className="mt-1 text-sm text-red-500">{errors.password}</p>
             )}

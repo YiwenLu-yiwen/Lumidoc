@@ -1,6 +1,100 @@
--- 安装扩展
+-- Lumidoc Intelligence 数据库初始化脚本
+-- 安装必要的扩展
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- =====================================
+-- 核心业务表 (UUID系统)
+-- =====================================
+
+-- 用户表
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    username TEXT UNIQUE NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    hashed_password TEXT NOT NULL,
+    nickname TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    is_superuser BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 用户表索引
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+
+-- 项目表 (使用UUID主键)
+CREATE TABLE IF NOT EXISTS projects (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT NOT NULL,
+    description TEXT,
+    user_id INTEGER NOT NULL,
+    status TEXT DEFAULT 'active',
+    project_metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITHOUT TIME ZONE,
+    
+    -- 添加唯一约束确保用户不能创建重名项目
+    CONSTRAINT unique_user_project_name UNIQUE (user_id, name)
+);
+
+-- 项目协作者表
+CREATE TABLE IF NOT EXISTS project_collaborators (
+    id SERIAL PRIMARY KEY,
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL,
+    role TEXT NOT NULL DEFAULT 'viewer',
+    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITHOUT TIME ZONE,
+    
+    CONSTRAINT unique_project_collaborator UNIQUE (project_id, user_id)
+);
+
+-- 项目文件表
+CREATE TABLE IF NOT EXISTS project_files (
+    id SERIAL PRIMARY KEY,
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    filename TEXT NOT NULL,
+    display_name TEXT,
+    content_type TEXT,
+    size BIGINT,
+    status TEXT DEFAULT 'uploaded',
+    metadata TEXT,
+    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITHOUT TIME ZONE,
+    
+    -- RAG处理状态相关字段
+    rag_status VARCHAR(20) DEFAULT 'pending',
+    rag_processed_at TIMESTAMP,
+    rag_error_message VARCHAR(500),
+    is_in_rag BOOLEAN DEFAULT FALSE
+);
+
+-- 聊天消息表
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id SERIAL PRIMARY KEY,
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    role VARCHAR(20) NOT NULL,
+    timestamp TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    metadata JSONB DEFAULT '{}'
+);
+
+-- 项目索引优化
+CREATE INDEX IF NOT EXISTS idx_projects_name ON projects (name);
+CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects (user_id);
+CREATE INDEX IF NOT EXISTS idx_projects_status ON projects (status);
+CREATE INDEX IF NOT EXISTS idx_projects_created_at ON projects (created_at);
+
+-- 关联表索引
+CREATE INDEX IF NOT EXISTS idx_project_collaborators_project_id ON project_collaborators(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_files_project_id ON project_files(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_files_status ON project_files(status);
+CREATE INDEX IF NOT EXISTS idx_project_files_rag_status ON project_files(rag_status);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_project_id ON chat_messages(project_id);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_user_id ON chat_messages(user_id);
 
 -- 创建RAG向量表（如果不存在） - 支持UUID项目ID
 CREATE TABLE IF NOT EXISTS rag_default_index_vectors (

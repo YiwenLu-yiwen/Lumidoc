@@ -1,5 +1,6 @@
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import Column, String, Text, DateTime, Boolean, Integer, JSON
+from sqlalchemy.dialects.postgresql import UUID
 import uuid
 from datetime import datetime
 
@@ -12,14 +13,14 @@ class Project(Base):
     """项目模型"""
     __tablename__ = "projects"
     
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    user_id = Column(String(36), nullable=False, index=True)
-    is_active = Column(Boolean, default=True)
-    config = Column(JSON, nullable=True)
+    user_id = Column(Integer, nullable=False, index=True)  # 保持用户ID为整数
+    status = Column(String(20), nullable=False, default='active')
+    project_metadata = Column(JSON, nullable=False, default=dict)
     
     def __repr__(self):
         return f"<Project(id='{self.id}', name='{self.name}')>" 

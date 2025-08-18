@@ -5,11 +5,18 @@ import { LoginInterface } from '@/components/auth/LoginInterface';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import { authApi } from '@/api/auth';
+import { detectBrowserLanguage, getTranslation } from '@/utils/language';
 
 export function AuthPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user, login } = useAuth();
+  
+  // 获取当前语言并创建翻译函数
+  const currentLanguage = detectBrowserLanguage();
+  const t = (key: keyof typeof import('@/utils/language').translations['zh-CN']) => {
+    return getTranslation(currentLanguage, key);
+  };
   
   // 从URL参数获取模式，默认为登录
   const mode = searchParams.get('mode') || 'login';
@@ -20,6 +27,7 @@ export function AuthPage() {
 
   // 状态管理
   const [isLoading, setIsLoading] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
   const [authMessage, setAuthMessage] = useState<{
     type: 'success' | 'error' | null;
     text: string;
@@ -38,8 +46,13 @@ export function AuthPage() {
     setAuthMessage({ type: null, text: '' });
     
     try {
-      // 调用真实的认证API
+      // 调用真实的认证API（注意：后端期望username字段，但可以传邮箱）
       const response = await authApi.login(credentials.email, credentials.password);
+      
+      // 验证响应数据完整性
+      if (!response || !response.access_token || !response.id) {
+        throw new Error('登录响应数据不完整，请重试');
+      }
       
       // 构造用户数据
       const userData = {
@@ -48,26 +61,46 @@ export function AuthPage() {
         nickname: response.nickname || response.username
       };
       
-      // 使用认证上下文保存用户信息
-      login(userData, response.access_token);
+      // 先显示成功消息
+      setAuthMessage({ type: 'success', text: t('loginSuccess') });
       
-      // 显示成功消息
-      setAuthMessage({ type: 'success', text: '登录成功！正在跳转...' });
-      
-      // 延迟跳转以显示成功消息
+      // 延迟调用认证上下文和跳转
       setTimeout(() => {
-        navigate('/app');
-      }, 2000);
+        // 使用认证上下文保存用户信息
+        login(userData, response.access_token);
+        
+        setIsTransitioning(true);
+        
+        // 添加简单的页面淡出效果（无缩放）
+        const pageElement = document.documentElement;
+        pageElement.style.transition = 'opacity 0.5s ease-out';
+        pageElement.style.opacity = '0.9';
+        
+        // 由于useEffect会自动触发跳转，这里不需要手动navigate
+      }, 2000); // 显示成功消息2秒
     } catch (error: any) {
-      let errorMessage = '登录失败，请检查邮箱和密码';
+      console.error('登录错误:', error);
       
-      // 处理具体的错误信息
-      if (error.response?.data?.detail) {
-        errorMessage = error.response.data.detail;
-      } else if (error.response?.status === 401) {
-        errorMessage = '账号或密码错误';
+      let errorMessage = t('loginFailedCheckCredentials');
+      
+      // 优先检查HTTP状态码
+      if (error.response?.status === 401) {
+        errorMessage = t('accountOrPasswordIncorrect');
+      } else if (error.response?.status === 400) {
+        errorMessage = t('loginFailedCheckCredentials');
+      } else if (error.response?.status >= 500) {
+        errorMessage = t('serverError');
       } else if (error.message) {
-        errorMessage = error.message;
+        // 检查error.message中是否包含已知的错误信息
+        const message = error.message.toLowerCase();
+        if (message.includes('账号') || message.includes('密码') || message.includes('password') || message.includes('account')) {
+          errorMessage = t('accountOrPasswordIncorrect');
+        } else if (message.includes('网络') || message.includes('network') || message.includes('fetch')) {
+          errorMessage = t('networkError');
+        } else {
+          // 默认为登录失败
+          errorMessage = t('loginFailedCheckCredentials');
+        }
       }
       
       setAuthMessage({ 
@@ -98,26 +131,44 @@ export function AuthPage() {
         nickname: loginResponse.nickname || loginResponse.username
       };
       
-      // 使用认证上下文保存用户信息
-      login(newUser, loginResponse.access_token);
+      // 先显示成功消息
+      setAuthMessage({ type: 'success', text: t('registerSuccess') });
       
-      // 显示成功消息
-      setAuthMessage({ type: 'success', text: '注册成功！正在跳转...' });
-      
-      // 延迟跳转以显示成功消息
+      // 延迟调用认证上下文和跳转
       setTimeout(() => {
-        navigate('/app');
-      }, 2000);
+        // 使用认证上下文保存用户信息
+        login(newUser, loginResponse.access_token);
+        
+        setIsTransitioning(true);
+        
+        // 添加简单的页面淡出效果（无缩放）
+        const pageElement = document.documentElement;
+        pageElement.style.transition = 'opacity 0.5s ease-out';
+        pageElement.style.opacity = '0.9';
+        
+        // 由于useEffect会自动触发跳转，这里不需要手动navigate
+      }, 2000); // 显示成功消息2秒
     } catch (error: any) {
-      let errorMessage = '注册失败，请重试';
+      let errorMessage = t('registrationFailed');
       
-      // 处理具体的错误信息
-      if (error.response?.data?.detail) {
-        errorMessage = error.response.data.detail;
-      } else if (error.response?.status === 400) {
-        errorMessage = error.response.data?.detail || '用户已存在或输入信息有误';
+      // 优先检查HTTP状态码
+      if (error.response?.status === 400) {
+        errorMessage = t('userExistsOrInvalidInput');
+      } else if (error.response?.status === 409) {
+        errorMessage = t('userExistsOrInvalidInput');
+      } else if (error.response?.status >= 500) {
+        errorMessage = t('serverError');
       } else if (error.message) {
-        errorMessage = error.message;
+        // 检查error.message中是否包含已知的错误信息
+        const message = error.message.toLowerCase();
+        if (message.includes('用户') || message.includes('邮箱') || message.includes('user') || message.includes('email') || message.includes('exist')) {
+          errorMessage = t('userExistsOrInvalidInput');
+        } else if (message.includes('网络') || message.includes('network') || message.includes('fetch')) {
+          errorMessage = t('networkError');
+        } else {
+          // 默认为注册失败
+          errorMessage = t('registrationFailed');
+        }
       }
       
       setAuthMessage({ 
@@ -135,22 +186,29 @@ export function AuthPage() {
   };
 
   return (
-    <div className={`min-h-screen transition-colors duration-300 relative ${
+    <div className={`min-h-screen transition-all duration-700 relative ${
       isDarkMode ? 'bg-[#212121] text-gray-100' : 'bg-white text-gray-900'
-    }`}>
-      {/* 成功/失败提示框 - 固定在右上角 */}
+    } ${isTransitioning ? 'opacity-90' : ''}`}>
+      {/* 成功/失败提示框 - 固定在右上角，增强动画效果 */}
       {authMessage.type && (
-        <div className={`fixed top-6 right-6 z-50 px-6 py-4 rounded-lg shadow-lg border-l-4 flex items-center space-x-3 animate-in slide-in-from-right-5 fade-in duration-500 ${
+        <div className={`fixed top-6 right-6 z-50 px-6 py-4 rounded-lg shadow-xl border-l-4 flex items-center space-x-3 transition-all duration-700 ${
           authMessage.type === 'success'
-            ? 'bg-green-50 border-green-500 text-green-800 dark:bg-green-900/20 dark:border-green-400 dark:text-green-300'
-            : 'bg-red-50 border-red-500 text-red-800 dark:bg-red-900/20 dark:border-red-400 dark:text-red-300'
-        }`}>
+            ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-500 text-green-800 dark:bg-gradient-to-r dark:from-green-900/30 dark:to-emerald-900/30 dark:border-green-400 dark:text-green-300 animate-bounce-once'
+            : 'bg-red-50 border-red-500 text-red-800 dark:bg-red-900/20 dark:border-red-400 dark:text-red-300 animate-shake'
+        } animate-in slide-in-from-right-5 fade-in duration-500`}>
           {authMessage.type === 'success' ? (
-            <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
+            <CheckCircle className="w-6 h-6 text-green-600 dark:text-green-400 animate-pulse" />
           ) : (
             <XCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
           )}
-          <span className="font-medium">{authMessage.text}</span>
+          <span className={`font-semibold ${authMessage.type === 'success' ? 'text-lg' : ''}`}>
+            {authMessage.text}
+          </span>
+          {authMessage.type === 'success' && (
+            <div className="ml-2">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-ping"></div>
+            </div>
+          )}
         </div>
       )}
 
@@ -175,12 +233,8 @@ export function AuthPage() {
               </h1>
             </div>
 
-            {/* 右侧：简化状态指示 */}
-            <div className={`text-sm font-medium ${
-              isDarkMode ? 'text-gray-400' : 'text-gray-600'
-            }`}>
-              {isRegisterMode ? '注册' : '登录'}
-            </div>
+            {/* 右侧：空白占位 */}
+            <div></div>
           </div>
         </div>
       </header>

@@ -33,18 +33,41 @@ export const authApi = {
   
   // 用户登录
   login: async (username: string, password: string): Promise<LoginResponse> => {
-    // 使用JSON格式登录，调用新的 /api/auth/login 端点
-    const response = await apiClient.post<LoginResponse>('/api/auth/login', {
-      username,
-      password
-    });
-    
-    // 保存token到本地存储
-    if (response.data.access_token) {
+    try {
+      // 使用JSON格式登录，调用新的 /api/auth/login 端点
+      const response = await apiClient.post<LoginResponse>('/api/auth/login', {
+        username,
+        password
+      });
+      
+      // 检查响应状态，如果是401则抛出错误
+      if (response.status === 401) {
+        throw new Error(response.data?.detail || '账号或密码错误');
+      }
+      
+      // 检查响应数据是否包含错误信息（处理401作为成功响应的情况）
+      if (response.data && typeof response.data === 'object' && 'detail' in response.data) {
+        throw new Error(response.data.detail || '登录失败');
+      }
+      
+      // 确保响应包含必需的字段
+      if (!response.data || !response.data.access_token) {
+        throw new Error('登录响应数据不完整');
+      }
+      
+      // 保存token到本地存储
       localStorage.setItem('stp_token', response.data.access_token);
+      
+      return response.data;
+    } catch (error: any) {
+      // 如果是axios错误，提取错误信息
+      if (error.response) {
+        const errorMessage = error.response.data?.detail || '账号或密码错误';
+        throw new Error(errorMessage);
+      }
+      // 重新抛出其他错误
+      throw error;
     }
-    
-    return response.data;
   },
   
   // 刷新token
