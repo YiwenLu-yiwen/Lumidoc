@@ -26,7 +26,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { detectAutoTheme, detectBrowserLanguage, getTranslation } from '@/utils/language';
+import { detectBrowserLanguage, getTranslation } from '@/utils/language';
+import { useTheme } from '@/context/ThemeContext';
 import { OllamaApi, type OllamaModel, type ModelPullStatus } from '@/api/ollama';
 import { useAuth } from '@/context/AuthContext';
 import { projectApi } from '@/api/project';
@@ -376,12 +377,39 @@ const MetricCard: React.FC<MetricCardProps> = ({
 export function ModernDashboard() {
   const { user, isAdmin } = useAuth();
   
-  const isDarkMode = detectAutoTheme() === 'dark';
+  const { isDarkMode } = useTheme();
   const currentLanguage = detectBrowserLanguage();
+  // 真实的数据更新时间戳
+  const [lastDataUpdateTime, setLastDataUpdateTime] = useState(new Date());
+  // 当前时间 - 用于计算真实的时间差
+  const [currentTime, setCurrentTime] = useState(new Date());
+  // 数据刷新状态
+  const [isRefreshingData, setIsRefreshingData] = useState(false);
+  
+  // 调试语言检测（生产环境可删除）
+  // console.log('🔍 当前检测到的语言:', currentLanguage);
   
   // 翻译函数
   const t = (key: keyof typeof import('@/utils/language').translations['zh-CN']) => {
     return getTranslation(currentLanguage, key);
+  };
+  
+  // 真实时间格式化函数 - 基于当前时间和数据更新时间计算
+  const formatTimeAgo = (updateTime: Date, currentTime: Date) => {
+    const diffInSeconds = Math.floor((currentTime.getTime() - updateTime.getTime()) / 1000);
+    
+    if (diffInSeconds < 60) {
+      return currentLanguage === 'zh-CN' ? `${diffInSeconds}秒前` : `${diffInSeconds}s ago`;
+    } else if (diffInSeconds < 3600) {
+      const minutes = Math.floor(diffInSeconds / 60);
+      return currentLanguage === 'zh-CN' ? `${minutes}分钟前` : `${minutes}m ago`;
+    } else if (diffInSeconds < 86400) {
+      const hours = Math.floor(diffInSeconds / 3600);
+      return currentLanguage === 'zh-CN' ? `${hours}小时前` : `${hours}h ago`;
+    } else {
+      const days = Math.floor(diffInSeconds / 86400);
+      return currentLanguage === 'zh-CN' ? `${days}天前` : `${days}d ago`;
+    }
   };
   
   // Ollama 模型管理状态
@@ -398,6 +426,13 @@ export function ModernDashboard() {
   const [recentDocuments, setRecentDocuments] = useState<DocumentInfo[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
+  // 知识图谱统计
+  const [knowledgeGraphStats, setKnowledgeGraphStats] = useState({
+    entityCount: 0,
+    relationCount: 0,
+    isLoading: false,
+    isConnected: false
+  });
   
   // 统计真实的 Ollama 模型数量
   const actualModelStats = {
@@ -406,6 +441,66 @@ export function ModernDashboard() {
     total: ollamaModels.length
   };
   
+  // 加载知识图谱统计数据
+  const loadKnowledgeGraphStats = async () => {
+    setKnowledgeGraphStats(prev => ({ ...prev, isLoading: true }));
+    
+    try {
+      // 尝试连接 Neo4j 并获取统计数据
+      // 这里需要替换为真实的 Neo4j API 调用
+      const response = await fetch('/api/v1/graph/stats', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('stp_token')}`
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setKnowledgeGraphStats({
+          entityCount: data.entities || 0,
+          relationCount: data.relations || 0,
+          isLoading: false,
+          isConnected: true
+        });
+      } else {
+        throw new Error('Failed to fetch graph stats');
+      }
+    } catch (error) {
+      console.log('[Dashboard] Neo4j 连接失败，使用文档统计作为近似值:', error);
+      // 如果 Neo4j 不可用，使用文档数量的近似估算
+      const approximateEntities = recentDocuments.length * 50; // 每个文档大约50个实体
+      setKnowledgeGraphStats({
+        entityCount: approximateEntities,
+        relationCount: approximateEntities * 2, // 关系通常是实体的2倍
+        isLoading: false,
+        isConnected: false
+      });
+    }
+  };
+
+  // 全面的数据刷新函数
+  const refreshAllData = async () => {
+    console.log('[Dashboard] 开始刷新所有数据...');
+    setIsRefreshingData(true);
+    
+    try {
+      // 并行加载所有数据
+      await Promise.allSettled([
+        loadOllamaModels(),
+        user ? loadProjectStats() : Promise.resolve(),
+        loadKnowledgeGraphStats()
+      ]);
+      
+      // 更新数据时间戳
+      setLastDataUpdateTime(new Date());
+      console.log('[Dashboard] 数据刷新完成:', new Date().toLocaleString());
+    } catch (error) {
+      console.error('[Dashboard] 数据刷新失败:', error);
+    } finally {
+      setIsRefreshingData(false);
+    }
+  };
+
   // 加载 Ollama 模型列表
   const loadOllamaModels = async () => {
     setIsLoadingModels(true);
@@ -490,7 +585,7 @@ export function ModernDashboard() {
   };
   
   // 获取热门模型推荐
-  const popularModels = OllamaApi.getPopularModels();
+  const popularModels = OllamaApi.getPopularModels(currentLanguage);
   
   // 加载真实项目数据
   const loadProjectStats = async () => {
@@ -537,7 +632,7 @@ export function ModernDashboard() {
             name: file.display_name || file.filename,
             type: getFileTypeFromMime(file.content_type),
             size: formatFileSize(file.size),
-            uploadTime: formatTimeAgo(file.created_at),
+            uploadTime: file.created_at, // 保存原始时间戳
             status: file.status as 'processed' | 'processing' | 'error',
             summary: file.metadata ? file.metadata.substring(0, 100) + '...' : undefined
           }));
@@ -574,24 +669,30 @@ export function ModernDashboard() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
-  const formatTimeAgo = (dateString: string): string => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
-    
-    if (diffInMinutes < 60) return `${diffInMinutes}分钟前`;
-    const diffInHours = Math.floor(diffInMinutes / 60);
-    if (diffInHours < 24) return `${diffInHours}小时前`;
-    const diffInDays = Math.floor(diffInHours / 24);
-    return `${diffInDays}天前`;
-  };
 
-  // 组件挂载时加载数据
+  // 组件挂载时初始化数据
   useEffect(() => {
-    loadOllamaModels();
-    if (user) {
-      loadProjectStats();
-    }
+    console.log('[Dashboard] 组件挂载，初始化数据...');
+    refreshAllData();
+  }, [user]);
+  
+  // 每秒更新当前时间 - 用于实时计算时间差
+  useEffect(() => {
+    const timeInterval = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000); // 每秒更新一次
+    
+    return () => clearInterval(timeInterval);
+  }, []);
+  
+  // 每10分钟自动刷新数据
+  useEffect(() => {
+    const dataRefreshInterval = setInterval(() => {
+      console.log('[Dashboard] 10分钟定时刷新数据...');
+      refreshAllData();
+    }, 10 * 60 * 1000); // 10分钟刷新一次
+    
+    return () => clearInterval(dataRefreshInterval);
   }, [user]);
 
   // 项目数据加载完成后加载文档数据
@@ -642,7 +743,7 @@ export function ModernDashboard() {
   };
 
   return (
-    <div className="h-full overflow-y-auto bg-background">
+    <div className="h-full overflow-y-auto ${isDarkMode ? 'bg-[#343541]' : 'bg-white'} dark:bg-gray-900 text-gray-900 dark:text-white">
       {/* 跳转链接 - 可访问性增强 */}
       <a 
         href="#main-content" 
@@ -675,74 +776,30 @@ export function ModernDashboard() {
                     <Database className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <h1 className="text-2xl sm:text-4xl font-black text-gray-950 truncate">
-                      智能工作台
+                    <h1 className="text-2xl sm:text-4xl font-black text-gray-900 dark:text-white truncate">
+                      {t('intelligentWorkbench')}
                     </h1>
-                    <p className="text-sm sm:text-base font-medium text-gray-800 mt-1 hidden sm:block">
-                      企业级 AI 文档处理与分析平台 • 实时监控与管理
+                    <p className="text-sm sm:text-base font-medium text-gray-600 dark:text-gray-300 mt-1 hidden sm:block">
+                      {t('aiDocumentPlatform')} • {currentLanguage === 'zh-CN' ? '实时监控与管理' : 'Real-time monitoring and management'}
                     </p>
-                    <p className="text-sm font-medium text-gray-800 mt-1 sm:hidden">
-                      AI 文档处理平台
+                    <p className="text-sm font-medium text-gray-600 dark:text-gray-300 mt-1 sm:hidden">
+                      {currentLanguage === 'zh-CN' ? 'AI 文档处理平台' : 'AI Document Platform'}
                     </p>
                   </div>
                 </div>
                 
                 {/* 面包屑导航 - 移动端隐藏 */}
-                <nav className="hidden md:flex items-center space-x-2 text-sm text-muted-foreground" aria-label="面包屑">
-                  <span className="hover:text-gray-950 cursor-pointer transition-colors text-gray-700 font-medium">首页</span>
-                  <ChevronRight className="w-4 h-4 text-gray-600" />
-                  <span className="text-gray-950 font-bold">仪表盘</span>
+                <nav className="hidden md:flex items-center space-x-2 text-sm text-gray-500 dark:text-gray-400" aria-label="面包屑">
+                  <span className="hover:text-gray-900 dark:hover:text-white cursor-pointer transition-colors text-gray-600 dark:text-gray-300 font-medium">
+                    {currentLanguage === 'zh-CN' ? '首页' : 'Home'}
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                  <span className="text-gray-900 dark:text-white font-bold">
+                    {currentLanguage === 'zh-CN' ? '仪表盘' : 'Dashboard'}
+                  </span>
                 </nav>
               </div>
               
-              {/* 操作按钮组 - 响应式优化 + 可访问性增强 */}
-              <div className="flex items-center space-x-2 sm:space-x-3 overflow-x-auto pb-2" role="toolbar" aria-label="主要操作工具栏">
-                <Button 
-                  className={`
-                    ${DESIGN_TOKENS.colors.primary.gradient} 
-                    hover:shadow-xl hover:scale-105 motion-reduce:hover:scale-100
-                    ${DESIGN_TOKENS.transitions.default} ${DESIGN_TOKENS.accessibility.reducedMotion}
-                    ${DESIGN_TOKENS.accessibility.focusRing}
-                    text-white border-0 h-10 sm:h-11 px-4 sm:px-6
-                    flex-shrink-0
-                  `}
-                  size="default"
-                  aria-label="新建项目 - 创建新的智能文档处理项目"
-                >
-                  <Plus className="w-4 h-4 sm:w-5 sm:h-5 mr-1 sm:mr-2" aria-hidden="true" />
-                  <span className="hidden sm:inline">新建项目</span>
-                  <span className="sm:hidden">新建</span>
-                </Button>
-                <Button 
-                  variant="outline"
-                  className={`
-                    h-10 sm:h-11 px-4 sm:px-6 border-2
-                    hover:bg-accent/50 hover:scale-105 motion-reduce:hover:scale-100
-                    ${DESIGN_TOKENS.transitions.default} ${DESIGN_TOKENS.accessibility.reducedMotion}
-                    ${DESIGN_TOKENS.accessibility.focusRing}
-                    flex-shrink-0
-                  `}
-                  aria-label="上传文档 - 上传PDF、Word等文档进行智能分析"
-                >
-                  <Upload className="w-4 h-4 sm:w-5 sm:h-5 mr-1 sm:mr-2" aria-hidden="true" />
-                  <span className="hidden sm:inline">上传文档</span>
-                  <span className="sm:hidden">上传</span>
-                </Button>
-                <Button 
-                  variant="ghost"
-                  className={`
-                    h-10 sm:h-11 px-3 sm:px-4
-                    hover:bg-accent/50
-                    ${DESIGN_TOKENS.transitions.default} ${DESIGN_TOKENS.accessibility.reducedMotion}
-                    ${DESIGN_TOKENS.accessibility.focusRing}
-                    flex-shrink-0
-                  `}
-                  aria-label="更多操作 - 显示其他可用操作选项"
-                  aria-haspopup="menu"
-                >
-                  <MoreHorizontal className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />
-                </Button>
-              </div>
             </div>
             
             {/* 分隔线 */}
@@ -758,24 +815,34 @@ export function ModernDashboard() {
           >
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0">
               <div>
-                <h2 className="text-base sm:text-lg font-black text-gray-950">
-                  系统状态概览
+                <h2 className="text-base sm:text-lg font-black text-gray-900 dark:text-white">
+                  {currentLanguage === 'zh-CN' ? '系统状态概览' : 'System Status Overview'}
                 </h2>
-                <p className="text-sm font-medium text-gray-800 mt-1 hidden sm:block">
-                  实时监控核心业务指标和系统健康状态
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-300 mt-1 hidden sm:block">
+                  {currentLanguage === 'zh-CN' ? '实时监控核心业务指标和系统健康状态' : 'Real-time monitoring of core business metrics and system health'}
                 </p>
-                <p className="text-sm font-medium text-gray-800 mt-1 sm:hidden">
-                  核心指标监控
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-300 mt-1 sm:hidden">
+                  {currentLanguage === 'zh-CN' ? '核心指标监控' : 'Core Metrics'}
                 </p>
               </div>
-              <div className="flex items-center space-x-2">
-                <span className="text-xs font-medium text-gray-700 hidden md:inline">
-                  最近更新: 2分钟前
+              <div className="flex items-center space-x-3">
+                <span className="text-xs font-medium text-gray-600 dark:text-gray-400 hidden md:inline">
+                  {currentLanguage === 'zh-CN' ? '最近更新: ' : 'Last updated: '}{formatTimeAgo(lastDataUpdateTime, currentTime)}
                 </span>
-                <span className="text-xs font-medium text-gray-700 md:hidden">
-                  2分钟前
+                <span className="text-xs font-medium text-gray-600 dark:text-gray-400 md:hidden">
+                  {formatTimeAgo(lastDataUpdateTime, currentTime)}
                 </span>
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={refreshAllData}
+                  disabled={isRefreshingData}
+                  className="h-6 w-6 p-0 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  title={currentLanguage === 'zh-CN' ? '手动刷新数据' : 'Manually refresh data'}
+                >
+                  <RefreshCw className={`w-3 h-3 ${isRefreshingData ? 'animate-spin' : ''}`} />
+                </Button>
+                <div className={`w-2 h-2 rounded-full ${isRefreshingData ? 'bg-blue-500 animate-spin' : 'bg-green-500 animate-pulse'}`} />
               </div>
             </div>
             
@@ -783,18 +850,17 @@ export function ModernDashboard() {
               {/* AI模型性能指标 */}
               <MetricCard
                 icon={<Brain className="w-6 h-6" />}
-                title="深度思考模型"
+                title={t('thinkingModel')}
                 value={`${actualModelStats.thinking}`}
-                subtitle="高精度分析能力"
+                subtitle={t('deepReasoning')}
                 status={ollamaStatus === false ? 'error' : 'success'}
                 trend={{
-                  text: '本周新增 2 个模型',
-                  direction: 'up',
-                  percentage: '+25%'
+                  text: currentLanguage === 'zh-CN' ? `共 ${actualModelStats.total} 个本地模型` : `${actualModelStats.total} local models total`,
+                  direction: 'neutral'
                 }}
                 priority="high"
                 badge={{
-                  text: 'AI核心',
+                  text: currentLanguage === 'zh-CN' ? 'AI核心' : 'AI Core',
                   variant: 'info'
                 }}
                 loading={isLoadingModels}
@@ -802,13 +868,13 @@ export function ModernDashboard() {
               
               <MetricCard
                 icon={<Zap className="w-6 h-6" />}
-                title="快速响应模型"
+                title={t('fastModel')}
                 value={`${actualModelStats.fast}`}
-                subtitle="实时交互体验"
+                subtitle={t('instantResponse')}
                 status={ollamaStatus === false ? 'error' : 'success'}
                 trend={{
-                  text: '平均响应时间 <800ms',
-                  direction: 'neutral'
+                  text: ollamaStatus ? (currentLanguage === 'zh-CN' ? 'Ollama 服务在线' : 'Ollama service online') : (currentLanguage === 'zh-CN' ? 'Ollama 服务离线' : 'Ollama service offline'),
+                  direction: ollamaStatus ? 'up' : 'down'
                 }}
                 priority="high"
                 loading={isLoadingModels}
@@ -816,18 +882,17 @@ export function ModernDashboard() {
               
               <MetricCard
                 icon={<FileText className="w-6 h-6" />}
-                title="文档处理量"
+                title={t('documentProcessing')}
                 value={recentDocuments.length.toString()}
-                subtitle="智能解析与理解"
+                subtitle={currentLanguage === 'zh-CN' ? '智能解析与理解' : 'Intelligent parsing and understanding'}
                 status={'success'}
                 trend={{
-                  text: '处理成功率 98.5%',
-                  direction: 'up',
-                  percentage: '+2.1%'
+                  text: currentLanguage === 'zh-CN' ? `最近文档: ${recentDocuments.length} 个` : `Recent docs: ${recentDocuments.length}`,
+                  direction: 'neutral'
                 }}
                 priority="medium"
                 badge={{
-                  text: '核心功能',
+                  text: currentLanguage === 'zh-CN' ? '核心功能' : 'Core Feature',
                   variant: 'success'
                 }}
                 loading={isLoadingDocuments}
@@ -835,16 +900,22 @@ export function ModernDashboard() {
               
               <MetricCard
                 icon={<Database className="w-6 h-6" />}
-                title="知识网络"
-                value="1,247"
-                subtitle="实体关系图谱"
-                status={'success'}
+                title={t('knowledgeGraph')}
+                value={knowledgeGraphStats.entityCount.toLocaleString()}
+                subtitle={t('entityRelations')}
+                status={knowledgeGraphStats.isConnected ? 'success' : 'warning'}
                 trend={{
-                  text: 'Neo4j 稳定运行',
+                  text: knowledgeGraphStats.isConnected 
+                    ? (currentLanguage === 'zh-CN' ? 'Neo4j 稳定运行' : 'Neo4j running stable')
+                    : (currentLanguage === 'zh-CN' ? '基于文档估算' : 'Estimated from documents'),
                   direction: 'neutral'
                 }}
                 priority="medium"
-                loading={false}
+                badge={knowledgeGraphStats.isConnected ? undefined : {
+                  text: currentLanguage === 'zh-CN' ? '估算值' : 'Estimated',
+                  variant: 'warning'
+                }}
+                loading={knowledgeGraphStats.isLoading}
               />
             </div>
           </section>
@@ -857,17 +928,17 @@ export function ModernDashboard() {
               <div className="space-y-4">
                 <div className="flex items-center">
                   <div className="flex-1 h-px bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200"></div>
-                  <h2 className="px-6 text-lg font-black text-gray-950 bg-white">本地模型管理</h2>
+                  <h2 className="px-6 text-lg font-black text-gray-900 dark:text-white ${isDarkMode ? 'bg-[#343541]' : 'bg-white'} dark:bg-gray-900">{t('localModelManagement')}</h2>
                   <div className="flex-1 h-px bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200"></div>
                 </div>
                 
                 {/* Ollama 模型管理面板 */}
                 <section 
-                  className="rounded-2xl border bg-white border-gray-100 shadow-sm"
+                  className={`rounded-2xl border shadow-sm ${isDarkMode ? 'bg-[#343541] border-gray-700' : 'bg-white border-gray-100'}`}
                   aria-label="模型管理"
                   role="region"
                 >
-                <div className="p-6 border-b border-gray-100">
+                <div className="p-6 border-b ${isDarkMode ? 'border-gray-700' : 'border-gray-100'}">
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="flex items-center space-x-2">
@@ -917,7 +988,7 @@ export function ModernDashboard() {
                 <div className="p-6">
                   {/* 自定义模型下载输入框 */}
                   {showCustomInput && (
-                    <div className="mb-6 p-4 rounded-xl border bg-gray-50 border-gray-200">
+                    <div className="mb-6 p-4 rounded-xl border bg-gray-50 ${isDarkMode ? 'border-gray-600' : 'border-gray-200'}">
                       <div className="flex items-center space-x-2">
                         <Input
                           placeholder={`${t('enterModelName')} (例: llama3.2:latest)`}
@@ -969,7 +1040,7 @@ export function ModernDashboard() {
                           return (
                             <div
                               key={model.name}
-                              className="p-4 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 transition-all duration-200 hover:shadow-md"
+                              className="p-4 rounded-xl border ${isDarkMode ? 'border-gray-600' : 'border-gray-200'} ${isDarkMode ? 'bg-[#343541]' : 'bg-white'} ${isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'} transition-all duration-200 hover:shadow-md"
                             >
                               <div className="flex items-center justify-between mb-3">
                                 <div className="flex items-center space-x-2">
@@ -1030,7 +1101,7 @@ export function ModernDashboard() {
                         return (
                           <div
                             key={model.name}
-                            className="p-4 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 transition-all duration-200 hover:shadow-md"
+                            className="p-4 rounded-xl border ${isDarkMode ? 'border-gray-600' : 'border-gray-200'} ${isDarkMode ? 'bg-[#343541]' : 'bg-white'} ${isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'} transition-all duration-200 hover:shadow-md"
                           >
                             <div className="flex items-center justify-between mb-3">
                               <div className="flex items-center space-x-2">
@@ -1111,17 +1182,17 @@ export function ModernDashboard() {
               <div className="space-y-4">
                 <div className="flex items-center">
                   <div className="flex-1 h-px bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200"></div>
-                  <h2 className="px-6 text-lg font-black text-gray-950 bg-white">项目概述</h2>
+                  <h2 className="px-6 text-lg font-black text-gray-900 dark:text-white ${isDarkMode ? 'bg-[#343541]' : 'bg-white'} dark:bg-gray-900">{t('projectOverview')}</h2>
                   <div className="flex-1 h-px bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200"></div>
                 </div>
                 
                 {/* 项目状态面板 */}
                 <section 
-                  className="rounded-2xl border bg-white border-gray-100 shadow-sm"
+                  className="rounded-2xl border ${isDarkMode ? 'bg-[#343541]' : 'bg-white'} ${isDarkMode ? 'border-gray-700' : 'border-gray-100'} shadow-sm"
                   aria-label="项目状态"
                   role="region"
                 >
-                <div className="p-6 border-b border-gray-100">
+                <div className="p-6 border-b ${isDarkMode ? 'border-gray-700' : 'border-gray-100'}">
                   <div className="flex items-center justify-between">
                     <div>
                       <h2 className="text-xl font-black text-gray-950">{t('projectOverview')}</h2>
@@ -1144,20 +1215,18 @@ export function ModernDashboard() {
                   {isLoadingProjects ? (
                     <div className="flex items-center justify-center py-8">
                       <Loader2 className="w-6 h-6 animate-spin mr-2" />
-                      <span>加载项目数据...</span>
+                      <span className="text-gray-600 dark:text-gray-400">{currentLanguage === 'zh-CN' ? '加载项目数据...' : 'Loading project data...'}</span>
                     </div>
                   ) : projectStats.length === 0 ? (
-                    <div className={`text-center py-8 ${
-                      isDarkMode ? 'text-[#b4b4b4]' : 'text-[#666666]'
-                    }`}>
-                      暂无项目数据
+                    <div className="text-center py-8 text-gray-600 dark:text-gray-400">
+                      {currentLanguage === 'zh-CN' ? '暂无项目数据' : 'No project data available'}
                     </div>
                   ) : (
                     <div className="space-y-4">
                       {projectStats.map((project) => (
                       <div
                         key={project.id}
-                        className="p-4 rounded-xl border border-gray-200 hover:border-gray-300 bg-white hover:bg-gray-50 transition-all duration-200 hover:shadow-lg"
+                        className="p-4 rounded-xl border ${isDarkMode ? 'border-gray-600' : 'border-gray-200'} ${isDarkMode ? 'hover:border-gray-500' : 'hover:border-gray-300'} ${isDarkMode ? 'bg-[#343541]' : 'bg-white'} ${isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'} transition-all duration-200 hover:shadow-lg"
                       >
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center space-x-3">
@@ -1227,12 +1296,12 @@ export function ModernDashboard() {
               <div className="space-y-4">
                 <div className="flex items-center">
                   <div className="flex-1 h-px bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200"></div>
-                  <h2 className="px-6 text-lg font-black text-gray-950 bg-white">最近文档</h2>
+                  <h2 className="px-6 text-lg font-black text-gray-900 dark:text-white ${isDarkMode ? 'bg-[#343541]' : 'bg-white'} dark:bg-gray-900">{t('recentDocuments')}</h2>
                   <div className="flex-1 h-px bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200"></div>
                 </div>
                 
-                <div className="rounded-2xl border bg-white border-gray-100 shadow-sm">
-                <div className="p-6 border-b border-gray-100">
+                <div className="rounded-2xl border ${isDarkMode ? 'bg-[#343541]' : 'bg-white'} ${isDarkMode ? 'border-gray-700' : 'border-gray-100'} shadow-sm">
+                <div className="p-6 border-b ${isDarkMode ? 'border-gray-700' : 'border-gray-100'}">
                   <div className="flex items-center justify-between">
                     <div>
                       <h2 className="text-lg font-black text-gray-950">{t('recentDocuments')}</h2>
@@ -1254,20 +1323,18 @@ export function ModernDashboard() {
                   {isLoadingDocuments ? (
                     <div className="flex items-center justify-center py-8">
                       <Loader2 className="w-6 h-6 animate-spin mr-2" />
-                      <span>加载文档数据...</span>
+                      <span className="text-gray-600 dark:text-gray-400">{currentLanguage === 'zh-CN' ? '加载文档数据...' : 'Loading document data...'}</span>
                     </div>
                   ) : recentDocuments.length === 0 ? (
-                    <div className={`text-center py-8 ${
-                      isDarkMode ? 'text-[#b4b4b4]' : 'text-[#666666]'
-                    }`}>
-                      暂无文档数据
+                    <div className="text-center py-8 text-gray-600 dark:text-gray-400">
+                      {currentLanguage === 'zh-CN' ? '暂无文档数据' : 'No document data available'}
                     </div>
                   ) : (
                     <div className="space-y-4">
                       {recentDocuments.map((doc) => (
                       <div
                         key={doc.id}
-                        className="p-3 rounded-lg border border-gray-200 hover:border-gray-300 bg-white hover:bg-gray-50 transition-all duration-200 hover:shadow-md"
+                        className="p-3 rounded-lg border ${isDarkMode ? 'border-gray-600' : 'border-gray-200'} ${isDarkMode ? 'hover:border-gray-500' : 'hover:border-gray-300'} ${isDarkMode ? 'bg-[#343541]' : 'bg-white'} ${isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'} transition-all duration-200 hover:shadow-md"
                       >
                         <div className="flex items-start space-x-3">
                           {getFileIcon(doc.type)}
@@ -1276,7 +1343,7 @@ export function ModernDashboard() {
                             <div className="flex items-center space-x-2 text-xs font-medium text-gray-700 mt-1">
                               <span>{doc.size}</span>
                               <span>•</span>
-                              <span>{doc.uploadTime}</span>
+                              <span>{formatTimeAgo(new Date(doc.uploadTime), currentTime)}</span>
                               {getStatusDot(doc.status)}
                             </div>
                             {doc.summary && doc.status === 'processed' && (
@@ -1317,12 +1384,12 @@ export function ModernDashboard() {
               <div className="space-y-4">
                 <div className="flex items-center">
                   <div className="flex-1 h-px bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200"></div>
-                  <h2 className="px-6 text-lg font-black text-gray-950 bg-white">快速操作</h2>
+                  <h2 className="px-6 text-lg font-black text-gray-900 dark:text-white ${isDarkMode ? 'bg-[#343541]' : 'bg-white'} dark:bg-gray-900">{t('quickActions')}</h2>
                   <div className="flex-1 h-px bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200"></div>
                 </div>
                 
-                <div className="rounded-2xl border bg-white border-gray-100 shadow-sm">
-                <div className="p-6 border-b border-gray-100">
+                <div className="rounded-2xl border ${isDarkMode ? 'bg-[#343541]' : 'bg-white'} ${isDarkMode ? 'border-gray-700' : 'border-gray-100'} shadow-sm">
+                <div className="p-6 border-b ${isDarkMode ? 'border-gray-700' : 'border-gray-100'}">
                   <h2 className="text-lg font-black text-gray-950">{t('quickActions')}</h2>
                   <p className="text-sm font-medium text-gray-800">
                     {t('commonFeatures')}
@@ -1369,8 +1436,8 @@ export function ModernDashboard() {
 
               {/* 系统资源监控 - 仅管理员可见 */}
               {isAdmin() && (
-                <div className="rounded-2xl border bg-white border-gray-100 shadow-sm">
-                  <div className="p-6 border-b border-gray-100">
+                <div className="rounded-2xl border ${isDarkMode ? 'bg-[#343541]' : 'bg-white'} ${isDarkMode ? 'border-gray-700' : 'border-gray-100'} shadow-sm">
+                  <div className="p-6 border-b ${isDarkMode ? 'border-gray-700' : 'border-gray-100'}">
                     <div className="flex items-center justify-between">
                       <div>
                         <h2 className="text-lg font-black text-gray-950">{t('systemStatus')}</h2>
@@ -1379,7 +1446,7 @@ export function ModernDashboard() {
                         </p>
                       </div>
                       <span className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700">
-                        管理员专用
+                        {currentLanguage === 'zh-CN' ? '管理员专用' : 'Admin Only'}
                       </span>
                     </div>
                   </div>
@@ -1440,18 +1507,18 @@ export function ModernDashboard() {
           {/* 页脚信息 */}
           <footer className="mt-12 pt-8 border-t border-border/50">
             <div className="flex flex-col sm:flex-row justify-between items-center space-y-4 sm:space-y-0">
-              <div className="text-xs font-medium text-gray-700">
-                © 2024 Lumidoc 智能工作台 • 版本 v2.1.0 • 最后更新: {new Date().toLocaleDateString('zh-CN')}
+              <div className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                © 2024 Lumidoc {t('intelligentWorkbench')} • {currentLanguage === 'zh-CN' ? '版本' : 'Version'} v2.1.0 • {currentLanguage === 'zh-CN' ? '最后更新' : 'Last updated'}: {new Date().toLocaleDateString(currentLanguage === 'zh-CN' ? 'zh-CN' : 'en-US')}
               </div>
               <div className="flex items-center space-x-4">
                 <div className="flex items-center space-x-2">
                   <div className="w-2 h-2 bg-green-500 rounded-full" />
-                  <span className="text-xs font-medium text-gray-700">
-                    系统正常运行
+                  <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                    {currentLanguage === 'zh-CN' ? '系统正常运行' : 'System running normally'}
                   </span>
                 </div>
-                <div className="text-xs font-medium text-gray-700">
-                  在线用户: {user ? '1' : '0'}
+                <div className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                  {currentLanguage === 'zh-CN' ? '在线用户' : 'Online users'}: {user ? '1' : '0'}
                 </div>
               </div>
             </div>

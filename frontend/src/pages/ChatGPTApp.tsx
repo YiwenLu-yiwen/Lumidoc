@@ -86,12 +86,12 @@ export default function ChatGPTApp() {
   );
 }
 
-// 导出路由配置供其他地方使用
+// Export route configuration for use elsewhere
 export const chatGPTRoutes = [
-  { path: '/chat', name: '智能对话', icon: '💬' },
-  { path: '/dashboard', name: 'Dashboard', icon: '📊' },
-  { path: '/files', name: '文件管理', icon: '📁' },
-  { path: '/graph', name: '知识图谱', icon: '🕸️' },
-  { path: '/projects', name: '项目管理', icon: '👥' },
-  { path: '/settings', name: '设置', icon: '⚙️' }
+  { path: '/chat', nameKey: 'chat', icon: '💬' },
+  { path: '/dashboard', nameKey: 'intelligentWorkbench', icon: '📊' },
+  { path: '/files', nameKey: 'fileManagement', icon: '📁' },
+  { path: '/graph', nameKey: 'rag', icon: '🕸️' },
+  { path: '/projects', nameKey: 'projects', icon: '👥' },
+  { path: '/settings', nameKey: 'settings', icon: '⚙️' }
 ];

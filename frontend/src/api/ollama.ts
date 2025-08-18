@@ -241,44 +241,67 @@ export class OllamaApi {
   /**
    * 获取热门模型推荐
    */
-  static getPopularModels(): Array<{name: string, description: string, type: 'thinking' | 'fast', size: string}> {
-    return [
+  static getPopularModels(language: string = 'zh-CN'): Array<{name: string, description: string, type: 'thinking' | 'fast', size: string}> {
+    const models = [
       {
         name: 'llama3.2:latest',
-        description: 'Meta 最新的 Llama 3.2 模型，性能优秀',
-        type: 'fast',
+        description: {
+          'zh-CN': 'Meta 最新的 Llama 3.2 模型，性能优秀',
+          'en-US': 'Meta\'s latest Llama 3.2 model with excellent performance'
+        },
+        type: 'fast' as const,
         size: '2.0GB'
       },
       {
         name: 'qwen2.5:14b',
-        description: '阿里通义千问 2.5，中文能力强',
-        type: 'thinking',
+        description: {
+          'zh-CN': '阿里通义千问 2.5，中文能力强',
+          'en-US': 'Alibaba Qwen 2.5 with strong Chinese language capabilities'
+        },
+        type: 'thinking' as const,
         size: '8.2GB'
       },
       {
         name: 'deepseek-r1:8b',
-        description: 'DeepSeek 推理模型，逻辑思维强',
-        type: 'thinking',
+        description: {
+          'zh-CN': 'DeepSeek 推理模型，逻辑思维强',
+          'en-US': 'DeepSeek reasoning model with strong logical thinking'
+        },
+        type: 'thinking' as const,
         size: '4.9GB'
       },
       {
         name: 'codestral:latest',
-        description: 'Mistral 代码专用模型',
-        type: 'fast',
+        description: {
+          'zh-CN': 'Mistral 代码专用模型',
+          'en-US': 'Mistral specialized code model'
+        },
+        type: 'fast' as const,
         size: '12GB'
       },
       {
         name: 'gemma2:9b',
-        description: 'Google Gemma 2，轻量高效',
-        type: 'fast',
+        description: {
+          'zh-CN': 'Google Gemma 2，轻量高效',
+          'en-US': 'Google Gemma 2, lightweight and efficient'
+        },
+        type: 'fast' as const,
         size: '5.4GB'
       },
       {
         name: 'llama3.1:8b',
-        description: 'Meta Llama 3.1 8B 版本',
-        type: 'fast',
+        description: {
+          'zh-CN': 'Meta Llama 3.1 8B 版本',
+          'en-US': 'Meta Llama 3.1 8B version'
+        },
+        type: 'fast' as const,
         size: '4.7GB'
       }
     ];
+    
+    return models.map(model => ({
+      ...model,
+      description: model.description[language as keyof typeof model.description] || model.description['zh-CN']
+    }));
   }
 }

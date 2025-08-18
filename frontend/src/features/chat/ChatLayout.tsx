@@ -16,7 +16,8 @@ import {
   ChevronDown,
   ChevronRight
 } from 'lucide-react';
-import { detectAutoTheme } from '@/utils/language';
+import { detectBrowserLanguage, getTranslation } from '@/utils/language';
+import { useTheme } from '@/context/ThemeContext';
 
 // 导入迁移按钮组件
 import MigrationButton from './components/MigrationButton';
@@ -178,8 +179,12 @@ export default function ChatLayout() {
   const [migrationResult, setMigrationResult] = useState<any>(null);
   const [collapsedThinking, setCollapsedThinking] = useState<Set<string>>(new Set());
 
-  // 主题模式检测
-  const isDarkMode = detectAutoTheme() === 'dark';
+  // 主题模式和语言检测
+  const { isDarkMode } = useTheme();
+  const currentLanguage = detectBrowserLanguage();
+  const t = (key: keyof typeof import('@/utils/language').translations['zh-CN']) => {
+    return getTranslation(currentLanguage, key);
+  };
 
   // 切换思考内容折叠状态
   const toggleThinkingCollapse = (messageId: string) => {
@@ -216,7 +221,7 @@ export default function ChatLayout() {
           <ChevronDown className="w-4 h-4 mr-1" />
         )}
         <Brain className="w-4 h-4 mr-2" />
-        思考过程
+        {currentLanguage === 'zh-CN' ? '思考过程' : 'Thinking Process'}
       </button>
       {!isCollapsed && (
         <div className={`text-sm whitespace-pre-wrap leading-relaxed p-3 rounded-lg ${
@@ -974,7 +979,7 @@ export default function ChatLayout() {
             <MessageSquare className="w-4 h-4 text-white" />
           </div>
           <div className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-            Lumidoc Intelligence 聊天
+            {currentLanguage === 'zh-CN' ? 'Lumidoc Intelligence 聊天' : 'Lumidoc Intelligence Chat'}
           </div>
         </div>
         <div className="flex-1 flex justify-end space-x-3">
@@ -983,7 +988,7 @@ export default function ChatLayout() {
             className={`p-2 rounded-lg transition-colors ${
               isDarkMode ? 'text-gray-400 hover:text-white hover:bg-gray-700' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
             }`}
-            title="查看历史消息"
+            title={currentLanguage === 'zh-CN' ? '查看历史消息' : 'View History Messages'}
           >
             <History className="w-5 h-5" />
           </button>
@@ -992,7 +997,7 @@ export default function ChatLayout() {
             className={`p-2 rounded-lg transition-colors ${
               isDarkMode ? 'text-gray-400 hover:text-white hover:bg-gray-700' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
             }`}
-            title="清除所有聊天记录"
+            title={currentLanguage === 'zh-CN' ? '清除所有聊天记录' : 'Clear All Chat History'}
           >
             <Trash2 className="w-5 h-5" />
           </button>
@@ -1005,14 +1010,16 @@ export default function ChatLayout() {
           isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'
         }`}>
           <div className="flex justify-between items-center mb-3">
-            <div className="text-lg font-semibold">历史消息</div>
+            <div className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+              {currentLanguage === 'zh-CN' ? '历史消息' : 'History Messages'}
+            </div>
             <button 
               onClick={() => setShowHistorySelector(false)}
               className={`px-3 py-1 text-sm rounded-lg transition-colors ${
                 isDarkMode ? 'text-gray-400 hover:text-white hover:bg-gray-700' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200'
               }`}
             >
-              关闭
+              {currentLanguage === 'zh-CN' ? '关闭' : 'Close'}
             </button>
           </div>
           <div className="space-y-3">
@@ -1023,7 +1030,7 @@ export default function ChatLayout() {
                 onChange={toggleArchivedMessages}
                 className="mr-3 rounded"
               />
-              包含归档消息（30天前）
+              {currentLanguage === 'zh-CN' ? '包含归档消息（30天前）' : 'Include archived messages (30 days ago)'}
             </label>
             <div className="flex flex-wrap gap-3">
               <button 
@@ -1032,7 +1039,7 @@ export default function ChatLayout() {
                   isDarkMode ? 'text-blue-400 hover:text-blue-300 bg-blue-900/20 hover:bg-blue-900/30' : 'text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100'
                 }`}
               >
-                加载更多历史消息
+                {currentLanguage === 'zh-CN' ? '加载更多历史消息' : 'Load More History Messages'}
               </button>
               <button 
                 onClick={() => triggerMigration(30)}
@@ -1044,9 +1051,12 @@ export default function ChatLayout() {
                       ? 'text-green-400 hover:text-green-300 bg-green-900/20 hover:bg-green-900/30' 
                       : 'text-green-600 hover:text-green-700 bg-green-50 hover:bg-green-100'
                 }`}
-                title="将30天前的消息迁移到数据库存档"
+                title={currentLanguage === 'zh-CN' ? '将30天前的消息迁移到数据库存档' : 'Migrate messages older than 30 days to database archive'}
               >
-                {isMigrating ? '迁移中...' : '归档旧消息'}
+                {isMigrating 
+                  ? (currentLanguage === 'zh-CN' ? '迁移中...' : 'Migrating...')
+                  : (currentLanguage === 'zh-CN' ? '归档旧消息' : 'Archive Old Messages')
+                }
               </button>
             </div>
           </div>
@@ -1056,8 +1066,20 @@ export default function ChatLayout() {
             <div className={`mt-3 text-sm p-3 rounded-lg ${
               isDarkMode ? 'text-gray-300 bg-gray-700' : 'text-gray-700 bg-white border border-gray-200'
             }`}>
-              <div>迁移结果: 处理{migrationResult.projects_processed}个项目，迁移{migrationResult.messages_migrated}条消息</div>
-              {migrationResult.errors > 0 && <div className="text-red-500 mt-1">发生{migrationResult.errors}个错误</div>}
+              <div>
+                {currentLanguage === 'zh-CN' 
+                  ? `迁移结果: 处理${migrationResult.projects_processed}个项目，迁移${migrationResult.messages_migrated}条消息`
+                  : `Migration result: Processed ${migrationResult.projects_processed} projects, migrated ${migrationResult.messages_migrated} messages`
+                }
+              </div>
+              {migrationResult.errors > 0 && (
+                <div className="text-red-500 mt-1">
+                  {currentLanguage === 'zh-CN' 
+                    ? `发生${migrationResult.errors}个错误`
+                    : `${migrationResult.errors} errors occurred`
+                  }
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1083,13 +1105,19 @@ export default function ChatLayout() {
                 </div>
                 <div>
                   <h2 className="text-3xl font-bold mb-3 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                    开始智能对话
+                    {currentLanguage === 'zh-CN' ? '开始智能对话' : 'Start Intelligent Conversation'}
                   </h2>
                   <p className="text-lg">
-                    基于Graph RAG技术，支持多模型协作的智能问答系统
+                    {currentLanguage === 'zh-CN' 
+                      ? '基于Graph RAG技术，支持多模型协作的智能问答系统'
+                      : 'Intelligent Q&A system based on Graph RAG technology with multi-model collaboration'
+                    }
                   </p>
                   <p className="text-sm mt-3 opacity-70">
-                    您可以询问任何问题，我会基于知识图谱为您提供精准回答
+                    {currentLanguage === 'zh-CN' 
+                      ? '您可以询问任何问题，我会基于知识图谱为您提供精准回答'
+                      : 'You can ask any question, and I will provide accurate answers based on knowledge graphs'
+                    }
                   </p>
                 </div>
               </div>
@@ -1141,7 +1169,7 @@ export default function ChatLayout() {
                                   isDarkMode ? 'text-gray-300 hover:text-white' : 'text-gray-600 hover:text-gray-800'
                                 }`}
                               >
-                                取消
+                                {currentLanguage === 'zh-CN' ? '取消' : 'Cancel'}
                               </button>
                             ) : (
                               <button
@@ -1185,7 +1213,9 @@ export default function ChatLayout() {
                                 <button
                                   onClick={() => {
                                     const fullContent = message.thinking 
+                                      ? currentLanguage === 'zh-CN'
                                       ? `思考过程：\n${message.thinking}\n\n回答：\n${message.content}`
+                                      : `Thinking Process:\n${message.thinking}\n\nAnswer:\n${message.content}`
                                       : message.content;
                                     navigator.clipboard.writeText(fullContent);
                                   }}
@@ -1212,7 +1242,9 @@ export default function ChatLayout() {
                                   isDarkMode ? 'bg-purple-400' : 'bg-purple-500'
                                 }`} style={{ animationDelay: '0.4s' }}></div>
                               </div>
-                              <span className="text-sm">AI正在思考中...</span>
+                              <span className="text-sm">
+                                {currentLanguage === 'zh-CN' ? 'AI正在思考中...' : 'AI is thinking...'}
+                              </span>
                             </div>
                           )}
                         </>
@@ -1240,7 +1272,7 @@ export default function ChatLayout() {
                 onKeyDown={handleKeyDown}
                 onCompositionStart={handleCompositionStart}
                 onCompositionEnd={handleCompositionEnd}
-                placeholder="输入您的问题，按 Enter 发送..."
+                placeholder={currentLanguage === 'zh-CN' ? '输入您的问题，按 Enter 发送...' : 'Enter your question, press Enter to send...'}
                 className={`w-full bg-transparent px-4 py-3 pr-12 resize-none rounded-2xl focus:outline-none transition-colors duration-300 ${
                   isDarkMode 
                     ? 'text-gray-100 placeholder-gray-400' 
@@ -1271,7 +1303,7 @@ export default function ChatLayout() {
                   onClick={toggleDebugPanel}
                   className="absolute right-[-45px] bottom-0 text-xs px-2 py-1 bg-gray-700 text-gray-300 rounded"
                 >
-                  调试
+                  {currentLanguage === 'zh-CN' ? '调试' : 'Debug'}
                 </button>
               )}
             </form>
@@ -1279,7 +1311,7 @@ export default function ChatLayout() {
               <div className={`mt-2 text-sm flex justify-end transition-colors duration-300 ${
                 isDarkMode ? 'text-gray-400' : 'text-gray-600'
               }`}>
-                <div>编辑模式</div>
+                <div>{currentLanguage === 'zh-CN' ? '编辑模式' : 'Edit Mode'}</div>
                 <button
                   type="button"
                   onClick={handleCancelEdit}
@@ -1287,7 +1319,7 @@ export default function ChatLayout() {
                     isDarkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'
                   }`}
                 >
-                  取消
+                  {currentLanguage === 'zh-CN' ? '取消' : 'Cancel'}
                 </button>
               </div>
             )}
@@ -1302,7 +1334,9 @@ export default function ChatLayout() {
         }`}>
           <div className="flex items-center space-x-2">
             <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
-            <span className="text-sm font-medium">消息处理被中断，已重置状态</span>
+            <span className="text-sm font-medium">
+              {currentLanguage === 'zh-CN' ? '消息处理被中断，已重置状态' : 'Message processing interrupted, status reset'}
+            </span>
           </div>
         </div>
       )}
@@ -1324,7 +1358,9 @@ export default function ChatLayout() {
                 isDarkMode ? 'bg-white' : 'bg-blue-500'
               }`} style={{ animationDelay: '0.4s' }}></div>
             </div>
-            <span className="font-medium">AI正在思考...</span>
+            <span className="font-medium">
+              {currentLanguage === 'zh-CN' ? 'AI正在思考...' : 'AI is thinking...'}
+            </span>
           </div>
         )}
         <button
@@ -1334,9 +1370,9 @@ export default function ChatLayout() {
               ? 'bg-red-600 hover:bg-red-700 text-white' 
               : 'bg-red-50 hover:bg-red-100 text-red-700 border border-red-200'
           } opacity-70 hover:opacity-100`}
-          title="当AI回复卡住时，使用此按钮重置聊天状态"
+          title={currentLanguage === 'zh-CN' ? '当AI回复卡住时，使用此按钮重置聊天状态' : 'Use this button to reset chat status when AI reply gets stuck'}
         >
-          解除锁定状态
+          {currentLanguage === 'zh-CN' ? '解除锁定状态' : 'Unlock Status'}
         </button>
       </div>
       
@@ -1351,22 +1387,31 @@ export default function ChatLayout() {
               <span className={`ml-2 px-2 py-1 rounded text-xs ${
                 isLoading ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'
               }`}>
-                {isLoading ? '加载中' : '空闲'}
+                {isLoading 
+                  ? (currentLanguage === 'zh-CN' ? '加载中' : 'Loading')
+                  : (currentLanguage === 'zh-CN' ? '空闲' : 'Idle')
+                }
               </span>
               <span className={`ml-2 px-2 py-1 rounded text-xs ${
                 streamingComplete ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
               }`}>
-                {streamingComplete ? '流式完成' : '流式处理中'}
+                {streamingComplete 
+                  ? (currentLanguage === 'zh-CN' ? '流式完成' : 'Streaming Complete')
+                  : (currentLanguage === 'zh-CN' ? '流式处理中' : 'Streaming')
+                }
               </span>
               <span className={`ml-2 px-2 py-1 rounded text-xs ${
                 isProcessing ? 'bg-orange-100 text-orange-800' : 'bg-gray-100 text-gray-800'
               }`}>
-                {isProcessing ? '处理中' : '未处理'}
+                {isProcessing 
+                  ? (currentLanguage === 'zh-CN' ? '处理中' : 'Processing')
+                  : (currentLanguage === 'zh-CN' ? '未处理' : 'Not Processing')
+                }
               </span>
             </div>
             {lastError && (
               <div className="text-red-500 mt-2 p-2 bg-red-50 rounded">
-                <strong>错误:</strong> {lastError}
+                <strong>{currentLanguage === 'zh-CN' ? '错误' : 'Error'}:</strong> {lastError}
               </div>
             )}
           </div>

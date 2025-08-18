@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Sparkles, CheckCircle, XCircle } from 'lucide-react';
 import { LoginInterface } from '@/components/auth/LoginInterface';
 import { useAuth } from '@/context/AuthContext';
-import { detectAutoTheme } from '@/utils/language';
+import { useTheme } from '@/context/ThemeContext';
 import { authApi } from '@/api/auth';
 
 export function AuthPage() {
@@ -16,7 +16,7 @@ export function AuthPage() {
   const isRegisterMode = mode === 'register';
 
   // 获取当前主题
-  const isDarkMode = detectAutoTheme() === 'dark';
+  const { isDarkMode } = useTheme();
 
   // 状态管理
   const [isLoading, setIsLoading] = useState(false);

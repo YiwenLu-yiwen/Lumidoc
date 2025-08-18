@@ -5,6 +5,7 @@ import { AuthPage } from './pages/AuthPage'
 import { ErrorPage } from './pages/ErrorPage'
 import { AuthProvider } from './context/AuthContext'
 import { ProjectProvider } from './context/ProjectContext'
+import { ThemeProvider } from './context/ThemeContext'
 import { AuthGuard } from './context/AuthGuard'
 import { ProjectAccessLevel } from './context/AuthContext'
 import { MainApp } from './pages/MainApp'
@@ -54,7 +55,7 @@ const TokenChecker: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   if (checking) {
     console.log('[TokenChecker] 正在验证token...');
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
+      <div className="min-h-screen flex items-center justify-center bg-[#343541] text-white">
         <div className="text-center">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500 mb-4"></div>
           <p className="text-gray-300">正在加载...</p>
@@ -143,7 +144,7 @@ const router = createBrowserRouter([
       },
       {
         path: "admin",
-        element: <div>管理员面板开发中...</div>,
+        element: <div>{typeof window !== 'undefined' && window.navigator.language.startsWith('zh') ? '管理员面板开发中...' : 'Admin panel under development...'}</div>,
         errorElement: <ErrorPage />
       },
       {
@@ -246,26 +247,28 @@ const AppContent = () => {
   }, []);
 
   return (
-    <ProjectProvider>
-      <TokenChecker>
-        <BackendStatusWrapper enableHealthCheck={true}>
-          <div className="min-h-screen">
-            <Toaster
-              position="bottom-center"
-              toastOptions={{
-                className: 'bg-card text-card-foreground',
-                style: {
-                  background: 'hsl(var(--card))',
-                  color: 'hsl(var(--card-foreground))',
-                },
-                duration: 3000,
-              }}
-            />
-            <RouterProvider router={router} />
-          </div>
-        </BackendStatusWrapper>
-      </TokenChecker>
-    </ProjectProvider>
+    <ThemeProvider>
+      <ProjectProvider>
+        <TokenChecker>
+          <BackendStatusWrapper enableHealthCheck={true}>
+            <div className="min-h-screen">
+              <Toaster
+                position="bottom-center"
+                toastOptions={{
+                  className: 'bg-card text-card-foreground',
+                  style: {
+                    background: 'hsl(var(--card))',
+                    color: 'hsl(var(--card-foreground))',
+                  },
+                  duration: 3000,
+                }}
+              />
+              <RouterProvider router={router} />
+            </div>
+          </BackendStatusWrapper>
+        </TokenChecker>
+      </ProjectProvider>
+    </ThemeProvider>
   );
 };
 

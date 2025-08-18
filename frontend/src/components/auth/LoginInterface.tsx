@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { Eye, EyeOff, Mail, Lock, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { detectAutoTheme } from '@/utils/language';
+import { detectBrowserLanguage, getTranslation } from '@/utils/language';
+import { useTheme } from '@/context/ThemeContext';
 
 interface LoginInterfaceProps {
   onLogin?: (credentials: { email: string; password: string }) => void;
@@ -27,27 +28,33 @@ export function LoginInterface({ onLogin, onRegister, isLoading = false }: Login
     setFormData({ email: '', password: '', username: '' });
   };
 
-  // 获取当前主题
-  const isDarkMode = detectAutoTheme() === 'dark';
+  // 获取当前主题和语言
+  const { isDarkMode } = useTheme();
+  const currentLanguage = detectBrowserLanguage();
+  
+  // 翻译函数
+  const t = (key: keyof typeof import('@/utils/language').translations['zh-CN']) => {
+    return getTranslation(currentLanguage, key);
+  };
 
   // 表单验证
   const validateForm = () => {
     const newErrors: { [key: string]: string } = {};
 
     if (!formData.email) {
-      newErrors.email = '请输入邮箱地址';
+      newErrors.email = t('pleaseEnterEmail');
     } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = '请输入有效的邮箱地址';
+      newErrors.email = t('pleaseEnterValidEmail');
     }
 
     if (!formData.password) {
-      newErrors.password = '请输入密码';
+      newErrors.password = t('pleaseEnterPassword');
     } else if (formData.password.length < 6) {
-      newErrors.password = '密码至少需要6位';
+      newErrors.password = t('passwordMinLength');
     }
 
     if (!isLoginMode && !formData.username) {
-      newErrors.username = '请输入用户名';
+      newErrors.username = t('pleaseEnterUsername');
     }
 
     setErrors(newErrors);
@@ -78,7 +85,7 @@ export function LoginInterface({ onLogin, onRegister, isLoading = false }: Login
 
   return (
     <div className={`w-full`}>
-      <div className={`w-full p-8 rounded-2xl shadow-lg ${isDarkMode ? 'bg-[#171717] border border-gray-800' : 'bg-white border border-gray-200'}`}>
+      <div className={`w-full p-8 rounded-2xl shadow-lg ${isDarkMode ? 'bg-[#343541] border border-gray-700' : 'bg-white border border-gray-200'}`}>
 
         {/* 切换登录/注册模式 */}
         <div className={`flex rounded-lg p-1 mb-6 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-100'}`}>
@@ -96,7 +103,7 @@ export function LoginInterface({ onLogin, onRegister, isLoading = false }: Login
                   : 'text-gray-600 hover:text-gray-900'
             } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
-            登录
+            {t('login')}
           </button>
           <button
             type="button"
@@ -112,7 +119,7 @@ export function LoginInterface({ onLogin, onRegister, isLoading = false }: Login
                   : 'text-gray-600 hover:text-gray-900'
             } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
-            注册
+            {t('register')}
           </button>
         </div>
 
@@ -121,8 +128,8 @@ export function LoginInterface({ onLogin, onRegister, isLoading = false }: Login
           {/* 用户名字段（仅注册时显示） */}
           {!isLoginMode && (
             <div>
-              <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                用户名
+              <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-white' : 'text-gray-700'}`}>
+                {t('username')}
               </label>
               <div className="relative">
                 <User className={`absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`} />
@@ -130,8 +137,8 @@ export function LoginInterface({ onLogin, onRegister, isLoading = false }: Login
                   type="text"
                   value={formData.username}
                   onChange={(e) => updateFormData('username', e.target.value)}
-                  className={`pl-10 ${isDarkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-300'}`}
-                  placeholder="输入用户名"
+                  className={`pl-10 ${isDarkMode ? 'bg-gray-600 border-gray-500 text-white placeholder-gray-300' : 'bg-white border-gray-300'}`}
+                  placeholder={t('enterUsername')}
                   disabled={isLoading}
                 />
               </div>
@@ -143,8 +150,8 @@ export function LoginInterface({ onLogin, onRegister, isLoading = false }: Login
 
           {/* 邮箱字段 */}
           <div>
-            <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-              邮箱地址
+            <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-white' : 'text-gray-700'}`}>
+              {t('emailAddress')}
             </label>
             <div className="relative">
               <Mail className={`absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`} />
@@ -152,8 +159,8 @@ export function LoginInterface({ onLogin, onRegister, isLoading = false }: Login
                 type="email"
                 value={formData.email}
                 onChange={(e) => updateFormData('email', e.target.value)}
-                className={`pl-10 ${isDarkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-300'}`}
-                placeholder="输入邮箱地址"
+                className={`pl-10 ${isDarkMode ? 'bg-gray-600 border-gray-500 text-white placeholder-gray-300' : 'bg-white border-gray-300'}`}
+                placeholder={t('enterEmail')}
                 disabled={isLoading}
               />
             </div>
@@ -164,8 +171,8 @@ export function LoginInterface({ onLogin, onRegister, isLoading = false }: Login
 
           {/* 密码字段 */}
           <div>
-            <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-              密码
+            <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-white' : 'text-gray-700'}`}>
+              {t('password')}
             </label>
             <div className="relative">
               <Lock className={`absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`} />
@@ -173,8 +180,8 @@ export function LoginInterface({ onLogin, onRegister, isLoading = false }: Login
                 type={showPassword ? 'text' : 'password'}
                 value={formData.password}
                 onChange={(e) => updateFormData('password', e.target.value)}
-                className={`pl-10 pr-10 ${isDarkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-300'}`}
-                placeholder="输入密码"
+                className={`pl-10 pr-10 ${isDarkMode ? 'bg-gray-600 border-gray-500 text-white placeholder-gray-300' : 'bg-white border-gray-300'}`}
+                placeholder={t('enterPassword')}
                 disabled={isLoading}
               />
               <button
@@ -195,9 +202,9 @@ export function LoginInterface({ onLogin, onRegister, isLoading = false }: Login
             <div className="text-right">
               <button
                 type="button"
-                className={`text-sm ${isDarkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-600 hover:text-gray-900'} hover:underline`}
+                className={`text-sm ${isDarkMode ? 'text-gray-300 hover:text-white' : 'text-gray-600 hover:text-gray-900'} hover:underline`}
               >
-                忘记密码？
+                {t('forgotPassword')}
               </button>
             </div>
           )}
@@ -206,41 +213,41 @@ export function LoginInterface({ onLogin, onRegister, isLoading = false }: Login
           <Button
             type="submit"
             disabled={isLoading}
-            className={`w-full py-3 ${isDarkMode ? 'bg-gray-600 hover:bg-gray-700' : 'bg-gray-800 hover:bg-gray-900'} text-white font-medium`}
+            className={`w-full py-3 ${isDarkMode ? 'bg-gray-700 hover:bg-gray-800' : 'bg-gray-800 hover:bg-gray-900'} text-white font-medium`}
           >
             {isLoading ? (
               <div className="flex items-center justify-center">
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                {isLoginMode ? '登录中...' : '注册中...'}
+                {isLoginMode ? t('loginLoading') : t('registerLoading')}
               </div>
             ) : (
-              isLoginMode ? '登录' : '注册'
+              isLoginMode ? t('login') : t('register')
             )}
           </Button>
         </form>
 
         {/* 提示信息 */}
-        <div className={`mt-6 text-center text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+        <div className={`mt-6 text-center text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
           {isLoginMode ? (
             <>
-              还没有账号？
+              {t('noAccount')}
               <button
                 type="button"
                 onClick={() => setIsLoginMode(false)}
-                className={`ml-1 ${isDarkMode ? 'text-gray-200 hover:text-white' : 'text-gray-900 hover:text-black'} hover:underline`}
+                className={`ml-1 ${isDarkMode ? 'text-white hover:text-gray-200' : 'text-gray-900 hover:text-black'} hover:underline`}
               >
-                立即注册
+                {t('registerNow')}
               </button>
             </>
           ) : (
             <>
-              已有账号？
+              {t('hasAccount')}
               <button
                 type="button"
                 onClick={() => setIsLoginMode(true)}
-                className={`ml-1 ${isDarkMode ? 'text-gray-200 hover:text-white' : 'text-gray-900 hover:text-black'} hover:underline`}
+                className={`ml-1 ${isDarkMode ? 'text-white hover:text-gray-200' : 'text-gray-900 hover:text-black'} hover:underline`}
               >
-                立即登录
+                {t('loginNow')}
               </button>
             </>
           )}

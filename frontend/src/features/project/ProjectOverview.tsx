@@ -4,6 +4,7 @@ import { projectApi } from '@/api/project';
 import { Calendar, Clock } from 'lucide-react';
 import { customToast } from '@/App';
 import { useAuth, ProjectAccessLevel } from '@/context/AuthContext';
+import { detectAutoTheme, detectBrowserLanguage, getTranslation } from '@/utils/language';
 
 export default function ProjectOverview() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -13,11 +14,20 @@ export default function ProjectOverview() {
   const { updateUserProjectAccess } = useAuth();
   const navigate = useNavigate();
   const [loadAttempts, setLoadAttempts] = useState(0);
+  
+  // 获取当前主题和语言
+  const isDarkMode = detectAutoTheme() === 'dark';
+  const currentLanguage = detectBrowserLanguage();
+  
+  // 翻译函数
+  const t = (key: keyof typeof import('@/utils/language').translations['zh-CN']) => {
+    return getTranslation(currentLanguage, key);
+  };
 
   useEffect(() => {
     const loadProject = async () => {
       if (!projectId) {
-        setError('项目ID不存在');
+        setError(t('projectIdNotExist'));
         setLoading(false);
         return;
       }
@@ -70,22 +80,22 @@ export default function ProjectOverview() {
           // 如果重试次数过多，返回项目列表页面
           if (newAttempts >= 3) {
             console.error(`[ProjectOverview] 项目(${projectId})加载失败次数过多，返回项目列表`);
-            setError('无法加载项目信息，返回项目列表');
-            customToast.error('项目加载失败，返回项目列表');
+            setError(t('cannotLoadProject'));
+            customToast.error(t('projectLoadFailed'));
             
             // 延迟返回，避免连续导航
             setTimeout(() => {
               navigate('/', { replace: true });
             }, 1500);
           } else {
-            setError('无法加载项目信息');
-            customToast.error('加载项目信息失败，请稍后再试');
+            setError(t('cannotLoadProject'));
+            customToast.error(t('loadProjectFailed'));
           }
         }
       } catch (error) {
         console.error('[ProjectOverview] 加载项目详情未知错误:', error);
-        setError('未知错误，请刷新页面重试');
-        customToast.error('发生未知错误，请刷新页面');
+        setError(t('unknownError'));
+        customToast.error(t('unknownErrorRefresh'));
       } finally {
         setLoading(false);
       }
@@ -99,7 +109,7 @@ export default function ProjectOverview() {
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500 mb-4"></div>
-          <p className="text-gray-400">加载项目信息...</p>
+          <p className={`${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>{t('loadingProjectInfo')}</p>
         </div>
       </div>
     );
@@ -107,20 +117,20 @@ export default function ProjectOverview() {
 
   if (error || !project) {
     return (
-      <div className="bg-gray-800 rounded-lg p-6 text-center">
-        <p className="text-gray-400">{error || '无法加载项目信息'}</p>
+      <div className={`${isDarkMode ? 'bg-[#343541]' : 'bg-white'} rounded-lg p-6 text-center border ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+        <p className={`${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>{error || t('cannotLoadProject')}</p>
         <div className="flex justify-center mt-4 space-x-4">
           <button 
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white text-sm"
             onClick={() => window.location.reload()}
           >
-            重试
+            {t('retry')}
           </button>
           <button 
-            className="px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded text-white text-sm"
+            className={`px-4 py-2 ${isDarkMode ? 'bg-gray-600 hover:bg-gray-700' : 'bg-gray-500 hover:bg-gray-600'} rounded text-white text-sm`}
             onClick={() => navigate('/', { replace: true })}
           >
-            返回项目列表
+            {t('returnToProjectList')}
           </button>
         </div>
       </div>
@@ -129,47 +139,47 @@ export default function ProjectOverview() {
 
   return (
     <div className="space-y-6">
-      <div className="bg-gray-800 rounded-lg p-6">
-        <h1 className="text-2xl font-bold mb-2 text-white">{project.name}</h1>
-        <p className="text-gray-300 mb-4">{project.description || '无项目描述'}</p>
+      <div className={`${isDarkMode ? 'bg-[#343541]' : 'bg-white'} rounded-lg p-6 border ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+        <h1 className={`text-2xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{project.name}</h1>
+        <p className={`${isDarkMode ? 'text-gray-300' : 'text-gray-600'} mb-4`}>{project.description || t('noProjectDescription')}</p>
         
-        <div className="flex items-center space-x-4 text-sm text-gray-400">
+        <div className={`flex items-center space-x-4 text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
           <div className="flex items-center">
             <Calendar className="h-4 w-4 mr-1" />
-            <span>创建于: {new Date(project.created_at).toLocaleString()}</span>
+            <span>{t('createdAt')}: {new Date(project.created_at).toLocaleString()}</span>
           </div>
           {project.updated_at && (
             <div className="flex items-center">
               <Clock className="h-4 w-4 mr-1" />
-              <span>更新于: {new Date(project.updated_at).toLocaleString()}</span>
+              <span>{t('updatedAt')}: {new Date(project.updated_at).toLocaleString()}</span>
             </div>
           )}
         </div>
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-gray-800 rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-4 text-white">项目统计</h2>
+        <div className={`${isDarkMode ? 'bg-[#343541]' : 'bg-white'} rounded-lg p-6 border ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+          <h2 className={`text-xl font-semibold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{t('projectStats')}</h2>
           <div className="space-y-2">
             <div className="flex justify-between">
-              <span className="text-gray-400">项目ID</span>
-              <span className="text-white">{project.id}</span>
+              <span className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>{t('projectId')}</span>
+              <span className={`${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{project.id}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-400">状态</span>
-              <span className="text-white">{project.status || '活跃'}</span>
+              <span className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>{t('status')}</span>
+              <span className={`${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{project.status || t('active')}</span>
             </div>
           </div>
         </div>
         
-        <div className="bg-gray-800 rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-4 text-white">快捷操作</h2>
+        <div className={`${isDarkMode ? 'bg-[#343541]' : 'bg-white'} rounded-lg p-6 border ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+          <h2 className={`text-xl font-semibold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{t('quickActions')}</h2>
           <div className="flex flex-wrap gap-2">
             <button className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white text-sm">
-              添加文件
+              {t('addFile')}
             </button>
-            <button className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white text-sm">
-              创建分析
+            <button className={`px-4 py-2 ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-600 hover:bg-gray-700'} rounded text-white text-sm`}>
+              {t('createAnalysis')}
             </button>
           </div>
         </div>

@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ModelInfo, getAvailableModels } from '@/api/modelService';
-import { detectAutoTheme } from '@/utils/language';
+import { useTheme } from '@/context/ThemeContext';
 
 interface ModelSelectorProps {
   selectedModel?: ModelInfo | null;
@@ -34,7 +34,7 @@ export function ModelSelector({
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // 获取当前主题
-  const isDarkMode = detectAutoTheme() === 'dark';
+  const { isDarkMode } = useTheme();
 
   // 获取翻译文本的简化函数
   // const t = (key: string) => getTranslation(currentLanguage, key as any);

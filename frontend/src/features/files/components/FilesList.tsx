@@ -5,7 +5,7 @@ import { ragApi, RagBuildResponse } from '../../../api/rag';
 import { useAuth } from '../../../context/AuthContext';
 import { Eye, Download, RefreshCw, Trash } from 'lucide-react';
 import { Spinner } from '../../../components/ui';
-import { detectAutoTheme } from '../../../utils/language';
+import { useTheme } from '../../../context/ThemeContext';
 
 // 导入或定义缺失的组件和函数
 const FileTypeIcon = ({ type }: { type: string }) => {
@@ -122,7 +122,7 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
   useAuth(); // 保持认证上下文的连接
   
   // 主题检测
-  const isDarkMode = detectAutoTheme() === 'dark';
+  const { isDarkMode } = useTheme();
   
   // 在组件挂载和文件类型变化时保存到本地存储
   useEffect(() => {

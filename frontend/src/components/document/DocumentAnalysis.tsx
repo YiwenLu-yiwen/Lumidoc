@@ -23,7 +23,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { detectAutoTheme } from '@/utils/language';
+import { detectBrowserLanguage, getTranslation } from '@/utils/language';
+import { useTheme } from '@/context/ThemeContext';
 
 interface DocumentFile {
   id: string;
@@ -61,6 +62,15 @@ interface AnalysisStats {
 }
 
 export function DocumentAnalysis() {
+  // 获取当前主题和语言
+  const { isDarkMode } = useTheme();
+  const currentLanguage = detectBrowserLanguage();
+  
+  // 翻译函数
+  const t = (key: keyof typeof import('@/utils/language').translations['zh-CN']) => {
+    return getTranslation(currentLanguage, key);
+  };
+
   const [documents, setDocuments] = useState<DocumentFile[]>([
     {
       id: '1',
@@ -164,8 +174,6 @@ export function DocumentAnalysis() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'completed' | 'processing' | 'error'>('all');
   const [dragActive, setDragActive] = useState(false);
-
-  const isDarkMode = detectAutoTheme() === 'dark';
 
   const stats: AnalysisStats = {
     totalDocuments: documents.length,
@@ -282,19 +290,19 @@ export function DocumentAnalysis() {
         {/* 页面标题 */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold">文档分析中心</h1>
+            <h1 className={`text-3xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{t('documentAnalysis')}</h1>
             <p className={`text-lg ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-              OCR识别、智能分析、内容提取一站式服务
+              {currentLanguage === 'zh-CN' ? 'OCR识别、智能分析、内容提取一站式服务' : 'One-stop service for OCR recognition, intelligent analysis, and content extraction'}
             </p>
           </div>
           <div className="flex items-center space-x-3">
-            <Button variant="outline">
+            <Button variant="outline" className={`${isDarkMode ? 'border-gray-600 text-gray-300 hover:bg-gray-700' : ''}`}>
               <RefreshCw className="w-4 h-4 mr-2" />
-              刷新状态
+              {currentLanguage === 'zh-CN' ? '刷新状态' : 'Refresh Status'}
             </Button>
             <Button className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0">
               <Upload className="w-4 h-4 mr-2" />
-              上传文档
+              {t('uploadDocument')}
             </Button>
           </div>
         </div>
@@ -314,9 +322,9 @@ export function DocumentAnalysis() {
                 {stats.totalDocuments}
               </span>
             </div>
-            <h3 className="text-lg font-semibold mb-1">总文档数</h3>
+            <h3 className={`text-lg font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{t('totalDocuments')}</h3>
             <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-              累计处理文档
+              {currentLanguage === 'zh-CN' ? '累计处理文档' : 'Total processed documents'}
             </p>
           </div>
 
@@ -333,9 +341,9 @@ export function DocumentAnalysis() {
                 {stats.processedToday}
               </span>
             </div>
-            <h3 className="text-lg font-semibold mb-1">今日处理</h3>
+            <h3 className={`text-lg font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{currentLanguage === 'zh-CN' ? '今日处理' : 'Today Processed'}</h3>
             <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-              24小时内完成
+              {currentLanguage === 'zh-CN' ? '24小时内完成' : 'Completed in 24 hours'}
             </p>
           </div>
 
@@ -352,9 +360,9 @@ export function DocumentAnalysis() {
                 {stats.averageProcessingTime}s
               </span>
             </div>
-            <h3 className="text-lg font-semibold mb-1">平均处理时间</h3>
+            <h3 className={`text-lg font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{t('averageProcessingTime')}</h3>
             <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-              OCR + 分析
+              {currentLanguage === 'zh-CN' ? 'OCR + 分析' : 'OCR + Analysis'}
             </p>
           </div>
 
@@ -371,9 +379,9 @@ export function DocumentAnalysis() {
                 {stats.successRate}%
               </span>
             </div>
-            <h3 className="text-lg font-semibold mb-1">成功率</h3>
+            <h3 className={`text-lg font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{t('successRate')}</h3>
             <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-              处理成功率
+              {currentLanguage === 'zh-CN' ? '处理成功率' : 'Processing success rate'}
             </p>
           </div>
         </div>
@@ -400,18 +408,24 @@ export function DocumentAnalysis() {
               <Upload className={`w-12 h-12 mx-auto mb-4 ${
                 dragActive ? 'text-blue-500' : isDarkMode ? 'text-gray-400' : 'text-gray-500'
               }`} />
-              <h3 className="text-lg font-semibold mb-2">
-                {dragActive ? '释放文件开始上传' : '拖拽文件到此处上传'}
+              <h3 className={`text-lg font-semibold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                {dragActive 
+                  ? (currentLanguage === 'zh-CN' ? '释放文件开始上传' : 'Release files to start upload')
+                  : t('dropFilesHere')
+                }
               </h3>
               <p className={`text-sm mb-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                支持 PDF、Word、Excel、PowerPoint、图片等格式
+                {currentLanguage === 'zh-CN' 
+                  ? '支持 PDF、Word、Excel、PowerPoint、图片等格式'
+                  : 'Support PDF, Word, Excel, PowerPoint, images and other formats'
+                }
               </p>
               <Button 
                 className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0"
                 onClick={() => document.getElementById('file-input')?.click()}
               >
                 <Upload className="w-4 h-4 mr-2" />
-                选择文件
+{currentLanguage === 'zh-CN' ? '选择文件' : 'Select Files'}
               </Button>
               <input
                 id="file-input"
@@ -431,7 +445,7 @@ export function DocumentAnalysis() {
                 <div className="flex-1 relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                   <Input
-                    placeholder="搜索文档名称..."
+                    placeholder={currentLanguage === 'zh-CN' ? '搜索文档名称...' : 'Search documents...'}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="pl-10"
@@ -443,21 +457,21 @@ export function DocumentAnalysis() {
                     size="sm"
                     onClick={() => setFilterStatus('all')}
                   >
-                    全部
+{currentLanguage === 'zh-CN' ? '全部' : 'All'}
                   </Button>
                   <Button 
                     variant={filterStatus === 'completed' ? 'default' : 'outline'} 
                     size="sm"
                     onClick={() => setFilterStatus('completed')}
                   >
-                    已完成
+{currentLanguage === 'zh-CN' ? '已完成' : 'Completed'}
                   </Button>
                   <Button 
                     variant={filterStatus === 'processing' ? 'default' : 'outline'} 
                     size="sm"
                     onClick={() => setFilterStatus('processing')}
                   >
-                    处理中
+{currentLanguage === 'zh-CN' ? '处理中' : 'Processing'}
                   </Button>
                 </div>
               </div>
@@ -468,9 +482,14 @@ export function DocumentAnalysis() {
               isDarkMode ? 'bg-[#2a2a2a] border-gray-700' : 'bg-white border-gray-200'
             }`}>
               <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-                <h2 className="text-xl font-semibold">文档列表</h2>
+                <h2 className={`text-xl font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                  {currentLanguage === 'zh-CN' ? '文档列表' : 'Document List'}
+                </h2>
                 <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                  共 {filteredDocuments.length} 个文档
+                  {currentLanguage === 'zh-CN' 
+                    ? `共 ${filteredDocuments.length} 个文档`
+                    : `${filteredDocuments.length} documents total`
+                  }
                 </p>
               </div>
               
@@ -492,14 +511,16 @@ export function DocumentAnalysis() {
                             <span>{formatFileSize(doc.size)}</span>
                             <span>{doc.uploadTime.toLocaleString()}</span>
                             {doc.ocrResult && (
-                              <span>识别率: {doc.ocrResult.confidence}%</span>
+                              <span>
+                                {currentLanguage === 'zh-CN' ? '识别率' : 'Recognition'}: {doc.ocrResult.confidence}%
+                              </span>
                             )}
                           </div>
                           
                           {doc.status === 'processing' && doc.progress && (
                             <div className="mt-2">
                               <div className="flex items-center justify-between text-xs mb-1">
-                                <span>处理进度</span>
+                                <span>{currentLanguage === 'zh-CN' ? '处理进度' : 'Progress'}</span>
                                 <span>{doc.progress}%</span>
                               </div>
                               <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
@@ -519,7 +540,7 @@ export function DocumentAnalysis() {
                               <div className="flex items-center space-x-3 mt-1 text-xs">
                                 <span className="flex items-center space-x-1">
                                   <Clock className="w-3 h-3" />
-                                  <span>{doc.analysis.readingTime}分钟</span>
+                                  <span>{doc.analysis.readingTime}{currentLanguage === 'zh-CN' ? '分钟' : ' min'}</span>
                                 </span>
                                 <span className="flex items-center space-x-1">
                                   <Tag className="w-3 h-3" />
@@ -554,7 +575,9 @@ export function DocumentAnalysis() {
                 }`}>
                   <div className="p-6 border-b border-gray-200 dark:border-gray-700">
                     <div className="flex items-center justify-between">
-                      <h2 className="text-lg font-semibold">文档详情</h2>
+                      <h2 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                        {currentLanguage === 'zh-CN' ? '文档详情' : 'Document Details'}
+                      </h2>
                       <Button variant="ghost" size="sm" onClick={() => setSelectedDocument(null)}>
                         <X className="w-4 h-4" />
                       </Button>
@@ -575,9 +598,11 @@ export function DocumentAnalysis() {
                     {selectedDocument.ocrResult && (
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium">OCR识别结果</span>
+                          <span className={`text-sm font-medium ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                            {currentLanguage === 'zh-CN' ? 'OCR识别结果' : 'OCR Recognition Result'}
+                          </span>
                           <span className="text-xs text-green-600">
-                            置信度: {selectedDocument.ocrResult.confidence}%
+                            {currentLanguage === 'zh-CN' ? '置信度' : 'Confidence'}: {selectedDocument.ocrResult.confidence}%
                           </span>
                         </div>
                         <div className={`p-3 rounded-lg text-xs ${
@@ -587,7 +612,10 @@ export function DocumentAnalysis() {
                         </div>
                         {selectedDocument.ocrResult.pageCount && (
                           <p className="text-xs text-gray-500">
-                            共 {selectedDocument.ocrResult.pageCount} 页
+                            {currentLanguage === 'zh-CN' 
+                              ? `共 ${selectedDocument.ocrResult.pageCount} 页`
+                              : `${selectedDocument.ocrResult.pageCount} pages total`
+                            }
                           </p>
                         )}
                       </div>
@@ -596,15 +624,15 @@ export function DocumentAnalysis() {
                     <div className="flex items-center space-x-2">
                       <Button size="sm" variant="outline">
                         <Eye className="w-4 h-4 mr-1" />
-                        预览
+{currentLanguage === 'zh-CN' ? '预览' : 'Preview'}
                       </Button>
                       <Button size="sm" variant="outline">
                         <Download className="w-4 h-4 mr-1" />
-                        下载
+{currentLanguage === 'zh-CN' ? '下载' : 'Download'}
                       </Button>
                       <Button size="sm" variant="outline">
                         <Share2 className="w-4 h-4 mr-1" />
-                        分享
+{currentLanguage === 'zh-CN' ? '分享' : 'Share'}
                       </Button>
                     </div>
                   </div>
@@ -618,14 +646,18 @@ export function DocumentAnalysis() {
                     <div className="p-6 border-b border-gray-200 dark:border-gray-700">
                       <div className="flex items-center space-x-2">
                         <Brain className="w-5 h-5 text-purple-500" />
-                        <h2 className="text-lg font-semibold">智能分析</h2>
+                        <h2 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                          {currentLanguage === 'zh-CN' ? '智能分析' : 'Intelligent Analysis'}
+                        </h2>
                       </div>
                     </div>
                     
                     <div className="p-6 space-y-6">
                       {/* 摘要 */}
                       <div>
-                        <h3 className="text-sm font-medium mb-2">内容摘要</h3>
+                        <h3 className={`text-sm font-medium mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                          {currentLanguage === 'zh-CN' ? '内容摘要' : 'Content Summary'}
+                        </h3>
                         <p className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                           {selectedDocument.analysis.summary}
                         </p>
@@ -633,7 +665,9 @@ export function DocumentAnalysis() {
                       
                       {/* 关键点 */}
                       <div>
-                        <h3 className="text-sm font-medium mb-2">关键要点</h3>
+                        <h3 className={`text-sm font-medium mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                          {currentLanguage === 'zh-CN' ? '关键要点' : 'Key Points'}
+                        </h3>
                         <ul className="space-y-1">
                           {selectedDocument.analysis.keyPoints.map((point, index) => (
                             <li key={index} className={`text-sm flex items-start space-x-2 ${
@@ -648,7 +682,9 @@ export function DocumentAnalysis() {
                       
                       {/* 实体识别 */}
                       <div>
-                        <h3 className="text-sm font-medium mb-2">实体识别</h3>
+                        <h3 className={`text-sm font-medium mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                          {currentLanguage === 'zh-CN' ? '实体识别' : 'Entity Recognition'}
+                        </h3>
                         <div className="space-y-2">
                           {selectedDocument.analysis.entities.map((entity, index) => (
                             <div key={index} className="flex items-center justify-between text-sm">
@@ -660,7 +696,9 @@ export function DocumentAnalysis() {
                                 </span>
                                 <span>{entity.name}</span>
                               </div>
-                              <span className="text-xs text-gray-500">{entity.count}次</span>
+                              <span className="text-xs text-gray-500">
+                                {entity.count}{currentLanguage === 'zh-CN' ? '次' : ' times'}
+                              </span>
                             </div>
                           ))}
                         </div>
@@ -669,28 +707,40 @@ export function DocumentAnalysis() {
                       {/* 情感分析和主题 */}
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <h3 className="text-sm font-medium mb-2">情感倾向</h3>
+                          <h3 className={`text-sm font-medium mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                            {currentLanguage === 'zh-CN' ? '情感倾向' : 'Sentiment'}
+                          </h3>
                           <span className={`px-3 py-1 rounded-full text-xs ${
                             selectedDocument.analysis.sentiment === 'positive' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
                             selectedDocument.analysis.sentiment === 'negative' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
                             'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
                           }`}>
-                            {selectedDocument.analysis.sentiment === 'positive' ? '积极' :
-                             selectedDocument.analysis.sentiment === 'negative' ? '消极' : '中性'}
+                            {selectedDocument.analysis.sentiment === 'positive' 
+                              ? (currentLanguage === 'zh-CN' ? '积极' : 'Positive')
+                              : selectedDocument.analysis.sentiment === 'negative' 
+                                ? (currentLanguage === 'zh-CN' ? '消极' : 'Negative')
+                                : (currentLanguage === 'zh-CN' ? '中性' : 'Neutral')
+                            }
                           </span>
                         </div>
                         <div>
-                          <h3 className="text-sm font-medium mb-2">阅读时间</h3>
+                          <h3 className={`text-sm font-medium mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                            {currentLanguage === 'zh-CN' ? '阅读时间' : 'Reading Time'}
+                          </h3>
                           <div className="flex items-center space-x-1 text-sm">
                             <Clock className="w-4 h-4 text-gray-400" />
-                            <span>{selectedDocument.analysis.readingTime} 分钟</span>
+                            <span>
+                              {selectedDocument.analysis.readingTime} {currentLanguage === 'zh-CN' ? '分钟' : 'minutes'}
+                            </span>
                           </div>
                         </div>
                       </div>
                       
                       {/* 主题标签 */}
                       <div>
-                        <h3 className="text-sm font-medium mb-2">主题标签</h3>
+                        <h3 className={`text-sm font-medium mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                          {currentLanguage === 'zh-CN' ? '主题标签' : 'Topic Tags'}
+                        </h3>
                         <div className="flex flex-wrap gap-2">
                           {selectedDocument.analysis.topics.map((topic, index) => (
                             <span key={index} className={`px-2 py-1 rounded-full text-xs ${
@@ -712,9 +762,14 @@ export function DocumentAnalysis() {
                 <FileText className={`w-12 h-12 mx-auto mb-4 ${
                   isDarkMode ? 'text-gray-600' : 'text-gray-400'
                 }`} />
-                <h3 className="text-lg font-semibold mb-2">选择文档查看详情</h3>
+                <h3 className={`text-lg font-semibold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                  {currentLanguage === 'zh-CN' ? '选择文档查看详情' : 'Select Document to View Details'}
+                </h3>
                 <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                  点击左侧文档列表中的任意文档查看详细分析结果
+                  {currentLanguage === 'zh-CN'
+                    ? '点击左侧文档列表中的任意文档查看详细分析结果'
+                    : 'Click any document in the left list to view detailed analysis results'
+                  }
                 </p>
               </div>
             )}

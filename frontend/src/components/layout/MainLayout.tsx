@@ -27,16 +27,16 @@ import { useAuth } from '@/context/AuthContext';
 import { useProjects } from '@/context/ProjectContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { AccountModal } from '@/components/ui';
+import ModernAccountModal from '@/components/ui/ModernAccountModal';
 import { ModelSelector } from '@/components/model/ModelSelector';
 import { useModel } from '@/hooks/useModel';
 import { 
   detectBrowserLanguage, 
-  detectAutoTheme, 
   saveLanguage, 
   supportedLanguages,
   getTranslation 
 } from '@/utils/language';
+import { useTheme } from '@/context/ThemeContext';
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -97,8 +97,8 @@ export default function MainLayout({ children }: MainLayoutProps) {
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [showAccountModal, setShowAccountModal] = useState(false);
-  const [themeMode, setThemeMode] = useState<ThemeMode>('auto');
   const [currentLanguage, setCurrentLanguage] = useState<string>(detectBrowserLanguage());
+  const { themeMode, isDarkMode, toggleTheme } = useTheme();
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
   const [chatSessions] = useState<ChatSession[]>(mockChatSessions);
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
@@ -127,9 +127,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
   const sidebarRef = useRef<HTMLDivElement>(null);
   const languageMenuRef = useRef<HTMLDivElement>(null);
 
-  // 计算实际主题
-  const actualTheme = themeMode === 'auto' ? detectAutoTheme() : themeMode;
-  const isDarkMode = actualTheme === 'dark';
+  // 主题状态现在由 ThemeContext 管理
 
   // 获取翻译文本的简化函数
   const t = (key: keyof typeof import('@/utils/language').translations['zh-CN']) => 
@@ -140,14 +138,14 @@ export default function MainLayout({ children }: MainLayoutProps) {
     {
       key: 'dashboard',
       path: '/app/dashboard',
-      label: '控制台',
+      label: t('intelligentWorkbench'),
       icon: BarChart3,
       active: currentSection === 'dashboard'
     },
     {
       key: 'documents',
       path: '/app/documents',
-      label: '文档分析',
+      label: t('documentAnalysis'),
       icon: FileText,
       active: currentSection === 'documents'
     },
@@ -213,7 +211,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
     if (days === 0) {
       return date.toLocaleTimeString(currentLanguage, { hour: '2-digit', minute: '2-digit' });
     } else if (days === 1) {
-      return currentLanguage === 'zh-CN' ? '昨天' : 'Yesterday';
+      return t('yesterday');
     } else if (days < 7) {
       return currentLanguage === 'zh-CN' ? `${days}天前` : `${days}d ago`;
     } else {
@@ -252,31 +250,9 @@ export default function MainLayout({ children }: MainLayoutProps) {
     saveLanguage(langCode);
   };
 
-  // 切换主题模式
-  const toggleThemeMode = () => {
-    const modes: ThemeMode[] = ['light', 'dark', 'auto'];
-    const currentIndex = modes.indexOf(themeMode);
-    const nextIndex = (currentIndex + 1) % modes.length;
-    setThemeMode(modes[nextIndex]);
-    localStorage.setItem('stp_theme_mode', modes[nextIndex]);
-  };
+  // 主题切换现在由 ThemeContext 管理
 
-  // 初始化主题模式
-  useEffect(() => {
-    const savedTheme = localStorage.getItem('stp_theme_mode') as ThemeMode;
-    if (savedTheme && ['light', 'dark', 'auto'].includes(savedTheme)) {
-      setThemeMode(savedTheme);
-    }
-  }, []);
-
-  // 确保body的类名与主题同步
-  useEffect(() => {
-    if (isDarkMode) {
-      document.body.classList.add('dark');
-    } else {
-      document.body.classList.remove('dark');
-    }
-  }, [isDarkMode]);
+  // 主题初始化现在由 ThemeContext 管理
 
   // 检查管理员权限
   useEffect(() => {
@@ -300,7 +276,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
     <div className={`flex flex-col h-screen bg-background text-foreground ${isDarkMode ? 'dark' : ''}`}>
       {/* 统一的顶部导航栏 - 充分利用界面版 */}
       <header className={`border-b transition-colors duration-300 ${
-        isDarkMode ? 'border-gray-800 bg-[#171717]' : 'border-gray-200 bg-white'
+        isDarkMode ? 'border-gray-800 bg-[#343541]' : 'border-gray-200 bg-white'
       }`}>
         <div className="w-full px-2 sm:px-3">
           <div className="flex justify-between items-center h-12">
@@ -315,7 +291,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
                   className={`p-2 rounded-md transition-colors ${
                     isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
                   }`}
-                  title="展开侧边栏"
+                  title={t('expandSidebar')}
                 >
                   <Menu className="w-5 h-5" />
                 </Button>
@@ -344,7 +320,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
                     className={`p-1.5 rounded-md transition-colors ${
                       isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
                     }`}
-                    title="收起侧边栏"
+                    title={t('collapseSidebar')}
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </Button>
@@ -358,7 +334,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={toggleThemeMode}
+                onClick={toggleTheme}
                 className={`p-1.5 rounded-md transition-colors ${
                   isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
                 }`}
@@ -385,7 +361,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
                     <Zap className="w-3 h-3" />
                   )}
                   <span className="hidden md:inline text-xs">{selectedModel.displayName}</span>
-                  <span className="md:hidden text-xs">{selectedModel.type === 'thinking' ? '思考' : '快速'}</span>
+                  <span className="md:hidden text-xs">{selectedModel.type === 'thinking' ? t('thinking') : t('fast')}</span>
                 </div>
               )}
 
@@ -442,7 +418,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
                     {isAdmin && <span className="ml-1 text-xs text-yellow-500">Admin</span>}
                   </p>
                   <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                    在线
+                    {t('online')}
                   </p>
                 </div>
                 <div className={`w-7 h-7 ${isDarkMode ? 'bg-gray-600' : 'bg-gray-300'} rounded-full flex items-center justify-center text-sm font-medium ${isDarkMode ? 'text-white' : 'text-gray-700'} relative`}>
@@ -461,7 +437,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
         {/* 左侧边栏 - 优化空间利用 */}
         <div 
           ref={sidebarRef}
-          className={`${isDarkMode ? 'bg-[#171717] border-gray-800' : 'bg-white border-gray-200'} border-r transition-all duration-300 flex flex-col ${
+          className={`${isDarkMode ? 'bg-[#343541] border-gray-800' : 'bg-white border-gray-200'} border-r transition-all duration-300 flex flex-col ${
             sidebarCollapsed ? 'w-12' : 'w-56'
           }`}
         >
@@ -588,9 +564,9 @@ export default function MainLayout({ children }: MainLayoutProps) {
                                   : 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
                               }`}>
                                 {session.model === 'thinking' ? (
-                                  <><Brain className="w-2.5 h-2.5" /> 思考</>
+                                  <><Brain className="w-2.5 h-2.5" /> {t('thinking')}</>
                                 ) : (
-                                  <><Zap className="w-2.5 h-2.5" /> 快速</>
+                                  <><Zap className="w-2.5 h-2.5" /> {t('fast')}</>
                                 )}
                               </span>
                             )}
@@ -665,7 +641,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
       </div>
 
       {/* 账号模态框 */}
-      <AccountModal 
+      <ModernAccountModal 
         open={showAccountModal}
         onClose={() => setShowAccountModal(false)}
       />

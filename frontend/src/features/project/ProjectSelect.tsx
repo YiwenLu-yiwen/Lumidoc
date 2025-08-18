@@ -8,9 +8,7 @@ import {
   Check, 
   X, 
   Search,
-  Calendar,
   Users,
-  Settings,
   MoreHorizontal,
   FolderOpen,
   Archive,
@@ -31,7 +29,8 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { detectAutoTheme, getTranslation, detectBrowserLanguage } from '@/utils/language'
+import { getTranslation, detectBrowserLanguage } from '@/utils/language'
+import { useTheme } from '@/context/ThemeContext'
 
 export default function ProjectSelect() {
   const [projectName, setProjectName] = useState('')
@@ -50,7 +49,7 @@ export default function ProjectSelect() {
   const [projectToDelete, setProjectToDelete] = useState<string | null>(null)
 
   // 主题和语言检测
-  const isDarkMode = detectAutoTheme() === 'dark'
+  const { isDarkMode } = useTheme()
   const currentLanguage = detectBrowserLanguage()
   const t = (key: keyof typeof import('@/utils/language').translations['zh-CN']) => 
     getTranslation(currentLanguage, key)
@@ -279,20 +278,13 @@ export default function ProjectSelect() {
         {/* 页面标题和操作 */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold mb-2">项目管理</h1>
+            <h1 className={`text-3xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+              {t('projectManagement')}
+            </h1>
             <p className={`text-lg ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-              创建和管理您的智能项目工作空间
+              {t('createAndManageWorkspaces')}
             </p>
           </div>
-          {user && (
-            <Button
-              onClick={() => setShowAuth(false)}
-              className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              新建项目
-            </Button>
-          )}
         </div>
 
         {user ? (
@@ -305,20 +297,11 @@ export default function ProjectSelect() {
                 <div className="flex-1 relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                   <Input
-                    placeholder="搜索项目..."
+                    placeholder={currentLanguage === 'zh-CN' ? '搜索项目...' : 'Search projects...'}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="pl-10"
                   />
-                </div>
-                <div className="flex space-x-2">
-                  <Button variant="outline" size="sm">
-                    <Calendar className="w-4 h-4 mr-2" />
-                    按时间排序
-                  </Button>
-                  <Button variant="outline" size="sm">
-                    <Settings className="w-4 h-4" />
-                  </Button>
                 </div>
               </div>
             </div>
@@ -333,13 +316,18 @@ export default function ProjectSelect() {
                 <FolderOpen className={`w-12 h-12 mx-auto mb-4 ${
                   isDarkMode ? 'text-gray-400' : 'text-gray-500'
                 }`} />
-                <h3 className="text-lg font-semibold mb-2">创建新项目</h3>
+                <h3 className={`text-lg font-semibold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                  {currentLanguage === 'zh-CN' ? '创建新项目' : 'Create New Project'}
+                </h3>
                 <p className={`text-sm mb-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                  开始一个新的智能项目工作空间
+                  {currentLanguage === 'zh-CN' 
+                    ? '开始一个新的智能项目工作空间'
+                    : 'Start a new intelligent project workspace'
+                  }
                 </p>
                 <div className="max-w-md mx-auto space-y-3">
                   <Input
-                    placeholder="输入项目名称"
+                    placeholder={currentLanguage === 'zh-CN' ? '输入项目名称' : 'Enter project name'}
                     value={projectName}
                     onChange={(e) => {
                       setProjectName(e.target.value)
@@ -354,7 +342,10 @@ export default function ProjectSelect() {
                     disabled={loading || !projectName.trim()}
                     className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0"
                   >
-                    {loading ? '创建中...' : '创建项目'}
+                    {loading 
+                      ? (currentLanguage === 'zh-CN' ? '创建中...' : 'Creating...')
+                      : (currentLanguage === 'zh-CN' ? '创建项目' : 'Create Project')
+                    }
                   </Button>
                 </div>
               </div>
@@ -366,9 +357,14 @@ export default function ProjectSelect() {
             }`}>
               <div className="p-6 border-b border-gray-200 dark:border-gray-700">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-semibold">我的项目</h2>
+                  <h2 className={`text-xl font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                    {currentLanguage === 'zh-CN' ? '我的项目' : 'My Projects'}
+                  </h2>
                   <span className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                    共 {filteredProjects.length} 个项目
+                    {currentLanguage === 'zh-CN' 
+                      ? `共 ${filteredProjects.length} 个项目`
+                      : `${filteredProjects.length} projects total`
+                    }
                   </span>
                 </div>
               </div>
@@ -380,7 +376,7 @@ export default function ProjectSelect() {
                       isDarkMode ? 'border-blue-400' : 'border-blue-600'
                     }`}></div>
                     <p className={`mt-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                      加载项目中...
+                      {currentLanguage === 'zh-CN' ? '加载项目中...' : 'Loading projects...'}
                     </p>
                   </div>
                 ) : projectsError ? (
@@ -388,14 +384,17 @@ export default function ProjectSelect() {
                     isDarkMode ? 'bg-red-900/20 border border-red-800' : 'bg-red-50 border border-red-200'
                   } rounded-lg`}>
                     <p className={`mb-4 ${isDarkMode ? 'text-red-300' : 'text-red-700'}`}>
-                      加载项目失败：{projectsError}
+                      {currentLanguage === 'zh-CN' 
+                        ? `加载项目失败：${projectsError}`
+                        : `Failed to load projects: ${projectsError}`
+                      }
                     </p>
                     <Button
                       onClick={refreshProjects}
                       variant="outline"
                       size="sm"
                     >
-                      重新加载
+                      {currentLanguage === 'zh-CN' ? '重新加载' : 'Reload'}
                     </Button>
                   </div>
                 ) : filteredProjects.length === 0 ? (
@@ -403,11 +402,17 @@ export default function ProjectSelect() {
                     <Archive className={`w-16 h-16 mx-auto mb-4 ${
                       isDarkMode ? 'text-gray-600' : 'text-gray-400'
                     }`} />
-                    <h3 className="text-lg font-semibold mb-2">
-                      {searchQuery ? '未找到匹配的项目' : '暂无项目'}
+                    <h3 className={`text-lg font-semibold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                      {searchQuery 
+                        ? (currentLanguage === 'zh-CN' ? '未找到匹配的项目' : 'No matching projects found')
+                        : (currentLanguage === 'zh-CN' ? '暂无项目' : 'No projects')
+                      }
                     </h3>
                     <p className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                      {searchQuery ? '尝试调整搜索条件' : '创建您的第一个项目开始使用'}
+                      {searchQuery 
+                        ? (currentLanguage === 'zh-CN' ? '尝试调整搜索条件' : 'Try adjusting your search criteria')
+                        : (currentLanguage === 'zh-CN' ? '创建您的第一个项目开始使用' : 'Create your first project to get started')
+                      }
                     </p>
                   </div>
                 ) : (
@@ -447,7 +452,7 @@ export default function ProjectSelect() {
                                 className="flex-1"
                               >
                                 <Check className="w-4 h-4 mr-2" />
-                                保存
+                                {currentLanguage === 'zh-CN' ? '保存' : 'Save'}
                               </Button>
                               <Button
                                 onClick={handleCancelEdit}
@@ -456,7 +461,7 @@ export default function ProjectSelect() {
                                 className="flex-1"
                               >
                                 <X className="w-4 h-4 mr-2" />
-                                取消
+                                {currentLanguage === 'zh-CN' ? '取消' : 'Cancel'}
                               </Button>
                             </div>
                             {error && (
@@ -474,9 +479,9 @@ export default function ProjectSelect() {
                                   <Folder className="w-6 h-6 text-white" />
                                 </div>
                                 <div>
-                                  <h3 className="font-semibold text-lg">{project.name}</h3>
+                                  <h3 className={`font-semibold text-lg ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{project.name}</h3>
                                   <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                                    项目ID: {project.id.slice(0, 8)}...
+                                    {currentLanguage === 'zh-CN' ? '项目ID' : 'Project ID'}: {project.id.slice(0, 8)}...
                                   </p>
                                 </div>
                               </div>
@@ -514,7 +519,7 @@ export default function ProjectSelect() {
                                 <div className="flex items-center space-x-1">
                                   <Users className="w-4 h-4 text-gray-400" />
                                   <span className={isDarkMode ? 'text-gray-400' : 'text-gray-600'}>
-                                    个人项目
+                                    {currentLanguage === 'zh-CN' ? '个人项目' : 'Personal Project'}
                                   </span>
                                 </div>
                               </div>
@@ -523,7 +528,10 @@ export default function ProjectSelect() {
                                 isDarkMode ? 'bg-gray-700' : 'bg-gray-100'
                               }`}>
                                 <p className={isDarkMode ? 'text-gray-300' : 'text-gray-700'}>
-                                  点击进入项目工作空间，开始智能对话和文档处理
+                                  {currentLanguage === 'zh-CN' 
+                                    ? '点击进入项目工作空间，开始智能对话和文档处理'
+                                    : 'Click to enter project workspace and start intelligent conversations and document processing'
+                                  }
                                 </p>
                               </div>
                             </div>
@@ -544,15 +552,20 @@ export default function ProjectSelect() {
             <Users className={`w-16 h-16 mx-auto mb-4 ${
               isDarkMode ? 'text-gray-600' : 'text-gray-400'
             }`} />
-            <h2 className="text-2xl font-bold mb-4">需要登录</h2>
+            <h2 className={`text-2xl font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+              {currentLanguage === 'zh-CN' ? '需要登录' : 'Login Required'}
+            </h2>
             <p className={`text-lg mb-6 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-              请登录或注册账号后访问项目管理功能
+              {currentLanguage === 'zh-CN' 
+                ? '请登录或注册账号后访问项目管理功能'
+                : 'Please login or register to access project management features'
+              }
             </p>
             <Button
               onClick={() => setShowAuth(true)}
               className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0"
             >
-              登录/注册
+              {currentLanguage === 'zh-CN' ? '登录/注册' : 'Login/Register'}
             </Button>
           </div>
         )}
@@ -570,13 +583,23 @@ export default function ProjectSelect() {
           isDarkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'
         }`}>
           <DialogHeader>
-            <DialogTitle>确认删除项目</DialogTitle>
+            <DialogTitle className={isDarkMode ? 'text-white' : 'text-gray-900'}>
+              {currentLanguage === 'zh-CN' ? '确认删除项目' : 'Confirm Delete Project'}
+            </DialogTitle>
             <DialogDescription className={isDarkMode ? 'text-gray-400' : 'text-gray-600'}>
-              此操作无法撤销，项目及其所有相关资源将被永久删除。
+              {currentLanguage === 'zh-CN' 
+                ? '此操作无法撤销，项目及其所有相关资源将被永久删除。'
+                : 'This action cannot be undone. The project and all its related resources will be permanently deleted.'
+              }
             </DialogDescription>
           </DialogHeader>
           <div className="pt-2 pb-4">
-            <p>您确定要删除这个项目吗？</p>
+            <p className={isDarkMode ? 'text-gray-300' : 'text-gray-700'}>
+              {currentLanguage === 'zh-CN' 
+                ? '您确定要删除这个项目吗？'
+                : 'Are you sure you want to delete this project?'
+              }
+            </p>
           </div>
           <DialogFooter>
             <Button
@@ -584,14 +607,14 @@ export default function ProjectSelect() {
               onClick={() => setDeleteDialogOpen(false)}
               className={isDarkMode ? 'border-gray-600 text-gray-300 hover:text-white' : ''}
             >
-              取消
+              {currentLanguage === 'zh-CN' ? '取消' : 'Cancel'}
             </Button>
             <Button
               variant="default"
               onClick={handleConfirmDelete}
               className="bg-red-600 hover:bg-red-700 text-white"
             >
-              确认删除
+              {currentLanguage === 'zh-CN' ? '确认删除' : 'Confirm Delete'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -19,7 +19,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import ReactMarkdown from 'react-markdown';
-import { detectAutoTheme } from '@/utils/language';
+import { useTheme } from '@/context/ThemeContext';
 
 interface Message {
   id: string;
@@ -195,7 +195,7 @@ export function ChatGPTInterface({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 获取当前主题
-  const isDarkMode = detectAutoTheme() === 'dark';
+  const { isDarkMode } = useTheme();
 
   // 自动滚动到底部
   useEffect(() => {

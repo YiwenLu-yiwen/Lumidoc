@@ -27,12 +27,12 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { 
-  detectAutoTheme, 
   detectBrowserLanguage, 
   saveLanguage, 
   supportedLanguages,
   getTranslation
 } from '@/utils/language';
+import { useTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
 
 type ThemeMode = 'light' | 'dark' | 'auto';
@@ -56,7 +56,7 @@ interface APIKey {
 export function SettingsPage() {
   const { user } = useAuth();
   const [activeSection, setActiveSection] = useState('profile');
-  const [themeMode, setThemeMode] = useState<ThemeMode>('auto');
+  const { themeMode, isDarkMode, setThemeMode } = useTheme();
   const [currentLanguage, setCurrentLanguage] = useState<string>(detectBrowserLanguage());
   const [notifications, setNotifications] = useState({
     email: true,
@@ -87,8 +87,7 @@ export function SettingsPage() {
   const [showNewApiForm, setShowNewApiForm] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
-  // 主题模式检测
-  const isDarkMode = themeMode === 'auto' ? detectAutoTheme() === 'dark' : themeMode === 'dark';
+  // 主题模式现在由 ThemeContext 管理
 
   // 获取翻译文本
   const t = (key: keyof typeof import('@/utils/language').translations['zh-CN']) => 
@@ -98,56 +97,39 @@ export function SettingsPage() {
   const settingsSections: SettingsSection[] = [
     {
       id: 'profile',
-      title: '个人资料',
-      description: '管理您的账户信息和偏好设置',
+      title: t('profile'),
+      description: t('manageAccountInfo'),
       icon: User
     },
     {
       id: 'appearance',
-      title: '外观设置',
-      description: '自定义界面主题和显示选项',
+      title: t('appearance'),
+      description: t('customizeInterface'),
       icon: Palette
     },
     {
       id: 'notifications',
-      title: '通知设置',
-      description: '配置消息通知和提醒方式',
+      title: t('notifications'),
+      description: t('configureNotifications'),
       icon: Bell
     },
     {
       id: 'security',
-      title: '安全设置',
-      description: '管理密码、API密钥和安全选项',
+      title: t('security'),
+      description: t('managePasswords'),
       icon: Shield
     },
     {
       id: 'data',
-      title: '数据管理',
-      description: '导入导出数据，管理存储空间',
+      title: t('dataManagement'),
+      description: t('importExportData'),
       icon: Database
     }
   ];
 
-  // 初始化主题模式
-  useEffect(() => {
-    const savedTheme = localStorage.getItem('stp_theme_mode') as ThemeMode;
-    if (savedTheme && ['light', 'dark', 'auto'].includes(savedTheme)) {
-      setThemeMode(savedTheme);
-    }
-  }, []);
-
-  // 主题切换
+  // 主题切换现在由 ThemeContext 管理
   const handleThemeChange = (newTheme: ThemeMode) => {
     setThemeMode(newTheme);
-    localStorage.setItem('stp_theme_mode', newTheme);
-    
-    // 更新body类名
-    if (newTheme === 'auto') {
-      const autoTheme = detectAutoTheme();
-      document.body.classList.toggle('dark', autoTheme === 'dark');
-    } else {
-      document.body.classList.toggle('dark', newTheme === 'dark');
-    }
   };
 
   // 语言切换
@@ -213,13 +195,13 @@ export function SettingsPage() {
   const renderProfileSection = () => (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-semibold mb-4">个人信息</h3>
+        <h3 className="text-lg font-semibold mb-4">{t('personalInfo')}</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <label className={`block text-sm font-medium mb-2 ${
               isDarkMode ? 'text-gray-300' : 'text-gray-700'
             }`}>
-              用户名
+              {t('username')}
             </label>
             <Input
               value={user?.username || ''}
@@ -233,7 +215,7 @@ export function SettingsPage() {
             <label className={`block text-sm font-medium mb-2 ${
               isDarkMode ? 'text-gray-300' : 'text-gray-700'
             }`}>
-              邮箱地址
+              {t('emailAddress')}
             </label>
             <Input
               value={user?.email || ''}
@@ -247,7 +229,7 @@ export function SettingsPage() {
       </div>
       
       <div>
-        <h3 className="text-lg font-semibold mb-4">账户统计</h3>
+        <h3 className="text-lg font-semibold mb-4">{t('accountStats')}</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className={`p-4 rounded-lg ${
             isDarkMode ? 'bg-gray-800' : 'bg-gray-50'
@@ -289,12 +271,12 @@ export function SettingsPage() {
   const renderAppearanceSection = () => (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-semibold mb-4">主题设置</h3>
+        <h3 className="text-lg font-semibold mb-4">{t('themeSettings')}</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {[
-            { value: 'light', label: '浅色模式', icon: Sun },
-            { value: 'dark', label: '深色模式', icon: Moon },
-            { value: 'auto', label: '自动模式', icon: Monitor }
+            { value: 'light', label: t('lightMode'), icon: Sun },
+            { value: 'dark', label: t('darkMode'), icon: Moon },
+            { value: 'auto', label: t('autoMode'), icon: Monitor }
           ].map(({ value, label, icon: Icon }) => (
             <button
               key={value}
@@ -321,7 +303,7 @@ export function SettingsPage() {
       </div>
 
       <div>
-        <h3 className="text-lg font-semibold mb-4">语言设置</h3>
+        <h3 className="text-lg font-semibold mb-4">{t('languageSettings')}</h3>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {supportedLanguages.map((lang) => (
             <button
@@ -572,7 +554,7 @@ export function SettingsPage() {
 
   return (
     <div className={`h-full overflow-y-auto transition-colors duration-300 ${
-      isDarkMode ? 'bg-[#212121] text-gray-100' : 'bg-white text-gray-900'
+      isDarkMode ? 'bg-[#343541] text-gray-100' : 'bg-white text-gray-900'
     }`}>
       <div className="max-w-7xl mx-auto p-6">
         {/* 页面标题 */}
