@@ -2,8 +2,8 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Eye, EyeOff, Mail, Lock, User, Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { detectBrowserLanguage, getTranslation } from '@/utils/language';
 import { useTheme } from '@/context/ThemeContext';
+import { useLanguage } from '@/context/LanguageContext';
 
 interface LoginInterfaceProps {
   onLogin?: (credentials: { email: string; password: string }) => void;
@@ -32,12 +32,7 @@ export function LoginInterface({ onLogin, onRegister, isLoading = false }: Login
 
   // 获取当前主题和语言
   const { isDarkMode } = useTheme();
-  const currentLanguage = detectBrowserLanguage();
-  
-  // 翻译函数
-  const t = useCallback((key: keyof typeof import('@/utils/language').translations['zh-CN']) => {
-    return getTranslation(currentLanguage, key);
-  }, [currentLanguage]);
+  const { t } = useLanguage();
 
   // 密码强度检查规则 - 在t函数定义后
   const passwordRules = useMemo(() => [

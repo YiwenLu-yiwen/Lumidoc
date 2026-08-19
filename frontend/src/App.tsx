@@ -2,6 +2,7 @@ import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { ProjectProvider } from './context/ProjectContext'
 import { ThemeProvider } from './context/ThemeContext'
+import { LanguageProvider } from './context/LanguageContext'
 import { AuthGuard } from './context/AuthGuard'
 import { ProjectAccessLevel } from './context/authTypes'
 import { BackendStatusWrapper } from './components/error/BackendStatusWrapper'
@@ -294,9 +295,11 @@ const AppContent = () => {
 // 主App组件现在只负责提供上下文
 function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <LanguageProvider>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </LanguageProvider>
   )
 }
 

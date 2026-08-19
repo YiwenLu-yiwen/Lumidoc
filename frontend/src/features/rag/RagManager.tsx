@@ -4,10 +4,10 @@ import { toast } from 'sonner';
 import { isAxiosError } from 'axios';
 import { ragApi, RagFile, RagFileStatusResponse } from '../../api/rag';
 import { fileApi } from '../../api/file';
-import { detectBrowserLanguage, getTranslation } from '@/utils/language';
 import { useTheme } from '@/context/ThemeContext';
 import { Database } from 'lucide-react';
 import { useProjects } from '@/context/ProjectContext';
+import { useLanguage } from '@/context/LanguageContext';
 import { resolveRagProjectId } from './ragProject';
 
 export interface RagManagerProps {
@@ -58,10 +58,7 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
   
   // 主题模式和语言检测
   const { isDarkMode } = useTheme();
-  const currentLanguage = detectBrowserLanguage();
-  const t = (key: keyof typeof import('@/utils/language').translations['zh-CN']) => {
-    return getTranslation(currentLanguage, key);
-  };
+  const { currentLanguage, t } = useLanguage();
   
   const getStatusText = (status: string) => {
     const statusConfig = STATUS_TEXT[status] || STATUS_TEXT[status?.toLowerCase()];

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { projectApi } from '@/api/project';
 import type { ProjectResponse } from '@/types/api';
@@ -6,7 +6,8 @@ import { Calendar, Clock } from 'lucide-react';
 import { customToast } from '@/utils/toast';
 import { useAuth } from '@/context/AuthContext';
 import { ProjectAccessLevel } from '@/context/authTypes';
-import { detectAutoTheme, detectBrowserLanguage, getTranslation } from '@/utils/language';
+import { useTheme } from '@/context/ThemeContext';
+import { useLanguage } from '@/context/LanguageContext';
 
 export default function ProjectOverview() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -17,14 +18,8 @@ export default function ProjectOverview() {
   const navigate = useNavigate();
   const [loadAttempts, setLoadAttempts] = useState(0);
 
-  // 获取当前主题和语言
-  const isDarkMode = detectAutoTheme() === 'dark';
-  const currentLanguage = detectBrowserLanguage();
-
-  // 翻译函数
-  const t = useCallback((key: keyof typeof import('@/utils/language').translations['zh-CN']) => {
-    return getTranslation(currentLanguage, key);
-  }, [currentLanguage]);
+  const { isDarkMode } = useTheme();
+  const { t } = useLanguage();
 
   useEffect(() => {
     const loadProject = async () => {

@@ -16,8 +16,8 @@ import {
   ChevronDown,
   ChevronRight
 } from 'lucide-react';
-import { detectBrowserLanguage } from '@/utils/language';
 import { useTheme } from '@/context/ThemeContext';
+import { useLanguage } from '@/context/LanguageContext';
 import { useSelectedModel } from '@/hooks/useModel';
 import { createChatRequestPayload } from './chatRequest';
 
@@ -194,7 +194,7 @@ export default function ChatLayout() {
 
   // 主题模式和语言检测
   const { isDarkMode } = useTheme();
-  const currentLanguage = detectBrowserLanguage();
+  const { currentLanguage, t } = useLanguage();
 
 
   // 切换思考内容折叠状态
@@ -1115,12 +1115,7 @@ export default function ChatLayout() {
                   <h2 className="text-3xl font-bold mb-3 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
                     {currentLanguage === 'zh-CN' ? '开始智能对话' : 'Start Intelligent Conversation'}
                   </h2>
-                  <p className="text-lg">
-                    {currentLanguage === 'zh-CN' 
-                      ? '基于Graph RAG技术，支持多模型协作的智能问答系统'
-                      : 'Intelligent Q&A system based on Graph RAG technology with multi-model collaboration'
-                    }
-                  </p>
+                  <p className="text-lg">{t('intelligentQASystem')}</p>
                   <p className="text-sm mt-3 opacity-70">
                     {currentLanguage === 'zh-CN' 
                       ? '您可以询问任何问题，我会基于知识图谱为您提供精准回答'

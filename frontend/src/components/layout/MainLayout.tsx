@@ -31,12 +31,10 @@ import ModernAccountModal from '@/components/ui/ModernAccountModal';
 import { ModelSelector } from '@/components/model/ModelSelector';
 import { ModelSelectionContext, useModel } from '@/hooks/useModel';
 import { 
-  detectBrowserLanguage, 
-  saveLanguage, 
   supportedLanguages,
-  getTranslation 
 } from '@/utils/language';
 import { useTheme } from '@/context/ThemeContext';
+import { useLanguage } from '@/context/LanguageContext';
 import { shouldCollapseSidebar } from './responsiveLayout';
 
 interface MainLayoutProps {
@@ -77,7 +75,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [showAccountModal, setShowAccountModal] = useState(false);
-  const [currentLanguage, setCurrentLanguage] = useState<string>(detectBrowserLanguage());
+  const { currentLanguage, setLanguage, t } = useLanguage();
   const { themeMode, isDarkMode, toggleTheme } = useTheme();
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
@@ -132,12 +130,12 @@ export default function MainLayout({ children }: MainLayoutProps) {
       if (currentSection !== 'chat') return;
       if (!token) {
         setChatSessions([]);
-        setSessionsError('未检测到登录令牌');
+        setSessionsError(t('loginRequired'));
         return;
       }
       if (!currentProject?.id) {
         setChatSessions([]);
-        setSessionsError('请先创建或选择项目');
+        setSessionsError(t('selectProjectFirst'));
         return;
       }
 
@@ -156,7 +154,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
           }
         });
         if (!response.ok) {
-          throw new Error(`会话加载失败: HTTP ${response.status}`);
+          throw new Error(`${t('sessionLoadFailed')}: HTTP ${response.status}`);
         }
 
         const data = await response.json();
@@ -169,7 +167,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
         };
         const toTitle = (text?: string): string => {
           const normalized = compact(text);
-          if (!normalized) return '新对话';
+          if (!normalized) return t('newConversation');
           return normalized.length > 22 ? `${normalized.slice(0, 22)}...` : normalized;
         };
 
@@ -187,7 +185,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
           .map((item, index) => ({
             id: String(item.id || `${currentProject.id}-${item._index || index}`),
             title: toTitle(item.content),
-            lastMessage: compact(item.content) || '（空消息）',
+            lastMessage: compact(item.content) || t('emptyMessage'),
             timestamp: item._date,
             projectId: currentProject.id,
             messageCount: userMessages.length > 0 ? userMessages.length : sorted.length,
@@ -199,20 +197,16 @@ export default function MainLayout({ children }: MainLayoutProps) {
       } catch (error: unknown) {
         console.error('[MainLayout] 加载会话失败:', error);
         setChatSessions([]);
-        setSessionsError(error instanceof Error ? error.message : '加载会话失败');
+        setSessionsError(error instanceof Error ? error.message : t('sessionLoadFailed'));
       } finally {
         setSessionsLoading(false);
       }
     };
 
     fetchChatSessions();
-  }, [currentSection, currentProject?.id, token, user?.id, selectedModel?.type]);
+  }, [currentLanguage, currentProject?.id, currentSection, selectedModel?.type, t, token, user?.id]);
 
   // 主题状态现在由 ThemeContext 管理
-
-  // 获取翻译文本的简化函数
-  const t = (key: keyof typeof import('@/utils/language').translations['zh-CN']) => 
-    getTranslation(currentLanguage, key);
 
   // 侧边栏导航项
   const navigationItems = [
@@ -340,9 +334,8 @@ export default function MainLayout({ children }: MainLayoutProps) {
 
   // 切换语言
   const changeLanguage = (langCode: string) => {
-    setCurrentLanguage(langCode);
+    setLanguage(langCode);
     setShowLanguageMenu(false);
-    saveLanguage(langCode);
   };
 
   // 主题切换现在由 ThemeContext 管理

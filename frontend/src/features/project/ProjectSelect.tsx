@@ -27,8 +27,8 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { getTranslation, detectBrowserLanguage } from '@/utils/language'
 import { useTheme } from '@/context/ThemeContext'
+import { useLanguage } from '@/context/LanguageContext'
 
 export default function ProjectSelect() {
   const [projectName, setProjectName] = useState('')
@@ -46,9 +46,7 @@ export default function ProjectSelect() {
 
   // 主题和语言检测
   const { isDarkMode } = useTheme()
-  const currentLanguage = detectBrowserLanguage()
-  const t = (key: keyof typeof import('@/utils/language').translations['zh-CN']) =>
-    getTranslation(currentLanguage, key)
+  const { currentLanguage, t } = useLanguage()
 
   const isProjectNameExists = (name: string, excludeId?: string) => {
     return projects.some(project =>

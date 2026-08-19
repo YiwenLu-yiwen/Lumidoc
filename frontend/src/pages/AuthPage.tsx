@@ -6,17 +6,13 @@ import { LoginInterface } from '@/components/auth/LoginInterface';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import { authApi } from '@/api/auth';
-import { detectBrowserLanguage, getTranslation } from '@/utils/language';
+import { useLanguage } from '@/context/LanguageContext';
 
 export function AuthPage() {
   const navigate = useNavigate();
   const { user, login } = useAuth();
   
-  // 获取当前语言并创建翻译函数
-  const currentLanguage = detectBrowserLanguage();
-  const t = (key: keyof typeof import('@/utils/language').translations['zh-CN']) => {
-    return getTranslation(currentLanguage, key);
-  };
+  const { t } = useLanguage();
   
   // 获取当前主题
   const { isDarkMode } = useTheme();
@@ -267,7 +263,7 @@ export function AuthPage() {
             <p className={`text-sm ${
               isDarkMode ? 'text-gray-400' : 'text-gray-500'
             }`}>
-              © 2024 Lumidoc Intelligence
+              © {new Date().getFullYear()} Lumidoc Intelligence
             </p>
           </div>
         </div>

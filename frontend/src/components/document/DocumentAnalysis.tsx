@@ -23,8 +23,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { detectBrowserLanguage, getTranslation } from '@/utils/language';
 import { useTheme } from '@/context/ThemeContext';
+import { useLanguage } from '@/context/LanguageContext';
 
 interface DocumentFile {
   id: string;
@@ -54,8 +54,8 @@ interface DocumentFile {
 interface AnalysisStats {
   totalDocuments: number;
   processedToday: number;
-  averageProcessingTime: number;
-  successRate: number;
+  averageProcessingTime: number | null;
+  successRate: number | null;
   totalSize: number;
   languages: { [key: string]: number };
   documentTypes: { [key: string]: number };
@@ -80,111 +80,9 @@ function getDocumentType(filename: string): DocumentFile['type'] {
 export function DocumentAnalysis() {
   // 获取当前主题和语言
   const { isDarkMode } = useTheme();
-  const currentLanguage = detectBrowserLanguage();
-  
-  // 翻译函数
-  const t = (key: keyof typeof import('@/utils/language').translations['zh-CN']) => {
-    return getTranslation(currentLanguage, key);
-  };
+  const { currentLanguage, t } = useLanguage();
 
-  const [documents, setDocuments] = useState<DocumentFile[]>([
-    {
-      id: '1',
-      name: '2024年度财务报告.pdf',
-      type: 'pdf',
-      size: 2.4 * 1024 * 1024,
-      uploadTime: new Date(Date.now() - 2 * 60 * 60 * 1000),
-      status: 'completed',
-      ocrResult: {
-        text: '2024年度财务报告显示公司整体运营状况良好...',
-        confidence: 96.5,
-        language: 'zh-CN',
-        pageCount: 45
-      },
-      analysis: {
-        summary: '财务状况稳健，净利润同比增长15.2%，现金流充裕，主营业务收入增长稳定。建议关注市场扩张和成本控制。',
-        keyPoints: [
-          '净利润同比增长15.2%，达到3.2亿元',
-          '现金流充裕，经营现金流净额2.1亿元',
-          '主营业务收入增长12.8%',
-          '毛利率稳定在35.6%'
-        ],
-        entities: [
-          { name: '净利润', type: '财务指标', count: 12 },
-          { name: '现金流', type: '财务指标', count: 8 },
-          { name: '营业收入', type: '财务指标', count: 15 }
-        ],
-        sentiment: 'positive',
-        topics: ['财务分析', '业绩报告', '投资价值'],
-        readingTime: 25
-      }
-    },
-    {
-      id: '2',
-      name: '合同模版集合.docx',
-      type: 'docx',
-      size: 1.8 * 1024 * 1024,
-      uploadTime: new Date(Date.now() - 4 * 60 * 60 * 1000),
-      status: 'processing',
-      progress: 65
-    },
-    {
-      id: '3',
-      name: '产品需求文档.pdf',
-      type: 'pdf',
-      size: 3.1 * 1024 * 1024,
-      uploadTime: new Date(Date.now() - 24 * 60 * 60 * 1000),
-      status: 'completed',
-      ocrResult: {
-        text: '产品需求规格说明书 v2.1...',
-        confidence: 94.2,
-        language: 'zh-CN',
-        pageCount: 28
-      },
-      analysis: {
-        summary: '产品需求明确，功能设计合理，预计开发周期6个月。需要重点关注用户体验和性能优化。',
-        keyPoints: [
-          '核心功能模块设计完整',
-          '用户界面原型清晰',
-          '性能要求明确定义',
-          '安全性考虑充分'
-        ],
-        entities: [
-          { name: '用户界面', type: '功能模块', count: 18 },
-          { name: '数据库', type: '技术组件', count: 12 },
-          { name: 'API接口', type: '技术组件', count: 9 }
-        ],
-        sentiment: 'neutral',
-        topics: ['产品设计', '需求分析', '技术规范'],
-        readingTime: 18
-      }
-    },
-    {
-      id: '4',
-      name: '市场调研报告.xlsx',
-      type: 'xlsx',
-      size: 856 * 1024,
-      uploadTime: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
-      status: 'completed',
-      analysis: {
-        summary: '市场前景乐观，目标用户群体明确，竞争对手分析详细。建议加快产品上市节奏。',
-        keyPoints: [
-          '目标市场规模达50亿元',
-          '用户需求增长趋势明显',
-          '竞争格局相对分散',
-          '技术门槛适中'
-        ],
-        entities: [
-          { name: '市场规模', type: '市场指标', count: 5 },
-          { name: '用户群体', type: '市场指标', count: 8 },
-          { name: '竞争对手', type: '市场指标', count: 12 }
-        ],
-        sentiment: 'positive',
-        topics: ['市场分析', '竞争研究', '商业机会'],
-        readingTime: 12
-      }
-    }
-  ]);
+  const [documents, setDocuments] = useState<DocumentFile[]>([]);
 
   const [selectedDocument, setSelectedDocument] = useState<DocumentFile | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -193,14 +91,25 @@ export function DocumentAnalysis() {
 
   const stats: AnalysisStats = {
     totalDocuments: documents.length,
-    processedToday: documents.filter(doc => 
-      doc.uploadTime > new Date(Date.now() - 24 * 60 * 60 * 1000)
+    processedToday: documents.filter(doc =>
+      doc.status === 'completed'
+      && doc.uploadTime > new Date(Date.now() - 24 * 60 * 60 * 1000)
     ).length,
-    averageProcessingTime: 3.2,
-    successRate: 98.5,
+    averageProcessingTime: null,
+    successRate: documents.some(doc => doc.status === 'completed' || doc.status === 'error')
+      ? Math.round((documents.filter(doc => doc.status === 'completed').length
+        / documents.filter(doc => doc.status === 'completed' || doc.status === 'error').length) * 1000) / 10
+      : null,
     totalSize: documents.reduce((sum, doc) => sum + doc.size, 0),
-    languages: { 'zh-CN': 3, 'en-US': 1 },
-    documentTypes: { 'pdf': 2, 'docx': 1, 'xlsx': 1 }
+    languages: documents.reduce<Record<string, number>>((counts, doc) => {
+      const language = doc.ocrResult?.language;
+      if (language) counts[language] = (counts[language] || 0) + 1;
+      return counts;
+    }, {}),
+    documentTypes: documents.reduce<Record<string, number>>((counts, doc) => {
+      counts[doc.type] = (counts[doc.type] || 0) + 1;
+      return counts;
+    }, {})
   };
 
   const formatFileSize = (bytes: number) => {
@@ -302,7 +211,7 @@ export function DocumentAnalysis() {
 
   return (
     <div className="h-full overflow-y-auto bg-background">
-      <div className="max-w-7xl mx-auto p-6 space-y-8">
+      <div className="mx-auto max-w-7xl space-y-8 p-4 sm:p-6">
         {/* 页面标题 */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -311,7 +220,7 @@ export function DocumentAnalysis() {
               {currentLanguage === 'zh-CN' ? 'OCR识别、智能分析、内容提取一站式服务' : 'One-stop service for OCR recognition, intelligent analysis, and content extraction'}
             </p>
           </div>
-          <div className="flex items-center space-x-3">
+          <div className="flex flex-wrap items-center gap-3">
             <Button variant="outline" className={`${isDarkMode ? 'border-gray-600 text-gray-300 hover:bg-gray-700' : ''}`}>
               <RefreshCw className="w-4 h-4 mr-2" />
               {currentLanguage === 'zh-CN' ? '刷新状态' : 'Refresh Status'}
@@ -373,7 +282,7 @@ export function DocumentAnalysis() {
                 <Zap className="w-6 h-6 text-purple-600" />
               </div>
               <span className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-                {stats.averageProcessingTime}s
+                {stats.averageProcessingTime === null ? '—' : `${stats.averageProcessingTime}s`}
               </span>
             </div>
             <h3 className={`text-lg font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{t('averageProcessingTime')}</h3>
@@ -392,7 +301,7 @@ export function DocumentAnalysis() {
                 <CheckCircle className="w-6 h-6 text-orange-600" />
               </div>
               <span className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-                {stats.successRate}%
+                {stats.successRate === null ? '—' : `${stats.successRate}%`}
               </span>
             </div>
             <h3 className={`text-lg font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{t('successRate')}</h3>
@@ -510,7 +419,13 @@ export function DocumentAnalysis() {
               </div>
               
               <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                {filteredDocuments.map((doc) => (
+                {filteredDocuments.length === 0 ? (
+                  <div className="px-6 py-12 text-center" role="status">
+                    <FileText className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+                    <h3 className="font-semibold text-foreground">{t('noDocuments')}</h3>
+                    <p className="mt-1 text-sm text-muted-foreground">{t('uploadFirstDocument')}</p>
+                  </div>
+                ) : filteredDocuments.map((doc) => (
                   <div 
                     key={doc.id} 
                     className={`p-6 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer transition-colors ${

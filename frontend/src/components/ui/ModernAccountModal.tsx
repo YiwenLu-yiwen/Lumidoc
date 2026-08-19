@@ -7,14 +7,9 @@ import {
   Plus, 
   Loader2, 
   AlertCircle, 
-  Trash2, 
   LogOut,
   X,
   Mail,
-  Calendar,
-  Crown,
-  Edit3,
-  Key,
   Bell,
   Globe,
   Monitor,
@@ -25,15 +20,13 @@ import { useAuth, type User as AuthUser } from '@/context/AuthContext';
 import { projectApi } from '@/api/project';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useProjects } from '@/context/ProjectContext';
-import { detectBrowserLanguage, getTranslation } from '@/utils/language';
 import { useTheme } from '@/context/ThemeContext';
+import { useLanguage } from '@/context/LanguageContext';
 
 interface Props {
   open: boolean;
   onClose: () => void;
 }
-
-type ThemeMode = 'light' | 'dark' | 'auto';
 
 // 现代化头像组件
 function ModernAvatar({ username, size = 64 }: { username: string, size?: number }) {
@@ -76,9 +69,7 @@ function ModernAvatar({ username, size = 64 }: { username: string, size?: number
 
 // 个人信息卡片
 function ProfileCard({ user, isDarkMode }: { user: AuthUser | null, isDarkMode: boolean }) {
-  const currentLanguage = detectBrowserLanguage();
-  const t = (key: keyof typeof import('@/utils/language').translations['zh-CN']) =>
-    getTranslation(currentLanguage, key);
+  const { currentLanguage, t } = useLanguage();
 
   return (
     <div className="space-y-6">
@@ -86,12 +77,6 @@ function ProfileCard({ user, isDarkMode }: { user: AuthUser | null, isDarkMode: 
       <div className="text-center space-y-4">
         <div className="relative mx-auto w-fit">
           <ModernAvatar username={user?.username || ''} size={80} />
-          <button className={`absolute -bottom-1 -right-1 w-8 h-8 rounded-full ${
-            isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-white hover:bg-gray-50'
-          } border-2 ${isDarkMode ? 'border-gray-800' : 'border-gray-200'} 
-          flex items-center justify-center transition-colors shadow-lg`}>
-            <Edit3 className="w-4 h-4" />
-          </button>
         </div>
         <div>
           <h2 className="text-2xl font-bold">{user?.username}</h2>
@@ -116,61 +101,12 @@ function ProfileCard({ user, isDarkMode }: { user: AuthUser | null, isDarkMode: 
               <div>
                 <p className="font-medium">{t('emailAddress')}</p>
                 <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                  {currentLanguage === 'zh-CN' ? '未绑定' : 'Not bound'}
-                </p>
-              </div>
-            </div>
-            <button className={`px-3 py-1 text-xs rounded-lg ${
-              isDarkMode ? 'bg-blue-600 hover:bg-blue-700' : 'bg-blue-500 hover:bg-blue-600'
-            } text-white transition-colors`}>
-              {currentLanguage === 'zh-CN' ? '绑定' : 'Bind'}
-            </button>
-          </div>
-        </div>
-
-        <div className={`p-4 rounded-xl ${
-          isDarkMode ? 'bg-gray-800/50' : 'bg-gray-50'
-        } border ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className={`p-2 rounded-lg ${
-                isDarkMode ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-600'
-              }`}>
-                <Calendar className="w-4 h-4" />
-              </div>
-              <div>
-                <p className="font-medium">{currentLanguage === 'zh-CN' ? '注册时间' : 'Registered'}</p>
-                <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                  {new Date().toLocaleDateString()}
+                  {user?.email || (currentLanguage === 'zh-CN' ? '未提供' : 'Not provided')}
                 </p>
               </div>
             </div>
           </div>
         </div>
-      </div>
-
-      {/* 操作按钮 */}
-      <div className="grid grid-cols-2 gap-3">
-        <button className={`p-3 rounded-xl border ${
-          isDarkMode 
-            ? 'border-gray-700 hover:bg-gray-800' 
-            : 'border-gray-200 hover:bg-gray-50'
-        } transition-colors`}>
-          <Key className="w-5 h-5 mx-auto mb-2" />
-          <span className="text-sm font-medium">
-            {currentLanguage === 'zh-CN' ? '修改密码' : 'Change Password'}
-          </span>
-        </button>
-        <button className={`p-3 rounded-xl border ${
-          isDarkMode 
-            ? 'border-gray-700 hover:bg-gray-800' 
-            : 'border-gray-200 hover:bg-gray-50'
-        } transition-colors`}>
-          <Crown className="w-5 h-5 mx-auto mb-2 text-yellow-500" />
-          <span className="text-sm font-medium">
-            {currentLanguage === 'zh-CN' ? '升级账户' : 'Upgrade'}
-          </span>
-        </button>
       </div>
     </div>
   );
@@ -178,23 +114,8 @@ function ProfileCard({ user, isDarkMode }: { user: AuthUser | null, isDarkMode: 
 
 // 设置卡片
 function SettingsCard({ isDarkMode }: { isDarkMode: boolean }) {
-  const [themeMode, setThemeMode] = useState<ThemeMode>('auto');
-  const currentLanguage = detectBrowserLanguage();
-  const t = (key: keyof typeof import('@/utils/language').translations['zh-CN']) => 
-    getTranslation(currentLanguage, key);
-
-  useEffect(() => {
-    const savedTheme = localStorage.getItem('lumidoc_theme_mode') as ThemeMode;
-    if (savedTheme) setThemeMode(savedTheme);
-  }, []);
-
-  const toggleTheme = () => {
-    const modes: ThemeMode[] = ['light', 'dark', 'auto'];
-    const currentIndex = modes.indexOf(themeMode);
-    const nextMode = modes[(currentIndex + 1) % modes.length];
-    setThemeMode(nextMode);
-    localStorage.setItem('lumidoc_theme_mode', nextMode);
-  };
+  const { themeMode, toggleTheme } = useTheme();
+  const { currentLanguage, t } = useLanguage();
 
   const getThemeIcon = () => {
     switch (themeMode) {
@@ -296,7 +217,7 @@ function ProjectsCard({ isDarkMode }: { isDarkMode: boolean }) {
   const [createError, setCreateError] = useState('');
   const navigate = useNavigate();
   const location = useLocation();
-  const currentLanguage = detectBrowserLanguage();
+  const { currentLanguage } = useLanguage();
 
   const currentProjectId = location.pathname.match(/project\/([\w-]+)/)?.[1];
 
@@ -418,15 +339,6 @@ function ProjectsCard({ isDarkMode }: { isDarkMode: boolean }) {
                   </p>
                 </div>
               </div>
-              <button
-                className="opacity-0 group-hover:opacity-100 p-1 text-red-500 hover:text-red-600 transition-all"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  // Handle delete
-                }}
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
             </div>
           </div>
         ))}
@@ -445,9 +357,7 @@ export default function ModernAccountModal({ open, onClose }: Props) {
   const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('profile');
   const modalRef = useRef<HTMLDivElement>(null);
-  const currentLanguage = detectBrowserLanguage();
-  const t = (key: keyof typeof import('@/utils/language').translations['zh-CN']) => 
-    getTranslation(currentLanguage, key);
+  const { currentLanguage, t } = useLanguage();
 
   // 主题检测
   const { isDarkMode } = useTheme();
@@ -515,6 +425,7 @@ export default function ModernAccountModal({ open, onClose }: Props) {
         {/* 关闭按钮 */}
         <button
           onClick={onClose}
+          aria-label={t('close')}
           className={`absolute top-4 right-4 z-10 w-8 h-8 rounded-full ${
             isDarkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-gray-100 hover:bg-gray-200'
           } flex items-center justify-center transition-colors`}
@@ -522,19 +433,19 @@ export default function ModernAccountModal({ open, onClose }: Props) {
           <X className="w-4 h-4" />
         </button>
 
-        <div className="flex h-full max-h-[80vh]">
+        <div className="flex max-h-[80vh] flex-col md:flex-row">
           {/* 左侧导航 */}
-          <div className={`w-72 p-6 border-r ${
+          <div className={`w-full border-b p-3 md:w-72 md:border-b-0 md:border-r md:p-6 ${
             isDarkMode ? 'border-gray-800 bg-gray-900/50' : 'border-gray-200 bg-gray-50/50'
           }`}>
-            <div className="space-y-2">
+            <div className="grid grid-cols-4 gap-2 md:block md:space-y-2">
               {tabs.map((tab) => {
                 const Icon = tab.icon;
                 return (
                   <button
                     key={tab.key}
                     onClick={() => setActiveTab(tab.key)}
-                    className={`w-full p-4 rounded-xl text-left transition-all duration-200 ${
+                    className={`w-full rounded-xl p-3 text-center transition-all duration-200 md:p-4 md:text-left ${
                       activeTab === tab.key
                         ? isDarkMode
                           ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
@@ -544,9 +455,9 @@ export default function ModernAccountModal({ open, onClose }: Props) {
                           : 'hover:bg-gray-100 text-gray-700'
                     }`}
                   >
-                    <div className="flex items-center space-x-3">
+                    <div className="flex items-center justify-center md:justify-start md:space-x-3">
                       <Icon className="w-5 h-5" />
-                      <div>
+                      <div className="hidden md:block">
                         <div className="font-medium">{tab.label}</div>
                         <div className={`text-xs ${
                           activeTab === tab.key
@@ -564,7 +475,7 @@ export default function ModernAccountModal({ open, onClose }: Props) {
           </div>
 
           {/* 右侧内容 */}
-          <div className="flex-1 p-6 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
             <div className="max-w-2xl">
               {activeTab === 'profile' && <ProfileCard user={user} isDarkMode={isDarkMode} />}
               {activeTab === 'settings' && <SettingsCard isDarkMode={isDarkMode} />}
@@ -587,7 +498,7 @@ export default function ModernAccountModal({ open, onClose }: Props) {
         </div>
 
         {/* 底部操作栏 */}
-        <div className={`border-t ${isDarkMode ? 'border-gray-800' : 'border-gray-200'} p-6`}>
+        <div className={`border-t ${isDarkMode ? 'border-gray-800' : 'border-gray-200'} p-4 md:p-6`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <ModernAvatar username={user?.username || ''} size={40} />

@@ -358,7 +358,7 @@ ${errorInfo.details.errorStack ? `错误堆栈：\n${errorInfo.details.errorStac
         {/* 页脚信息 */}
         <div className="text-center">
           <p className={`text-sm ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-            © 2024 Lumidoc Intelligence - 企业级智能文档处理平台
+            © {new Date().getFullYear()} Lumidoc Intelligence
           </p>
         </div>
       </div>

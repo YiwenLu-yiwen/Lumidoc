@@ -21,8 +21,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { detectBrowserLanguage, getTranslation } from '@/utils/language';
 import { useTheme } from '@/context/ThemeContext';
+import { useLanguage } from '@/context/LanguageContext';
 
 interface FeatureCard {
   title: string;
@@ -39,10 +39,7 @@ export function ChatGPTHomePage() {
   const navigate = useNavigate();
   const { isDarkMode } = useTheme();
   
-  // 获取当前语言和翻译函数
-  const currentLanguage = detectBrowserLanguage();
-  const t = (key: keyof typeof import('@/utils/language').translations['zh-CN']) => 
-    getTranslation(currentLanguage, key);
+  const { t } = useLanguage();
 
   // 动画演示状态管理
   const [animationStep, setAnimationStep] = useState(0);
@@ -730,33 +727,33 @@ export function ChatGPTHomePage() {
             isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
           } shadow-2xl`}>
             {/* 表格头 */}
-            <div className={`grid grid-cols-4 ${
+            <div className={`grid min-w-[760px] grid-cols-4 ${
               isDarkMode ? 'bg-gray-900' : 'bg-gray-50'
             } border-b ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
               <div className="p-6 text-center">
                 <h3 className="text-lg font-semibold">{t('features')}</h3>
               </div>
-              <div className="p-6 text-center border-l ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}">
+              <div className="border-l border-border p-6 text-center">
                 <h3 className="text-lg font-semibold text-red-600">{t('traditional')}</h3>
               </div>
-              <div className="p-6 text-center border-l ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}">
+              <div className="border-l border-border p-6 text-center">
                 <h3 className="text-lg font-semibold text-green-600">{t('lumidocIntelligence')}</h3>
               </div>
-              <div className="p-6 text-center border-l ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}">
+              <div className="border-l border-border p-6 text-center">
                 <h3 className="text-lg font-semibold">{t('advantageComparison')}</h3>
               </div>
             </div>
 
             {/* 表格内容 */}
-            <div className="divide-y ${isDarkMode ? 'divide-gray-700' : 'divide-gray-200'}">
+            <div className="min-w-[760px] divide-y divide-border">
               {comparisonData.map((item, index) => {
                 const Icon = item.icon;
                 return (
                   <div 
                     key={index} 
-                    className={`grid grid-cols-4 hover:${
-                      isDarkMode ? 'bg-gray-750' : 'bg-gray-50'
-                    } transition-colors duration-200`}
+                    className={`grid grid-cols-4 transition-colors duration-200 ${
+                      isDarkMode ? 'hover:bg-gray-700/50' : 'hover:bg-gray-50'
+                    }`}
                   >
                     {/* 功能特性 */}
                     <div className="p-6 flex items-center">
@@ -857,7 +854,7 @@ export function ChatGPTHomePage() {
               </span>
             </div>
             <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-              {t('copyrightNotice')}
+              © {new Date().getFullYear()} {t('copyrightNotice')}
             </p>
           </div>
         </div>

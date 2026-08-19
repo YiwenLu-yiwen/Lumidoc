@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  resolveAutoTheme,
   resolveSupportedLanguage,
   supportedLanguages,
   translations,
@@ -25,5 +26,10 @@ describe('language policy', () => {
     expect(resolveSupportedLanguage('ja-JP')).toBe('en-US');
     expect(resolveSupportedLanguage('fr-FR')).toBe('en-US');
     expect(resolveSupportedLanguage('zh-HK')).toBe('zh-CN');
+  });
+
+  it('follows the operating-system color preference in auto mode', () => {
+    expect(resolveAutoTheme(true)).toBe('dark');
+    expect(resolveAutoTheme(false)).toBe('light');
   });
 });
