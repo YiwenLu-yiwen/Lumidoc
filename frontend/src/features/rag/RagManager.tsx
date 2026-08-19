@@ -1,11 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { isAxiosError } from 'axios';
 import { ragApi, RagFile, RagFileStatusResponse } from '../../api/rag';
 import { fileApi } from '../../api/file';
 import { detectBrowserLanguage, getTranslation } from '@/utils/language';
 import { useTheme } from '@/context/ThemeContext';
+import { Database } from 'lucide-react';
+import { useProjects } from '@/context/ProjectContext';
+import { resolveRagProjectId } from './ragProject';
 
 export interface RagManagerProps {
   onQueryComplete?: (result: string) => void;
@@ -48,7 +51,10 @@ const getApiErrorDetail = (error: unknown): string | undefined => {
 };
 
 export default function RagManager({ onQueryComplete }: RagManagerProps) {
-  const { projectId = '' } = useParams<{ projectId: string }>();
+  const navigate = useNavigate();
+  const { projectId: routeProjectId } = useParams<{ projectId: string }>();
+  const { projects, loading: projectsLoading } = useProjects();
+  const projectId = resolveRagProjectId(routeProjectId, projects[0]?.id);
   
   // 主题模式和语言检测
   const { isDarkMode } = useTheme();
@@ -76,6 +82,7 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
 
   // 文件列表获取
   const fetchFileList = useCallback(async () => {
+    if (!projectId) return;
     try {
       const files = await fileApi.listFiles(projectId);
       setFileList(files.map(f => f.filename));
@@ -87,6 +94,7 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
 
   // RAG文件列表获取
   const fetchRagFileList = useCallback(async () => {
+    if (!projectId) return;
     try {
       const response = await ragApi.getRagFiles(projectId);
       setRagFileList(response.files || []);
@@ -98,6 +106,7 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
   
   // 文件状态获取
   const fetchFileStatuses = useCallback(async () => {
+    if (!projectId) return;
     try {
       setIsLoadingStatuses(true);
       const response = await ragApi.getRagFileStatus(projectId);
@@ -114,13 +123,20 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
   }, [projectId]);
 
   useEffect(() => {
+    if (!projectId) {
+      setFileList([]);
+      setRagFileList([]);
+      setFileStatuses({});
+      return;
+    }
     void fetchFileList();
     void fetchRagFileList();
     void fetchFileStatuses();
-  }, [fetchFileList, fetchFileStatuses, fetchRagFileList]);
+  }, [fetchFileList, fetchFileStatuses, fetchRagFileList, projectId]);
 
   // 智能轮询进度和状态（优化间隔）
   const startPolling = () => {
+    if (!projectId) return () => undefined;
     let pollingInterval = 3000; // 起始间隔：3秒，更快响应
     let pollTimeoutId: NodeJS.Timeout | null = null;
     
@@ -263,6 +279,7 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
 
   // 导入知识库
   const handleImport = async () => {
+    if (!projectId) return;
     if (!selectedFiles.length) {
       toast.error(currentLanguage === 'zh-CN' ? '请选择要导入知识库的文件' : 'Please select files to import to knowledge base');
       return;
@@ -329,6 +346,7 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
 
   // 查询知识库
   const handleQuery = async () => {
+    if (!projectId) return;
     if (!queryText.trim()) {
       toast.error(currentLanguage === 'zh-CN' ? '请输入查询内容' : 'Please enter query content');
       return;
@@ -351,6 +369,7 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
   
   // 删除RAG文件
   const handleDeleteRagFile = async (fileId: string, fileName: string) => {
+    if (!projectId) return;
     const confirmMessage = currentLanguage === 'zh-CN' 
       ? `确定要从知识库中删除文件 "${fileName}" 吗？`
       : `Are you sure you want to delete file "${fileName}" from knowledge base?`;
@@ -391,10 +410,36 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
 
   // 手动刷新状态
   const refreshStatus = () => {
+    if (!projectId) return;
     fetchFileList();
     fetchRagFileList();
     fetchFileStatuses();
   };
+
+  if (!projectId) {
+    return (
+      <div className="flex h-full items-center justify-center overflow-y-auto bg-background p-6 text-foreground">
+        <div className="w-full max-w-lg rounded-xl border bg-card p-8 text-center text-card-foreground shadow-sm" role="status">
+          <Database className="mx-auto mb-4 h-10 w-10 text-muted-foreground" />
+          <h1 className="text-2xl font-semibold">
+            {projectsLoading ? t('loadingProjectInfo') : t('selectProjectForKnowledgeBase')}
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {projectsLoading ? t('loading') : t('selectProjectForKnowledgeBaseDescription')}
+          </p>
+          {!projectsLoading && (
+            <button
+              type="button"
+              className="mt-6 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+              onClick={() => navigate('/app/projects')}
+            >
+              {t('viewProjects')}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`h-full overflow-y-auto transition-colors duration-300 ${
@@ -417,9 +462,9 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
                 ? 'bg-gray-700 hover:bg-gray-600 text-gray-300'
                 : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
             }`}
-            title={currentLanguage === 'zh-CN' ? '刷新状态' : 'Refresh Status'}
+            title={t('refreshStatus')}
           >
-            {currentLanguage === 'zh-CN' ? '刷新' : 'Refresh'}
+            {t('refresh')}
           </button>
         </div>
       
@@ -429,7 +474,7 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
             isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
           }`}>
             <h3 className={`text-lg font-semibold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-              {currentLanguage === 'zh-CN' ? '导入文件到知识库' : 'Import Files to Knowledge Base'}
+              {t('importFilesToKnowledgeBase')}
             </h3>
           
             <div className="mb-4">
@@ -442,7 +487,7 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
                     className="mr-2 rounded"
                   />
                   <span className={isDarkMode ? 'text-gray-300' : 'text-gray-700'}>
-                    {currentLanguage === 'zh-CN' ? '全选' : 'Select All'}
+                    {t('selectAll')}
                   </span>
                 </label>
                 <button
@@ -451,8 +496,8 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
                   onClick={handleImport}
                 >
                   {isImporting 
-                    ? (currentLanguage === 'zh-CN' ? '导入中...' : 'Importing...')
-                    : (currentLanguage === 'zh-CN' ? '导入所选文件' : 'Import Selected Files')
+                    ? t('importing')
+                    : t('importSelectedFiles')
                   }
                 </button>
               </div>
@@ -462,7 +507,7 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
               }`}>
                 {fileList.length === 0 ? (
                   <p className={isDarkMode ? 'text-gray-400' : 'text-gray-600'}>
-                    {currentLanguage === 'zh-CN' ? '没有可用文件' : 'No available files'}
+                    {t('noAvailableFiles')}
                   </p>
                 ) : (
                 fileList.map(file => {
@@ -514,7 +559,7 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
           isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
         }`}>
           <h3 className={`text-lg font-semibold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-            {currentLanguage === 'zh-CN' ? '知识库查询' : 'Knowledge Base Query'}
+            {t('knowledgeBaseQuery')}
           </h3>
         
           <div className="mb-4">
@@ -523,21 +568,21 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
                 type="text"
                 value={queryText}
                 onChange={(e) => setQueryText(e.target.value)}
-                placeholder="输入查询内容"
-                className="flex-1 p-2 bg-[#232325] border border-gray-700 rounded mr-2 text-white"
+                placeholder={t('queryPlaceholder')}
+                className="mr-2 min-w-0 flex-1 rounded border border-input bg-background p-2 text-foreground"
               />
               <button
                 onClick={handleQuery}
                 disabled={!queryText.trim() || isQuerying}
                 className="px-3 py-1 bg-blue-600 rounded text-white disabled:bg-gray-500 disabled:opacity-50"
               >
-                {isQuerying ? '查询中...' : '查询'}
+                {isQuerying ? t('querying') : t('query')}
               </button>
             </div>
             
             {queryResult && (
               <div className="p-3 bg-[#232325] border border-gray-700 rounded max-h-64 overflow-y-auto">
-                <h4 className="font-semibold mb-1">查询结果:</h4>
+                <h4 className="font-semibold mb-1">{t('queryResult')}:</h4>
                 <p className="whitespace-pre-wrap">{queryResult}</p>
               </div>
             )}
@@ -545,12 +590,12 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
           
           <div>
             <h4 className="font-semibold mb-1">
-              知识库文件状态:
-              {isLoadingStatuses && <span className="ml-2 text-xs text-gray-400">(加载中...)</span>}
+              {t('knowledgeBaseFileStatus')}:
+              {isLoadingStatuses && <span className="ml-2 text-xs text-gray-400">({t('loading')}...)</span>}
             </h4>
             <div className="max-h-48 overflow-y-auto border border-gray-700 rounded p-2">
               {Object.keys(fileStatuses).length === 0 ? (
-                <p className="text-gray-400">知识库中没有文件</p>
+                <p className="text-gray-400">{t('noKnowledgeBaseFiles')}</p>
               ) : (
                 Object.entries(fileStatuses).map(([fileId, status]) => (
                   <div key={fileId} className={`p-1 ${STATUS_COLORS[status.status] || STATUS_COLORS[status.status?.toLowerCase()] || 'text-gray-400'}`}>
@@ -569,9 +614,9 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
                           <button
                             onClick={() => handleDeleteRagFile(fileId, status.file_name || fileId)}
                             className="ml-2 px-1 py-0.5 bg-red-600 hover:bg-red-700 rounded text-xs"
-                            title="从知识库中删除"
+                            title={t('deleteFromKnowledgeBase')}
                           >
-                            删除
+                            {t('delete')}
                           </button>
                         )}
                       </div>
