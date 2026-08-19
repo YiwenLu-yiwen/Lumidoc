@@ -110,7 +110,7 @@ const DESIGN_TOKENS = {
     cols6: 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6',
     cols12: 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-12',
     // 新增的适应性布局类
-    metricsGrid: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4',
+    metricsGrid: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3',
     contentGrid: 'grid-cols-1 lg:grid-cols-3',
     actionGrid: 'grid-cols-2 gap-4'
   },
@@ -430,14 +430,6 @@ export function ModernDashboard() {
   userRef.current = user;
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
-  // 知识图谱统计
-  const [knowledgeGraphStats, setKnowledgeGraphStats] = useState({
-    entityCount: 0,
-    relationCount: 0,
-    isLoading: false,
-    isConnected: false
-  });
-  
   // 统计真实的 Ollama 模型数量
   const actualModelStats = {
     thinking: ollamaModels.filter(model => OllamaApi.detectModelType(model.name) === 'thinking').length,
@@ -445,41 +437,6 @@ export function ModernDashboard() {
     total: ollamaModels.length
   };
   
-  // 加载知识图谱统计数据
-  const loadKnowledgeGraphStats = useCallback(async () => {
-    setKnowledgeGraphStats(prev => ({ ...prev, isLoading: true }));
-    
-    try {
-      // 尝试连接 Neo4j 并获取统计数据
-      // 这里需要替换为真实的 Neo4j API 调用
-      const response = await fetch('/api/v1/graph/stats', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('lumidoc_token')}`
-        }
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        setKnowledgeGraphStats({
-          entityCount: data.entities || 0,
-          relationCount: data.relations || 0,
-          isLoading: false,
-          isConnected: true
-        });
-      } else {
-        throw new Error('Failed to fetch graph stats');
-      }
-    } catch (error) {
-      console.log('[Dashboard] 知识图谱统计不可用:', error);
-      setKnowledgeGraphStats({
-        entityCount: 0,
-        relationCount: 0,
-        isLoading: false,
-        isConnected: false
-      });
-    }
-  }, []);
-
   // 加载 Ollama 模型列表
   const loadOllamaModels = useCallback(async () => {
     setIsLoadingModels(true);
@@ -636,8 +593,7 @@ export function ModernDashboard() {
     try {
       await Promise.allSettled([
         loadOllamaModels(),
-        userRef.current ? loadProjectStats() : Promise.resolve(),
-        loadKnowledgeGraphStats()
+        userRef.current ? loadProjectStats() : Promise.resolve()
       ]);
       setLastDataUpdateTime(new Date());
       console.log('[Dashboard] 数据刷新完成:', new Date().toLocaleString());
@@ -646,7 +602,7 @@ export function ModernDashboard() {
     } finally {
       setIsRefreshingData(false);
     }
-  }, [loadKnowledgeGraphStats, loadOllamaModels, loadProjectStats]);
+  }, [loadOllamaModels, loadProjectStats]);
 
 
   // 组件挂载时初始化数据
@@ -877,25 +833,6 @@ export function ModernDashboard() {
                 loading={isLoadingDocuments}
               />
               
-              <MetricCard
-                icon={<Database className="w-6 h-6" />}
-                title={t('knowledgeGraph')}
-                value={knowledgeGraphStats.isConnected ? knowledgeGraphStats.entityCount.toLocaleString() : '—'}
-                subtitle={t('entityRelations')}
-                status={knowledgeGraphStats.isConnected ? 'success' : 'warning'}
-                trend={{
-                  text: knowledgeGraphStats.isConnected 
-                    ? (currentLanguage === 'zh-CN' ? 'Neo4j 稳定运行' : 'Neo4j running stable')
-                    : (currentLanguage === 'zh-CN' ? '统计接口不可用' : 'Statistics unavailable'),
-                  direction: 'neutral'
-                }}
-                priority="medium"
-                badge={knowledgeGraphStats.isConnected ? undefined : {
-                  text: currentLanguage === 'zh-CN' ? '不可用' : 'Unavailable',
-                  variant: 'warning'
-                }}
-                loading={knowledgeGraphStats.isLoading}
-              />
             </div>
           </section>
 
