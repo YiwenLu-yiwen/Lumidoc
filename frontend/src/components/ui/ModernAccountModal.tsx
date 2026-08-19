@@ -435,7 +435,7 @@ export default function ModernAccountModal({ open, onClose }: Props) {
 
         <div className="flex max-h-[80vh] flex-col md:flex-row">
           {/* 左侧导航 */}
-          <div className={`w-full border-b p-3 md:w-72 md:border-b-0 md:border-r md:p-6 ${
+          <div className={`w-full border-b p-3 pr-14 md:w-72 md:border-b-0 md:border-r md:p-6 ${
             isDarkMode ? 'border-gray-800 bg-gray-900/50' : 'border-gray-200 bg-gray-50/50'
           }`}>
             <div className="grid grid-cols-4 gap-2 md:block md:space-y-2">
@@ -445,6 +445,8 @@ export default function ModernAccountModal({ open, onClose }: Props) {
                   <button
                     key={tab.key}
                     onClick={() => setActiveTab(tab.key)}
+                    aria-label={tab.label}
+                    title={tab.label}
                     className={`w-full rounded-xl p-3 text-center transition-all duration-200 md:p-4 md:text-left ${
                       activeTab === tab.key
                         ? isDarkMode
@@ -511,7 +513,7 @@ export default function ModernAccountModal({ open, onClose }: Props) {
             </div>
             <button
               onClick={logout}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-lg border ${
+              className={`flex items-center space-x-2 whitespace-nowrap rounded-lg border px-4 py-2 ${
                 isDarkMode 
                   ? 'border-red-800 text-red-400 hover:bg-red-900/20' 
                   : 'border-red-200 text-red-600 hover:bg-red-50'

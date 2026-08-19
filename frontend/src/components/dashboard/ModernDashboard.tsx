@@ -229,9 +229,9 @@ const MetricCard: React.FC<MetricCardProps> = ({
 
   const statusStyle = getStatusStyle(status);
   const priorityBorder = {
-    high: 'border-l-4 border-l-red-500',
-    medium: 'border-l-4 border-l-blue-500', 
-    low: 'border-l-4 border-l-gray-300'
+    high: 'border-l-4 border-l-primary',
+    medium: 'border-l-4 border-l-muted-foreground/30',
+    low: 'border-l-4 border-l-border'
   };
 
   return (

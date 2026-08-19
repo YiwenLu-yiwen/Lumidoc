@@ -212,14 +212,14 @@ export function SettingsPage() {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           {/* 左侧导航 */}
           <div className="lg:col-span-1">
-            <nav className="space-y-2">
+            <nav className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:block lg:space-y-2">
               {settingsSections.map((section) => {
                 const Icon = section.icon;
                 return (
                   <button
                     key={section.id}
                     onClick={() => setActiveSection(section.id)}
-                    className={`w-full text-left p-4 rounded-xl transition-all duration-200 ${
+                    className={`w-full rounded-xl p-3 text-left transition-all duration-200 lg:p-4 ${
                       activeSection === section.id
                         ? isDarkMode
                           ? 'bg-blue-900/30 text-blue-400 border border-blue-500/30'
@@ -233,7 +233,7 @@ export function SettingsPage() {
                       <Icon className="w-5 h-5" />
                       <div>
                         <div className="font-medium">{section.title}</div>
-                        <div className={`text-xs ${
+                        <div className={`hidden text-xs lg:block ${
                           activeSection === section.id
                             ? isDarkMode ? 'text-blue-300' : 'text-blue-600'
                             : isDarkMode ? 'text-gray-500' : 'text-gray-500'
