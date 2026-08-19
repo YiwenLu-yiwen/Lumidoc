@@ -8,11 +8,6 @@ interface Language {
 export const supportedLanguages: Language[] = [
   { code: 'zh-CN', name: '中文', flag: '🇨🇳' },
   { code: 'en-US', name: 'English', flag: '🇺🇸' },
-  { code: 'ja-JP', name: '日本語', flag: '🇯🇵' },
-  { code: 'ko-KR', name: '한국어', flag: '🇰🇷' },
-  { code: 'fr-FR', name: 'Français', flag: '🇫🇷' },
-  { code: 'de-DE', name: 'Deutsch', flag: '🇩🇪' },
-  { code: 'es-ES', name: 'Español', flag: '🇪🇸' },
 ];
 
 // 浏览器语言到支持语言的映射
@@ -24,17 +19,12 @@ const languageMap: { [key: string]: string } = {
   'en': 'en-US',
   'en-US': 'en-US',
   'en-GB': 'en-US',
-  'ja': 'ja-JP',
-  'ja-JP': 'ja-JP',
-  'ko': 'ko-KR',
-  'ko-KR': 'ko-KR',
-  'fr': 'fr-FR',
-  'fr-FR': 'fr-FR',
-  'de': 'de-DE',
-  'de-DE': 'de-DE',
-  'es': 'es-ES',
-  'es-ES': 'es-ES',
 };
+
+export function resolveSupportedLanguage(languageCode?: string): string {
+  if (!languageCode) return 'en-US';
+  return languageMap[languageCode] || languageMap[languageCode.split('-')[0]] || 'en-US';
+}
 
 // 自动检测浏览器语言
 // 缓存检测到的语言，避免频繁调用
@@ -68,29 +58,18 @@ export function detectBrowserLanguage(): string {
   console.log('🌐 检测到浏览器语言:', browserLanguages);
 
   for (const browserLang of browserLanguages) {
-    // 直接匹配
-    if (languageMap[browserLang]) {
-      console.log('🎯 匹配语言:', browserLang, '->', languageMap[browserLang]);
-      cachedLanguage = languageMap[browserLang];
+    const resolvedLanguage = resolveSupportedLanguage(browserLang);
+    if (resolvedLanguage === 'zh-CN' || browserLang.toLowerCase().startsWith('en')) {
+      cachedLanguage = resolvedLanguage;
       lastCheckTime = now;
-      return languageMap[browserLang];
-    }
-    
-    // 匹配语言前缀（如 'zh-CN' -> 'zh'）
-    const langPrefix = browserLang.split('-')[0];
-    if (languageMap[langPrefix]) {
-      console.log('🎯 前缀匹配:', langPrefix, '->', languageMap[langPrefix]);
-      cachedLanguage = languageMap[langPrefix];
-      lastCheckTime = now;
-      return languageMap[langPrefix];
+      return resolvedLanguage;
     }
   }
 
-  // 默认返回中文
-  console.log('🔄 使用默认语言: zh-CN');
-  cachedLanguage = 'zh-CN';
+  // 不完整语言暂不对外暴露，其他浏览器语言统一回退英文
+  cachedLanguage = 'en-US';
   lastCheckTime = now;
-  return 'zh-CN';
+  return 'en-US';
 }
 
 // 清除语言缓存的函数，当用户手动切换语言时调用

@@ -37,6 +37,7 @@ import {
   getTranslation 
 } from '@/utils/language';
 import { useTheme } from '@/context/ThemeContext';
+import { shouldCollapseSidebar } from './responsiveLayout';
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -63,8 +64,14 @@ interface ChatHistoryItem {
 export default function MainLayout({ children }: MainLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  
+
+  const [isCompactLayout, setIsCompactLayout] = useState(() =>
+    typeof window !== 'undefined' && shouldCollapseSidebar(window.innerWidth),
+  );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window !== 'undefined' && shouldCollapseSidebar(window.innerWidth)) {
+      return true;
+    }
     const saved = localStorage.getItem('lumidoc_sidebar_collapsed');
     return saved ? JSON.parse(saved) : false;
   });
@@ -297,7 +304,14 @@ export default function MainLayout({ children }: MainLayoutProps) {
   const toggleSidebar = () => {
     const newCollapsedState = !sidebarCollapsed;
     setSidebarCollapsed(newCollapsedState);
-    localStorage.setItem('lumidoc_sidebar_collapsed', JSON.stringify(newCollapsedState));
+    if (!isCompactLayout) {
+      localStorage.setItem('lumidoc_sidebar_collapsed', JSON.stringify(newCollapsedState));
+    }
+  };
+
+  const navigateFromSidebar = (path: string) => {
+    navigate(path);
+    if (isCompactLayout) setSidebarCollapsed(true);
   };
 
   // 创建新聊天
@@ -353,6 +367,23 @@ export default function MainLayout({ children }: MainLayoutProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    const handleResize = () => {
+      const compact = shouldCollapseSidebar(window.innerWidth);
+      setIsCompactLayout(compact);
+      if (compact) {
+        setSidebarCollapsed(true);
+        return;
+      }
+
+      const saved = localStorage.getItem('lumidoc_sidebar_collapsed');
+      setSidebarCollapsed(saved ? JSON.parse(saved) : false);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   return (
     <div className={`flex flex-col h-screen bg-background text-foreground ${isDarkMode ? 'dark' : ''}`}>
       {/* 统一的顶部导航栏 - 充分利用界面版 */}
@@ -373,25 +404,28 @@ export default function MainLayout({ children }: MainLayoutProps) {
                     isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
                   }`}
                   title={t('expandSidebar')}
+                  aria-label={t('expandSidebar')}
                 >
                   <Menu className="w-5 h-5" />
                 </Button>
               ) : (
                 /* 展开状态：显示Logo和品牌 */
-                <div className="flex items-center space-x-4">
-                  <div 
-                    className="flex items-center space-x-2 cursor-pointer hover:opacity-80 transition-opacity"
+                  <div className="flex items-center space-x-4">
+                  <button
+                    type="button"
+                    className="flex items-center space-x-2 !border-0 !bg-transparent !p-0 text-left hover:opacity-80"
                     onClick={() => navigate('/app/dashboard')}
+                    aria-label={t('intelligentWorkbench')}
                   >
                     <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
                       isDarkMode ? 'bg-gradient-to-r from-blue-600 to-purple-600' : 'bg-gradient-to-r from-blue-500 to-purple-500'
                     }`}>
                       <MessageSquare className="w-4 h-4 text-white" />
                     </div>
-                    <h1 className="text-lg font-semibold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                    <span className="text-lg font-semibold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
                       Lumidoc Intelligence
-                    </h1>
-                  </div>
+                    </span>
+                  </button>
                   
                   {/* 收起按钮 */}
                   <Button
@@ -402,6 +436,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
                       isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
                     }`}
                     title={t('collapseSidebar')}
+                    aria-label={t('collapseSidebar')}
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </Button>
@@ -419,6 +454,8 @@ export default function MainLayout({ children }: MainLayoutProps) {
                 className={`p-1.5 rounded-md transition-colors ${
                   isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
                 }`}
+                title={themeMode === 'light' ? t('lightMode') : themeMode === 'dark' ? t('darkMode') : t('autoMode')}
+                aria-label={themeMode === 'light' ? t('lightMode') : themeMode === 'dark' ? t('darkMode') : t('autoMode')}
               >
                 {themeMode === 'light' ? (
                   <Sun className="w-4 h-4" />
@@ -447,8 +484,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
               )}
 
               {/* 语言切换 */}
-              {currentLanguage !== detectBrowserLanguage() && (
-                <div className="relative" ref={languageMenuRef}>
+              <div className="relative" ref={languageMenuRef}>
                   <Button 
                     variant="ghost" 
                     size="sm" 
@@ -456,6 +492,8 @@ export default function MainLayout({ children }: MainLayoutProps) {
                     className={`p-1.5 rounded-md transition-colors ${
                       isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
                     }`}
+                    title={t('language')}
+                    aria-label={t('language')}
                   >
                     <Globe className="w-4 h-4" />
                   </Button>
@@ -483,7 +521,6 @@ export default function MainLayout({ children }: MainLayoutProps) {
                     </div>
                   )}
                 </div>
-              )}
 
               {/* 用户菜单 - 充分利用右侧空间 */}
               <Button
@@ -492,6 +529,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
                 className={`flex items-center space-x-3 px-3 py-1.5 rounded-md transition-colors ${
                   isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
                 }`}
+                aria-label={t('manageAccount')}
               >
                 <div className="hidden sm:block text-right">
                   <p className={`text-xs font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>
@@ -514,12 +552,26 @@ export default function MainLayout({ children }: MainLayoutProps) {
       </header>
 
       {/* 主要内容区域 */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
+        {isCompactLayout && !sidebarCollapsed && (
+          <button
+            type="button"
+            className="absolute inset-0 z-30 !rounded-none !border-0 bg-black/40 !p-0"
+            onClick={() => setSidebarCollapsed(true)}
+            aria-label={t('collapseSidebar')}
+          />
+        )}
         {/* 左侧边栏 - 优化空间利用 */}
         <div 
           ref={sidebarRef}
-          className={`${isDarkMode ? 'bg-[#343541] border-gray-800' : 'bg-white border-gray-200'} border-r transition-all duration-300 flex flex-col ${
-            sidebarCollapsed ? 'w-12' : 'w-56'
+          className={`${isDarkMode ? 'bg-background border-border' : 'bg-background border-border'} flex flex-col transition-all duration-300 ${
+            isCompactLayout
+              ? sidebarCollapsed
+                ? 'w-0 overflow-hidden border-r-0'
+                : 'absolute inset-y-0 left-0 z-40 w-64 border-r shadow-xl'
+              : sidebarCollapsed
+                ? 'w-12 shrink-0 border-r'
+                : 'w-56 shrink-0 border-r'
           }`}
         >
 
@@ -542,7 +594,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
                         ? 'text-gray-400 hover:bg-gray-800 hover:text-gray-200'
                         : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                   }`}
-                  onClick={() => navigate(item.path)}
+                  onClick={() => navigateFromSidebar(item.path)}
                   title={sidebarCollapsed ? item.label : undefined}
                 >
                   <Icon className="w-4 h-4 flex-shrink-0" />
@@ -734,11 +786,11 @@ export default function MainLayout({ children }: MainLayoutProps) {
         </div>
 
         {/* 主内容区域 */}
-        <div className="flex-1 bg-background">
+        <main className="min-w-0 flex-1 overflow-hidden bg-background">
           <ModelSelectionContext.Provider value={{ selectedModel, selectModel }}>
             {children}
           </ModelSelectionContext.Provider>
-        </div>
+        </main>
       </div>
 
       {/* 账号模态框 */}
