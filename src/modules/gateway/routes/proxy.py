@@ -3,9 +3,7 @@ Gateway代理路由处理器
 """
 
 import logging
-from typing import Dict, List, Optional, Any
 from fastapi import APIRouter, Request, Response, HTTPException, Depends
-from fastapi.responses import JSONResponse
 from src.modules.gateway.services.proxy import get_request_proxy, RequestProxy
 from src.modules.gateway.config.config import settings
 
@@ -170,7 +168,7 @@ async def refresh_services():
 async def gateway_root():
     """Gateway根路径"""
     return {
-        "message": "欢迎使用STP系统API网关",
+        "message": "欢迎使用Lumidoc系统API网关",
         "name": settings.service_name,
         "version": settings.service_version,
         "description": settings.service_description,

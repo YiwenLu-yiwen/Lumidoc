@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 import re
 
 # 临时邮箱域名黑名单
@@ -24,8 +24,9 @@ class UserBase(BaseModel):
     is_active: bool = True
     is_superuser: bool = False
     
-    @validator('email')
-    def validate_email(cls, v):
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, v: EmailStr) -> EmailStr:
         """验证邮箱地址不能为临时邮箱"""
         if not v:
             raise ValueError('邮箱地址是必填项')
@@ -82,4 +83,4 @@ class User(UserBase):
 
     model_config = {
         "from_attributes": True
-    } 
+    }

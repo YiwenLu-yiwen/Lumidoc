@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from pathlib import Path
 from dotenv import load_dotenv
 import logging
-from typing import Dict, Optional, Any, Tuple
+from typing import Optional, Tuple
 
 # 配置日志
 logger = logging.getLogger(__name__)

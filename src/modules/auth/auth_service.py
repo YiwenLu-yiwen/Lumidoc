@@ -1,100 +1,39 @@
 import os
 import jwt
-import warnings
-from datetime import datetime, timedelta
+import bcrypt
+from datetime import timedelta
 from typing import Optional, Union
 import asyncpg
 
-# 抑制bcrypt版本警告
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=UserWarning, module="passlib.*")
-    from passlib.context import CryptContext
-
-from .user_model import User, UserCreate, UserInDB
+from .user_model import User, UserCreate
 from .config.config import settings
 import asyncio
-import logging
-from src.shared.jwt_utils import create_jwt_token, get_private_key, get_public_key
+from src.shared.jwt_utils import create_jwt_token
 from src.shared.logger import initialize_logging, get_logger
+from src.shared.time_utils import utc_now, utc_now_naive
 
 # 配置日志
 initialize_logging("auth_service")
 logger = get_logger(__name__)
 
-# 修复bcrypt版本问题
-def get_crypt_context():
-    """获取加密上下文，处理各种bcrypt版本兼容性问题"""
-    try:
-        # 首先尝试导入bcrypt，确定版本
-        import bcrypt
-        bcrypt_version = getattr(bcrypt, "__version__", None)
-        if not bcrypt_version:
-            # 新版本bcrypt没有__about__.__version__属性
-            logger.info(f"使用兼容模式初始化CryptContext，当前bcrypt版本无法通过常规方式确定")
-        else:
-            logger.info(f"bcrypt版本: {bcrypt_version}")
-        
-        # 使用安全的配置初始化CryptContext
-        context = CryptContext(
-            schemes=["bcrypt"],
-            bcrypt__rounds=12,
-            bcrypt__ident="2b",
-            deprecated="auto"
-        )
-        
-        # 测试加密和验证功能是否正常工作
-        test_password = "test_password_for_verification"
-        test_hash = context.hash(test_password)
-        if not context.verify(test_password, test_hash):
-            raise ValueError("CryptContext验证测试失败")
-            
-        logger.info("已使用兼容模式初始化CryptContext")
-        return context
-        
-    except Exception as e:
-        logger.error(f"标准CryptContext初始化失败: {str(e)}")
-        # 实现备用加密方案 - 直接使用bcrypt库
-        try:
-            import bcrypt
-            
-            class CustomBcryptContext:
-                """自定义bcrypt上下文，直接使用bcrypt库而不依赖passlib的包装"""
-                def hash(self, password: str) -> str:
-                    """对密码进行哈希"""
-                    if isinstance(password, str):
-                        password = password.encode('utf-8')
-                    salt = bcrypt.gensalt(rounds=12)
-                    hashed = bcrypt.hashpw(password, salt)
-                    return hashed.decode('utf-8')
-                
-                def verify(self, password: str, hash: str) -> bool:
-                    """验证密码是否匹配哈希值"""
-                    if isinstance(password, str):
-                        password = password.encode('utf-8')
-                    if isinstance(hash, str):
-                        hash = hash.encode('utf-8')
-                    try:
-                        return bcrypt.checkpw(password, hash)
-                    except Exception as verify_err:
-                        logger.error(f"验证密码时出错: {str(verify_err)}")
-                        return False
-            
-            # 创建并测试自定义上下文
-            custom_context = CustomBcryptContext()
-            test_password = "test_password_for_verification"
-            test_hash = custom_context.hash(test_password)
-            if not custom_context.verify(test_password, test_hash):
-                raise ValueError("自定义加密上下文验证测试失败")
-                
-            logger.info("已使用自定义bcrypt封装初始化CryptContext")
-            return custom_context
-            
-        except Exception as backup_err:
-            logger.critical(f"所有CryptContext初始化方法都失败: {str(backup_err)}")
-            raise RuntimeError("无法初始化密码加密系统，这会导致认证功能无法使用") from backup_err
+class BcryptPasswordContext:
+    """Minimal password context backed by the maintained bcrypt package."""
 
-# 初始化密码上下文
-pwd_context = get_crypt_context()
+    def hash(self, password: str) -> str:
+        password_bytes = password.encode("utf-8")
+        return bcrypt.hashpw(password_bytes, bcrypt.gensalt(rounds=12)).decode("utf-8")
+
+    def verify(self, password: str, hashed_password: str) -> bool:
+        try:
+            return bcrypt.checkpw(
+                password.encode("utf-8"), hashed_password.encode("utf-8")
+            )
+        except (TypeError, ValueError):
+            return False
+
+
+pwd_context = BcryptPasswordContext()
+logger.info("bcrypt版本: %s", getattr(bcrypt, "__version__", "unknown"))
 
 class AuthService:
     def __init__(self):
@@ -109,21 +48,13 @@ class AuthService:
             # 强制重新加载密钥，确保最新
             self.private_key = get_private_key(force_reload=True)
             if not self.private_key:
-                # 备用方案：直接读取文件
-                with open(settings.jwt_private_key_path, "r") as f:
-                    self.private_key = f.read().strip()
-                logger.info(f"直接从文件加载JWT私钥: {settings.jwt_private_key_path}")
-            else:
-                logger.info(f"使用jwt_utils加载JWT私钥")
+                raise RuntimeError("JWT签名密钥未配置")
+            logger.info("JWT签名密钥加载成功")
             
             self.public_key = get_public_key(force_reload=True)
             if not self.public_key:
-                # 备用方案：直接读取文件
-                with open(settings.jwt_public_key_path, "r") as f:
-                    self.public_key = f.read().strip()
-                logger.info(f"直接从文件加载JWT公钥: {settings.jwt_public_key_path}")
-            else:
-                logger.info(f"使用jwt_utils加载JWT公钥")
+                raise RuntimeError("JWT验证密钥未配置")
+            logger.info("JWT验证密钥加载成功")
             
             # 验证密钥对是否匹配
             self._validate_key_pair()
@@ -135,24 +66,17 @@ class AuthService:
         """验证公钥和私钥是否匹配"""
         try:
             # 创建测试数据
-            test_data = {"test": "data", "time": str(datetime.utcnow())}
+            test_data = {"test": "data", "time": utc_now().isoformat()}
             
             # 使用私钥签名
             token = jwt.encode(test_data, self.private_key, algorithm=settings.JWT_ALGORITHM)
             
             # 使用公钥验证
             try:
-                decoded = jwt.decode(token, self.public_key, algorithms=[settings.JWT_ALGORITHM])
+                jwt.decode(token, self.public_key, algorithms=[settings.JWT_ALGORITHM])
                 logger.info("JWT密钥对验证成功")
             except Exception as e:
                 logger.error(f"JWT密钥对验证失败: {str(e)}")
-                # 记录密钥信息（不包含完整内容）
-                if self.private_key and self.public_key:
-                    priv_len = len(self.private_key)
-                    pub_len = len(self.public_key)
-                    logger.error(f"私钥长度: {priv_len}, 公钥长度: {pub_len}")
-                    logger.error(f"私钥前10字符: {self.private_key[:10]}...")
-                    logger.error(f"公钥前10字符: {self.public_key[:10]}...")
                 raise ValueError(f"JWT密钥对不匹配: {str(e)}")
         except Exception as e:
             logger.error(f"验证JWT密钥对时出错: {str(e)}")
@@ -240,9 +164,9 @@ class AuthService:
         # 备用方案：使用原有实现
         to_encode = data.copy()
         if expires_delta:
-            expire = datetime.utcnow() + expires_delta
+            expire = utc_now() + expires_delta
         else:
-            expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+            expire = utc_now() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         to_encode.update({"exp": expire})
         
         # 确保sub字段是字符串类型
@@ -277,7 +201,7 @@ class AuthService:
                 return None
             if not self.verify_password(password, user['hashed_password']):
                 return None
-            current_time = datetime.utcnow()
+            current_time = utc_now_naive()
             return User(
                 id=user['id'],
                 username=user['username'],
@@ -288,6 +212,27 @@ class AuthService:
                 created_at=user['created_at'],
                 updated_at=current_time
             )
+
+    async def change_password(
+        self, username: str, current_password: str, new_password: str
+    ) -> bool:
+        """验证当前凭据后更新密码。"""
+        user = await self.authenticate_user(username, current_password)
+        if user is None:
+            return False
+
+        hashed_password = self.get_password_hash(new_password)
+        async with self.db_pool.acquire() as conn:
+            result = await conn.execute(
+                """
+                UPDATE users
+                SET hashed_password = $1, updated_at = CURRENT_TIMESTAMP
+                WHERE id = $2
+                """,
+                hashed_password,
+                user.id,
+            )
+        return result == "UPDATE 1"
     
     async def create_user(self, user: UserCreate) -> User:
         """创建用户"""
@@ -301,7 +246,7 @@ class AuthService:
         hashed_password = self.get_password_hash(user.password)
         nickname = user.nickname if user.nickname else "momo"  # 自动补默认昵称
         email = user.email  # 现在必须有值
-        current_time = datetime.utcnow()
+        current_time = utc_now_naive()
         
         logger.info(f"创建用户: username={user.username}, email={email}, nickname={nickname}")
         
@@ -370,4 +315,4 @@ class AuthService:
                 is_superuser=user['is_superuser'],
                 created_at=user['created_at'],
                 updated_at=user['updated_at']
-            ) 
+            )

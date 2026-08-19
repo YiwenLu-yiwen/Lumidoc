@@ -12,7 +12,8 @@
     "clean": "find src -type f -name \"*.js\" -not -path \"*node_modules*\" -delete && find . -name \"*.tsbuildinfo\" -delete && find . -name \"*.d.ts\" -not -path \"*node_modules*\" -delete",
     "clean-build": "npm run clean && npm run build",
     "clean-build:prod": "npm run clean && npm run build:prod",
-    "test": "vitest"
+    "test": "vitest",
+    "test:e2e:smoke": "LUMIDOC_RUN_E2E=1 vitest run tests/e2e/smoke-api.test.ts --reporter=verbose"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.11",
@@ -45,14 +46,11 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
-    "echarts": "^5.5.0",
-    "echarts-for-react": "^3.0.2",
     "framer-motion": "^11.1.15",
     "graphology": "^0.25.4",
     "graphology-layout": "^0.6.1",
     "graphology-layout-forceatlas2": "^0.10.1",
     "i18next": "^25.2.1",
-    "lodash": "^4.17.21",
     "lucide-react": "^0.503.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -71,7 +69,7 @@
     "tailwindcss-animate": "^1.0.7",
     "vis-data": "^7.1.9",
     "vis-network": "^9.1.9",
-    "xlsx": "^0.18.5",
+    "write-excel-file": "^4.1.1",
     "zod": "^3.22.4",
     "zustand": "^5.0.3"
   },
@@ -80,7 +78,6 @@
     "@testing-library/jest-dom": "^6.4.2",
     "@testing-library/react": "^15.0.5",
     "@types/axios": "^0.9.36",
-    "@types/lodash": "^4.14.202",
     "@types/node": "^22.15.3",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.3",

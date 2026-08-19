@@ -3,7 +3,7 @@
  * 展示如何使用文档处理进度、图谱更新和系统监控WebSocket
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   useFileProcessWebSocket, 
   useGraphWebSocket, 
@@ -36,7 +36,6 @@ export const WebSocketDemo: React.FC = () => {
     isConnected: monitoringConnected,
     alerts,
     systemMetrics,
-    serviceStatus,
     error: monitoringError,
     requestSystemMetrics,
     clearAlerts
@@ -63,14 +62,14 @@ export const WebSocketDemo: React.FC = () => {
       {/* 选项卡 */}
       <div className="mb-6">
         <nav className="flex space-x-8">
-          {[
+          {([
             { key: 'fileproc', label: '文档处理进度', connected: fileConnected },
             { key: 'graph', label: '知识图谱更新', connected: graphConnected },
             { key: 'monitoring', label: '系统监控', connected: monitoringConnected }
-          ].map(({ key, label, connected }) => (
+          ] as const).map(({ key, label, connected }) => (
             <button
               key={key}
-              onClick={() => setActiveTab(key as any)}
+              onClick={() => setActiveTab(key)}
               className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
                 activeTab === key
                   ? 'border-blue-500 text-blue-600'

@@ -3,7 +3,7 @@
  * 显示后端未启动的提示和解决方案
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { ServiceStatus, BackendHealthStatus, checkBackendHealth, waitForBackend } from '../../api/health';
 
 interface BackendOfflineErrorProps {

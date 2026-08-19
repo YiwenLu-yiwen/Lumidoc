@@ -1,33 +1,25 @@
-from fastapi import FastAPI, HTTPException, Depends, APIRouter, Query, Path as FastAPIPath
-from src.shared.health_check import get_system_info, ServiceStatus, HealthResponse
-from fastapi.middleware.cors import CORSMiddleware
-from typing import List, Dict, Any, Optional, Union
+from fastapi import HTTPException, Depends, APIRouter, Query, Path as FastAPIPath
+from typing import List, Dict, Any, Optional
 import uuid
 from datetime import datetime
 from src.database import get_db
 from sqlalchemy.orm import Session
-import httpx
 # 更新配置导入
-from .config.config import settings
 from .models.project import Project as DBProject
 from .models.project_file import ProjectFile as DBProjectFile
 # 导入共享类型定义
-from src.shared.types.project import ProjectBase, ProjectCreate, ProjectUpdate, ProjectResponse, ProjectStatus
+from src.shared.types.project import ProjectCreate, ProjectUpdate, ProjectResponse, ProjectStatus
 from src.shared.types.file import FileInfo
-from src.shared.types.response import ApiResponse
 import logging
 import traceback
 import os
 from pathlib import Path
-import uuid
-from src.modules.auth.dependencies import get_current_user
+from src.shared.auth import get_current_user
 # 导入任务去重装饰器
 from src.shared.task_manager import dedupe_task
-import asyncio
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 # 导入服务客户端
-from src.shared.service_discovery import get_service_client, call_service
-from src.modules.auth.models.user import User
+from src.shared.service_discovery import call_service
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -103,7 +95,7 @@ class ProjectService:
         logger.info(f"Creating project '{project.name}' for user {user_id}")
         try:
             # 不再手动生成项目ID，使用数据库自增整数ID
-            logger.debug(f"Creating project with auto-generated ID")
+            logger.debug("Creating project with auto-generated ID")
             
             # 确保状态值使用枚举的值（小写）
             status_value = ProjectStatus.ACTIVE.value
@@ -147,7 +139,7 @@ class ProjectService:
                 if project_dir.exists():
                     logger.info(f"确认项目目录已存在: {project_dir}")
                 else:
-                    logger.error(f"项目目录创建失败，尝试使用os.makedirs")
+                    logger.error("项目目录创建失败，尝试使用os.makedirs")
                     os.makedirs(str(project_dir), exist_ok=True)
                     logger.info(f"使用os.makedirs创建项目目录: {project_dir}")
             except Exception as dir_error:

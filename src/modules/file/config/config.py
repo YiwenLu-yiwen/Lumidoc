@@ -12,9 +12,9 @@ settings = FileServiceSettings()
 # 数据库连接属性
 db_host = get_env("POSTGRES_HOST", "localhost")
 db_port = get_env("POSTGRES_PORT", 5432, env_type=int)
-db_name = get_env("POSTGRES_DB", "stpdb")
-db_user = get_env("POSTGRES_USER", "stpuser")
-db_password = get_env("POSTGRES_PASSWORD", "stppassword")
+db_name = get_env("POSTGRES_DB", "lumidoc")
+db_user = get_env("POSTGRES_USER", "postgres")
+db_password = get_env("POSTGRES_PASSWORD", "")
 
 # 配置使用方法示例
 """
@@ -39,9 +39,9 @@ def get_db_url() -> str:
         # 从环境变量构建连接字符串
         db_host = get_env("POSTGRES_HOST", "localhost")
         db_port = get_env("POSTGRES_PORT", 5432, env_type=int)
-        db_name = get_env("POSTGRES_DB", "stpdb")
-        db_user = get_env("POSTGRES_USER", "stpuser")
-        db_password = get_env("POSTGRES_PASSWORD", "stppassword")
+        db_name = get_env("POSTGRES_DB", "lumidoc")
+        db_user = get_env("POSTGRES_USER", "postgres")
+        db_password = get_env("POSTGRES_PASSWORD", "")
         return f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
     return settings.database.connection_string
 
@@ -71,4 +71,4 @@ def get_redis_url() -> str:
     if redis_password:
         return f"redis://:{redis_password}@{redis_host}:{redis_port}/{redis_db}"
     else:
-        return f"redis://{redis_host}:{redis_port}/{redis_db}" 
+        return f"redis://{redis_host}:{redis_port}/{redis_db}"

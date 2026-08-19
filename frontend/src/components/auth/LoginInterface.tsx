@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Eye, EyeOff, Mail, Lock, User, Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,78 +35,81 @@ export function LoginInterface({ onLogin, onRegister, isLoading = false }: Login
   const currentLanguage = detectBrowserLanguage();
   
   // 翻译函数
-  const t = (key: keyof typeof import('@/utils/language').translations['zh-CN']) => {
+  const t = useCallback((key: keyof typeof import('@/utils/language').translations['zh-CN']) => {
     return getTranslation(currentLanguage, key);
-  };
+  }, [currentLanguage]);
 
   // 密码强度检查规则 - 在t函数定义后
-  const passwordRules = [
+  const passwordRules = useMemo(() => [
     { key: 'length', test: (pwd: string) => pwd.length >= 6, label: t('atLeastSixCharacters') },
     { key: 'letter', test: (pwd: string) => /[a-zA-Z]/.test(pwd), label: t('containsLetters') },
     { key: 'number', test: (pwd: string) => /\d/.test(pwd), label: t('containsNumbers') },
-  ];
+  ], [t]);
 
   // 实时验证函数
-  const validateField = (field: string, value: string) => {
-    const newErrors = { ...errors };
-    const newValidationStatus = { ...validationStatus };
+  const validateField = useCallback((field: string, value: string) => {
+    let errorMessage: string | undefined;
+    let isValid: boolean | undefined;
 
     switch (field) {
       case 'email':
         if (!value) {
-          newErrors.email = t('pleaseEnterEmail');
-          newValidationStatus.email = false;
+          errorMessage = t('pleaseEnterEmail');
+          isValid = false;
         } else if (!/\S+@\S+\.\S+/.test(value)) {
-          newErrors.email = t('pleaseEnterValidEmail');
-          newValidationStatus.email = false;
+          errorMessage = t('pleaseEnterValidEmail');
+          isValid = false;
         } else {
-          delete newErrors.email;
-          newValidationStatus.email = true;
+          isValid = true;
         }
         break;
       
       case 'username':
         if (!isLoginMode) {
           if (!value) {
-            newErrors.username = t('pleaseEnterUsername');
-            newValidationStatus.username = false;
+            errorMessage = t('pleaseEnterUsername');
+            isValid = false;
           } else if (value.length < 4) {
-            newErrors.username = t('usernameMinLength');
-            newValidationStatus.username = false;
+            errorMessage = t('usernameMinLength');
+            isValid = false;
           } else {
-            delete newErrors.username;
-            newValidationStatus.username = true;
+            isValid = true;
           }
         }
         break;
       
       case 'password':
         if (!value) {
-          newErrors.password = t('pleaseEnterPassword');
-          newValidationStatus.password = false;
+          errorMessage = t('pleaseEnterPassword');
+          isValid = false;
         } else if (!isLoginMode) {
           // 注册模式下检查密码强度
           const failedRules = passwordRules.filter(rule => !rule.test(value));
           if (failedRules.length > 0) {
-            newErrors.password = `${t('passwordRequirementsNotMet')}：${failedRules.map(r => r.label).join('、')}`;
-            newValidationStatus.password = false;
+            errorMessage = `${t('passwordRequirementsNotMet')}：${failedRules.map(r => r.label).join('、')}`;
+            isValid = false;
           } else {
-            delete newErrors.password;
-            newValidationStatus.password = true;
+            isValid = true;
           }
         } else if (value.length < 6) {
-          newErrors.password = t('passwordMinLength');
-          newValidationStatus.password = false;
+          errorMessage = t('passwordMinLength');
+          isValid = false;
         } else {
-          delete newErrors.password;
-          newValidationStatus.password = true;
+          isValid = true;
         }
         break;
     }
 
-    setErrors(newErrors);
-    setValidationStatus(newValidationStatus);
-  };
+    if (isValid === undefined) return;
+
+    setErrors(previousErrors => {
+      const nextErrors = { ...previousErrors };
+      if (errorMessage) nextErrors[field] = errorMessage;
+      else delete nextErrors[field];
+      return nextErrors;
+    });
+    setValidationStatus(previousStatus => ({ ...previousStatus, [field]: isValid }));
+  }, [isLoginMode, passwordRules, t]);
 
   // 实时检查输入
   useEffect(() => {
@@ -116,7 +119,7 @@ export function LoginInterface({ onLogin, onRegister, isLoading = false }: Login
       validateField('username', formData.username);
       validateField('password', formData.password);
     }
-  }, [formData, isLoginMode]);
+  }, [formData, isLoginMode, validateField]);
 
   // 表单验证
   const validateForm = () => {

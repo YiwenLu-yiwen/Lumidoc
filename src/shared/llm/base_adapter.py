@@ -7,7 +7,7 @@ LLM适配器基础类型定义
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Any, Optional, TypedDict
+from typing import List, Optional, TypedDict
 
 class Message(TypedDict):
     """聊天消息类型"""

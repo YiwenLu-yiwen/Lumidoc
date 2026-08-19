@@ -1,4 +1,5 @@
 import { apiClient } from './client';
+import type { ModelInfo } from './modelService';
 
 // Ollama 模型信息接口
 export interface OllamaModel {
@@ -6,7 +7,7 @@ export interface OllamaModel {
   size?: number;
   digest?: string;
   modified?: string;
-  details?: any;
+  details?: Record<string, unknown>;
 }
 
 // 模型下载状态接口
@@ -41,7 +42,7 @@ export class OllamaApi {
   /**
    * 获取增强的模型列表（包含 Ollama 模型识别）
    */
-  static async getAvailableModels(): Promise<{ models: any[], total: number }> {
+  static async getAvailableModels(): Promise<{ models: ModelInfo[], total: number }> {
     try {
       const response = await apiClient.get('/api/v1/llm/models');
       return response.data;
@@ -84,7 +85,7 @@ export class OllamaApi {
     try {
       await this.getInstalledModels();
       return true;
-    } catch (error) {
+    } catch {
       return false;
     }
   }

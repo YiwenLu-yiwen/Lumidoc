@@ -1,0 +1,2 @@
+# The service implements provider calls through the shared adapters; LangChain is its only heavy extra.
+langchain==0.3.25

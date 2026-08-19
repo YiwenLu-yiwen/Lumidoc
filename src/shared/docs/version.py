@@ -3,11 +3,10 @@ API版本控制工具
 提供FastAPI应用的API版本管理功能
 """
 
-from typing import Dict, Any, Optional, List, Callable, Type, TypeVar, Union
-from fastapi import FastAPI, APIRouter, Depends, Header, Path, Request, Response
+from typing import Dict, Any, Optional, List, Callable, TypeVar
+from fastapi import FastAPI, APIRouter, Header, Request, Response
 from fastapi.routing import APIRoute
 import re
-import warnings
 
 T = TypeVar('T')
 
@@ -221,8 +220,8 @@ def get_version_info() -> Dict[str, Any]:
         "build_timestamp": "2024-01-01T00:00:00Z",
         "supported_versions": ["v1"],
         "deprecated_versions": [],
-        "service_name": "STP API",
-        "description": "STP智能工具平台API服务",
+        "service_name": "Lumidoc API",
+        "description": "Lumidoc智能工具平台API服务",
         "features": [
             "用户认证",
             "文件管理",
@@ -278,6 +277,6 @@ def get_service_version(service_name: str) -> Dict[str, Any]:
         "version": service_versions.get(service_name, "1.0.0"),
         "api_version": base_info["api_version"],
         "build_timestamp": base_info["build_timestamp"],
-        "description": f"STP {service_name}服务",
+        "description": f"Lumidoc {service_name}服务",
         "status": "active"
     } 

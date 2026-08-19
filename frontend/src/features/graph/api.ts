@@ -7,7 +7,7 @@ export interface Node {
   label: string;
   type?: string;
   description?: string;
-  properties?: Record<string, any>;
+  properties?: Record<string, unknown>;
   x?: number;
   y?: number;
   size?: number;
@@ -20,7 +20,7 @@ export interface Edge {
   target: string;
   label?: string;
   type?: string;
-  properties?: Record<string, any>;
+  properties?: Record<string, unknown>;
   size?: number;
   color?: string;
 }
@@ -37,7 +37,9 @@ function convertGraphData(data: GraphData): GraphDataLegacy {
       id: node.id,
       label: node.label,
       type: node.type,
-      description: node.properties?.description || '',
+      description: typeof node.properties?.description === 'string'
+        ? node.properties.description
+        : '',
       properties: node.properties,
       x: node.x,
       y: node.y,
@@ -63,7 +65,7 @@ export async function fetchGraphData(projectId: string): Promise<GraphDataLegacy
     // 使用新的图谱API
     const data = await graphApi.getProjectGraph(projectId);
     console.log(`[Graph API] 收到图谱数据:`, data);
-    
+
     // 检查数据结构
     if (!data || !data.nodes || !data.edges) {
       console.warn('[Graph API] 返回的数据格式不正确，使用空数据');
@@ -72,13 +74,13 @@ export async function fetchGraphData(projectId: string): Promise<GraphDataLegacy
         edges: []
       };
     }
-    
+
     console.log(`[Graph API] 数据验证通过: ${data.nodes.length}个节点, ${data.edges.length}条边`);
-    
+
     // 转换为旧格式
     const convertedData = convertGraphData(data);
     console.log(`[Graph API] 转换完成: ${convertedData.nodes.length}个节点, ${convertedData.edges.length}条边`);
-    
+
     return convertedData;
   } catch (error) {
     console.error('[Graph API] 获取图谱数据失败:', error);
@@ -93,8 +95,8 @@ export async function fetchGraphData(projectId: string): Promise<GraphDataLegacy
 export async function updateNodePosition(projectId: string, nodeId: string, x: number, y: number): Promise<void> {
   try {
     console.log(`[Graph API] 更新节点${nodeId}位置: (${x}, ${y})`);
-    await graphApi.updateEntity(projectId, nodeId, { 
-      properties: { x, y } 
+    await graphApi.updateEntity(projectId, nodeId, {
+      properties: { x, y }
     });
   } catch (error) {
     console.error('[Graph API] 更新节点位置失败:', error);
@@ -137,7 +139,7 @@ export async function searchNodes(projectId: string, searchTerm: string): Promis
       search_type: 'both',
       search_fields: ['label', 'type', 'properties.description']
     });
-    
+
     return convertGraphData({
       nodes: searchResult.entities,
       edges: searchResult.relationships
@@ -156,7 +158,9 @@ export async function getNodesByType(projectId: string, nodeType: string): Promi
       id: entity.id,
       label: entity.label,
       type: entity.type,
-      description: entity.properties?.description || '',
+      description: typeof entity.properties?.description === 'string'
+        ? entity.properties.description
+        : '',
       properties: entity.properties,
       x: entity.x,
       y: entity.y,
@@ -192,4 +196,4 @@ export async function importFromLightRAG(projectId: string): Promise<void> {
     console.error('[Graph API] 从LightRAG导入失败:', error);
     throw error;
   }
-} 
+}

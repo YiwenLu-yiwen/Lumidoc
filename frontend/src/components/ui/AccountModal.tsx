@@ -1,7 +1,7 @@
 import { Plus, Folder, Loader2, AlertCircle, Trash2 } from 'lucide-react';
 import React, { useEffect, useState, useRef } from 'react';
-import { useAuth } from '@/context/AuthContext';
-import { projectApi } from '@/api/project';
+import { useAuth, type User } from '@/context/AuthContext';
+import { projectApi, type Project } from '@/api/project';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useProjects } from '@/context/ProjectContext';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -54,7 +54,7 @@ function DefaultAvatar({ username, size = 24 }: { username: string, size?: numbe
   );
 }
 
-function ProfileTab({ user }: { user: any }) {
+function ProfileTab({ user }: { user: User | null }) {
   return (
     <div className="flex flex-col items-center gap-4">
       <div className="w-24 h-24 rounded-full bg-gray-800 flex items-center justify-center overflow-hidden">
@@ -89,7 +89,7 @@ export default function AccountModal({ open, onClose }: Props) {
   const location = useLocation();
   const modalRef = useRef<HTMLDivElement>(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-  const [projectToDelete, setProjectToDelete] = useState<any>(null);
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteIsCurrent, setDeleteIsCurrent] = useState(false);
 
@@ -101,7 +101,7 @@ export default function AccountModal({ open, onClose }: Props) {
       setLoading(true);
       refreshProjects().finally(() => setLoading(false));
     }
-  }, [open, user, activeTab]);
+  }, [open, user, activeTab, refreshProjects]);
 
   // ESC关闭弹窗
   useEffect(() => {
@@ -142,7 +142,7 @@ export default function AccountModal({ open, onClose }: Props) {
       setNewProjectName('');
       setCreating(false);
       await refreshProjects();
-    } catch (e) {
+    } catch {
       setCreateError('创建失败');
     } finally {
       setLoading(false);
@@ -291,7 +291,7 @@ export default function AccountModal({ open, onClose }: Props) {
               onClose();
               navigate('/');
             }
-          } catch (err) {
+          } catch {
             alert('删除失败');
           } finally {
             setDeleteLoading(false);
@@ -302,4 +302,4 @@ export default function AccountModal({ open, onClose }: Props) {
       />
     </div>
   );
-} 
+}

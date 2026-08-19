@@ -7,25 +7,23 @@ vLLM适配器
 """
 
 import json
-import asyncio
 import aiohttp
-from typing import Dict, List, Any, Optional, Union, AsyncIterator, Callable
-from pydantic import BaseModel
+from typing import Dict, List, Any, Optional, Union, AsyncIterator
 
 from src.shared.config import llm_settings
 from .base_adapter import BaseLLMAdapter, Message, CompletionOptions
 
 class VLLMAdapter(BaseLLMAdapter):
     """vLLM适配器，支持高并发请求处理"""
-    
-    def __init__(self, 
+
+    def __init__(self,
                  api_url: Optional[str] = None,
                  api_key: Optional[str] = None,
                  model_name: Optional[str] = None,
                  **kwargs):
         """
         初始化vLLM适配器
-        
+
         Args:
             api_url: vLLM API地址
             api_key: API密钥（如果需要）
@@ -36,19 +34,19 @@ class VLLMAdapter(BaseLLMAdapter):
         self.api_key = api_key or llm_settings.api_key
         self.model_name = model_name or llm_settings.model_name
         self.session = None
-        
+
     async def _ensure_session(self) -> aiohttp.ClientSession:
         """确保aiohttp会话已创建"""
         if self.session is None or self.session.closed:
             self.session = aiohttp.ClientSession()
         return self.session
-    
+
     async def close(self):
         """关闭会话"""
         if self.session and not self.session.closed:
             await self.session.close()
             self.session = None
-    
+
     def _prepare_headers(self) -> Dict[str, str]:
         """准备请求头"""
         headers = {
@@ -57,7 +55,7 @@ class VLLMAdapter(BaseLLMAdapter):
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
-    
+
     def _convert_messages_to_prompt(self, messages: List[Message]) -> str:
         """将消息列表转换为提示文本"""
         prompt = ""
@@ -70,19 +68,19 @@ class VLLMAdapter(BaseLLMAdapter):
                 prompt += f"<|assistant|>\n{message['content']}\n"
         prompt += "<|assistant|>\n"
         return prompt
-    
-    async def generate(self, 
-                       prompt: str, 
+
+    async def generate(self,
+                       prompt: str,
                        system_prompt: Optional[str] = None,
                        **kwargs) -> str:
         """
         生成文本
-        
+
         Args:
             prompt: 提示文本
             system_prompt: 系统提示文本
             **kwargs: 其他参数
-            
+
         Returns:
             生成的文本
         """
@@ -92,7 +90,7 @@ class VLLMAdapter(BaseLLMAdapter):
             timeout=kwargs.get("timeout", llm_settings.request_timeout),
             stop_sequences=kwargs.get("stop", [])
         )
-        
+
         # 如果有系统提示，构建消息列表
         if system_prompt:
             messages = [
@@ -100,16 +98,16 @@ class VLLMAdapter(BaseLLMAdapter):
                 {"role": "user", "content": prompt}
             ]
             return await self.chat(messages, **kwargs)
-        
+
         session = await self._ensure_session()
-        
+
         payload = {
             "prompt": prompt,
             "max_tokens": options.max_tokens,
             "temperature": options.temperature,
             "stop": options.stop_sequences or [],
         }
-        
+
         try:
             async with session.post(
                 f"{self.api_url}/v1/completions",
@@ -120,24 +118,24 @@ class VLLMAdapter(BaseLLMAdapter):
                 if response.status != 200:
                     error_text = await response.text()
                     raise RuntimeError(f"vLLM API错误: {response.status} - {error_text}")
-                
+
                 result = await response.json()
                 return result["choices"][0]["text"]
         except Exception as e:
             raise RuntimeError(f"vLLM生成失败: {str(e)}")
-    
-    async def generate_stream(self, 
-                             prompt: str, 
+
+    async def generate_stream(self,
+                             prompt: str,
                              system_prompt: Optional[str] = None,
                              **kwargs) -> AsyncIterator[str]:
         """
         流式生成文本
-        
+
         Args:
             prompt: 提示文本
             system_prompt: 系统提示文本
             **kwargs: 其他参数
-            
+
         Yields:
             生成的文本片段
         """
@@ -147,7 +145,7 @@ class VLLMAdapter(BaseLLMAdapter):
             timeout=kwargs.get("timeout", llm_settings.request_timeout),
             stop_sequences=kwargs.get("stop", [])
         )
-        
+
         # 如果有系统提示，构建消息列表
         if system_prompt:
             messages = [
@@ -157,9 +155,9 @@ class VLLMAdapter(BaseLLMAdapter):
             async for chunk in self.chat_stream(messages, **kwargs):
                 yield chunk
             return
-        
+
         session = await self._ensure_session()
-        
+
         payload = {
             "prompt": prompt,
             "max_tokens": options.max_tokens,
@@ -167,7 +165,7 @@ class VLLMAdapter(BaseLLMAdapter):
             "stop": options.stop_sequences or [],
             "stream": True
         }
-        
+
         try:
             async with session.post(
                 f"{self.api_url}/v1/completions",
@@ -178,7 +176,7 @@ class VLLMAdapter(BaseLLMAdapter):
                 if response.status != 200:
                     error_text = await response.text()
                     raise RuntimeError(f"vLLM API错误: {response.status} - {error_text}")
-                
+
                 async for line in response.content:
                     line = line.decode('utf-8').strip()
                     if line.startswith("data: ") and line != "data: [DONE]":
@@ -187,17 +185,17 @@ class VLLMAdapter(BaseLLMAdapter):
                             yield data["choices"][0]["text"]
         except Exception as e:
             raise RuntimeError(f"vLLM流式生成失败: {str(e)}")
-    
-    async def chat(self, 
-                  messages: List[Dict[str, str]], 
+
+    async def chat(self,
+                  messages: List[Dict[str, str]],
                   **kwargs) -> str:
         """
         聊天完成
-        
+
         Args:
             messages: 消息列表
             **kwargs: 其他参数
-            
+
         Returns:
             生成的回复
         """
@@ -207,9 +205,9 @@ class VLLMAdapter(BaseLLMAdapter):
             timeout=kwargs.get("timeout", llm_settings.request_timeout),
             stop_sequences=kwargs.get("stop", [])
         )
-        
+
         session = await self._ensure_session()
-        
+
         # vLLM可能不直接支持聊天格式，转换为提示文本
         if self._supports_chat_api():
             # 如果支持聊天API
@@ -220,7 +218,7 @@ class VLLMAdapter(BaseLLMAdapter):
                 "temperature": options.temperature,
                 "stop": options.stop_sequences or [],
             }
-            
+
             try:
                 async with session.post(
                     f"{self.api_url}/v1/chat/completions",
@@ -231,7 +229,7 @@ class VLLMAdapter(BaseLLMAdapter):
                     if response.status != 200:
                         error_text = await response.text()
                         raise RuntimeError(f"vLLM API错误: {response.status} - {error_text}")
-                    
+
                     result = await response.json()
                     return result["choices"][0]["message"]["content"]
             except Exception as e:
@@ -240,17 +238,17 @@ class VLLMAdapter(BaseLLMAdapter):
             # 如果不支持聊天API，转换为提示文本
             prompt = self._convert_messages_to_prompt(messages)
             return await self.generate(prompt, options=options)
-    
-    async def chat_stream(self, 
-                         messages: List[Dict[str, str]], 
+
+    async def chat_stream(self,
+                         messages: List[Dict[str, str]],
                          **kwargs) -> AsyncIterator[str]:
         """
         流式聊天完成
-        
+
         Args:
             messages: 消息列表
             **kwargs: 其他参数
-            
+
         Yields:
             生成的回复片段
         """
@@ -260,9 +258,9 @@ class VLLMAdapter(BaseLLMAdapter):
             timeout=kwargs.get("timeout", llm_settings.request_timeout),
             stop_sequences=kwargs.get("stop", [])
         )
-        
+
         session = await self._ensure_session()
-        
+
         # vLLM可能不直接支持聊天格式，转换为提示文本
         if self._supports_chat_api():
             # 如果支持聊天API
@@ -274,7 +272,7 @@ class VLLMAdapter(BaseLLMAdapter):
                 "stop": options.stop_sequences or [],
                 "stream": True
             }
-            
+
             try:
                 async with session.post(
                     f"{self.api_url}/v1/chat/completions",
@@ -285,7 +283,7 @@ class VLLMAdapter(BaseLLMAdapter):
                     if response.status != 200:
                         error_text = await response.text()
                         raise RuntimeError(f"vLLM API错误: {response.status} - {error_text}")
-                    
+
                     async for line in response.content:
                         line = line.decode('utf-8').strip()
                         if line.startswith("data: ") and line != "data: [DONE]":
@@ -301,39 +299,39 @@ class VLLMAdapter(BaseLLMAdapter):
             prompt = self._convert_messages_to_prompt(messages)
             async for chunk in self.generate_stream(prompt, options=options):
                 yield chunk
-    
+
     async def create_embedding(self, texts: Union[str, List[str]]) -> List[List[float]]:
         """
         创建文本嵌入
-        
+
         Args:
             texts: 文本或文本列表
-            
+
         Returns:
             List[List[float]]: 嵌入向量列表
         """
         session = await self._ensure_session()
-        
+
         # 确保texts是列表
         if isinstance(texts, str):
             texts = [texts]
-        
+
         try:
             async with session.post(
                 f"{self.api_url}/v1/embeddings",
                 headers=self._prepare_headers(),
                 json={
                     "input": texts,
-                    "model": f"{self.model_name}-embedding" if not "-embedding" in self.model_name else self.model_name
+                    "model": f"{self.model_name}-embedding" if "-embedding" not in self.model_name else self.model_name
                 },
                 timeout=llm_settings.request_timeout
             ) as response:
                 if response.status != 200:
                     error_text = await response.text()
                     raise RuntimeError(f"vLLM嵌入API错误: {response.status} - {error_text}")
-                
+
                 result = await response.json()
-                
+
                 # 处理OpenAI格式响应
                 if "data" in result:
                     embeddings = []
@@ -341,17 +339,17 @@ class VLLMAdapter(BaseLLMAdapter):
                         if "embedding" in item:
                             embeddings.append(item["embedding"])
                     return embeddings
-                
+
                 return []
-        except Exception as e:
+        except Exception:
             # 如果vLLM不支持嵌入，返回空列表
             return [[] for _ in texts]
-    
+
     @property
     def model_info(self) -> Dict[str, Any]:
         """
         获取模型信息
-        
+
         Returns:
             Dict[str, Any]: 模型信息
         """
@@ -365,9 +363,9 @@ class VLLMAdapter(BaseLLMAdapter):
             "max_tokens": llm_settings.max_tokens,
             "temperature": llm_settings.temperature
         }
-    
+
     def _supports_chat_api(self) -> bool:
         """检查是否支持聊天API"""
         # 根据模型名称或其他条件判断是否支持聊天API
         # 这里简单地假设所有模型都支持
-        return True 
+        return True

@@ -9,13 +9,12 @@ export default function Header() {
   const { user } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showAccountModal, setShowAccountModal] = useState(false);
-  
+
   // 检测当前主题
   const { isDarkMode } = useTheme();
 
-  const getDisplayName = (user: any) => {
-    if (!user) return "登录/注册";
-    return user.nickname || `用户${user.id.toString().padStart(6, '0')}`;
+  const getDisplayName = (currentUser: NonNullable<typeof user>) => {
+    return currentUser.nickname || `用户${currentUser.id.toString().padStart(6, '0')}`;
   };
 
   return (
@@ -32,8 +31,8 @@ export default function Header() {
           {user ? (
             <button
               className={`px-4 py-2 rounded transition-colors ${
-                isDarkMode 
-                  ? 'bg-gray-700 text-white hover:bg-gray-600' 
+                isDarkMode
+                  ? 'bg-gray-700 text-white hover:bg-gray-600'
                   : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
               }`}
               onClick={() => setShowAccountModal(true)}
@@ -43,8 +42,8 @@ export default function Header() {
           ) : (
             <button
               className={`px-4 py-2 rounded transition-colors ${
-                isDarkMode 
-                  ? 'bg-gray-700 text-white hover:bg-gray-600' 
+                isDarkMode
+                  ? 'bg-gray-700 text-white hover:bg-gray-600'
                   : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
               }`}
               onClick={() => setShowAuthModal(true)}
@@ -58,4 +57,4 @@ export default function Header() {
       <ModernAccountModal open={showAccountModal} onClose={() => setShowAccountModal(false)} />
     </header>
   )
-} 
+}

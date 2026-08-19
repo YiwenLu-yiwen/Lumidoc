@@ -2,13 +2,11 @@
 文件上传工具函数
 """
 
-import os
 import hashlib
-import uuid
 import logging
 from pathlib import Path
 from fastapi import UploadFile
-from typing import Tuple, Optional
+from typing import Tuple
 
 from src.shared.storage.storage_factory import get_storage
 

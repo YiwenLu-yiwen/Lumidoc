@@ -13,6 +13,7 @@ from .shared_storage import (
     get_storage_lock,
     get_update_flag,
     set_all_update_flags,
+    workspace_namespace,
 )
 
 # You must manually install faiss-cpu or faiss-gpu before using FAISS vector db
@@ -52,6 +53,7 @@ class FaissVectorDBStorage(BaseVectorStorage):
                 working_dir, f"faiss_index_{self.namespace}.index"
             )
         self._meta_file = self._faiss_index_file + ".meta.json"
+        self._shared_namespace = workspace_namespace(self.namespace, self.workspace)
 
         self._max_batch_size = self.global_config["embedding_batch_num"]
         # Embedding dimension (e.g. 768) must match your embedding function
@@ -70,7 +72,7 @@ class FaissVectorDBStorage(BaseVectorStorage):
     async def initialize(self):
         """Initialize storage data"""
         # Get the update flag for cross-process update notification
-        self.storage_updated = await get_update_flag(self.namespace)
+        self.storage_updated = await get_update_flag(self._shared_namespace)
         # Get the storage lock for use in other methods
         self._storage_lock = get_storage_lock()
 
@@ -375,7 +377,7 @@ class FaissVectorDBStorage(BaseVectorStorage):
                 # Save data to disk
                 self._save_faiss_index()
                 # Notify other processes that data has been updated
-                await set_all_update_flags(self.namespace)
+                await set_all_update_flags(self._shared_namespace)
                 # Reset own update flag to avoid self-reloading
                 self.storage_updated.value = False
             except Exception as e:
@@ -469,7 +471,7 @@ class FaissVectorDBStorage(BaseVectorStorage):
                 self._load_faiss_index()
 
                 # Notify other processes
-                await set_all_update_flags(self.namespace)
+                await set_all_update_flags(self._shared_namespace)
                 self.storage_updated.value = False
 
                 logger.info(f"Process {os.getpid()} drop FAISS index {self.namespace}")

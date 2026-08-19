@@ -2,7 +2,7 @@
 
 ## 概述
 
-聊天服务是STP平台的智能对话组件，提供实时WebSocket连接、多轮对话管理、上下文保持和知识检索集成功能。该服务支持与LightRAG知识图谱的深度集成，实现智能问答和文档检索。
+聊天服务是Lumidoc平台的智能对话组件，提供实时WebSocket连接、多轮对话管理、上下文保持和知识检索集成功能。该服务支持与LightRAG知识图谱的深度集成，实现智能问答和文档检索。
 
 ## 服务信息
 
@@ -355,9 +355,9 @@ CHAT_SERVICE_HOST=0.0.0.0
 # 数据库配置
 CHAT_DB_HOST=localhost
 CHAT_DB_PORT=5432
-CHAT_DB_NAME=stpdb
-CHAT_DB_USER=stpuser
-CHAT_DB_PASSWORD=stppassword
+CHAT_DB_NAME=lumidoc
+CHAT_DB_USER=postgres
+CHAT_DB_PASSWORD=postgres
 
 # LLM服务配置
 LLM_SERVICE_URL=http://localhost:8888

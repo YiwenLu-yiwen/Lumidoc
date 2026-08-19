@@ -8,7 +8,7 @@ import os
 import redis
 import logging
 import asyncpg
-from typing import Optional, AsyncGenerator, Dict, Any
+from typing import AsyncGenerator
 
 # 设置日志
 logger = logging.getLogger(__name__)
@@ -35,11 +35,11 @@ async def get_db_pool() -> asyncpg.Pool:
             database_url = settings.database_url
         except (ImportError, AttributeError):
             # 如果无法从settings获取，则使用环境变量或默认值
-            pg_user = os.environ.get("POSTGRES_USER", "stpuser")
-            pg_password = os.environ.get("POSTGRES_PASSWORD", "stppassword")
+            pg_user = os.environ.get("POSTGRES_USER", "postgres")
+            pg_password = os.environ.get("POSTGRES_PASSWORD", "")
             pg_host = os.environ.get("POSTGRES_HOST", "localhost")
             pg_port = os.environ.get("POSTGRES_PORT", "5432") 
-            pg_db = os.environ.get("POSTGRES_DB", "stpdb")
+            pg_db = os.environ.get("POSTGRES_DB", "lumidoc")
             
             database_url = f"postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_db}"
         
@@ -77,11 +77,11 @@ async def get_db() -> AsyncGenerator[asyncpg.Connection, None]:
             database_url = settings.database_url
         except (ImportError, AttributeError):
             # 如果无法从settings获取，则使用环境变量或默认值
-            pg_user = os.environ.get("POSTGRES_USER", "stpuser")
-            pg_password = os.environ.get("POSTGRES_PASSWORD", "stppassword")
+            pg_user = os.environ.get("POSTGRES_USER", "postgres")
+            pg_password = os.environ.get("POSTGRES_PASSWORD", "")
             pg_host = os.environ.get("POSTGRES_HOST", "localhost")
             pg_port = os.environ.get("POSTGRES_PORT", "5432") 
-            pg_db = os.environ.get("POSTGRES_DB", "stpdb")
+            pg_db = os.environ.get("POSTGRES_DB", "lumidoc")
             
             database_url = f"postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_db}"
         
@@ -166,4 +166,4 @@ async def close_db_pool():
     if _db_pool is not None:
         await _db_pool.close()
         _db_pool = None
-        logger.info("数据库连接池已关闭") 
+        logger.info("数据库连接池已关闭")

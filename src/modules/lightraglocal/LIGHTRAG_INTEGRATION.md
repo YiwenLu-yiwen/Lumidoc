@@ -26,7 +26,7 @@
 - 正确配置存储后端
 - 实现项目隔离（通过namespace_prefix）
 - 支持异步操作
-- 集成STP项目的LLM服务
+- 集成Lumidoc项目的LLM服务
 
 ### 3. 新增API接口
 
@@ -72,14 +72,14 @@ DELETE /api/rag/projects/{project_id}/documents
 # PostgreSQL配置
 POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
-POSTGRES_USER=stpuser
-POSTGRES_PASSWORD=stppassword
-POSTGRES_DATABASE=stpdb
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_DATABASE=lumidoc
 
 # Neo4j配置
 NEO4J_URI=bolt://localhost:7687
 NEO4J_USERNAME=neo4j
-NEO4J_PASSWORD=password
+NEO4J_PASSWORD=<set-in-deployment-environment>
 
 # LightRAG配置
 CHUNK_SIZE=1200
@@ -91,9 +91,9 @@ CHUNK_OVERLAP_SIZE=100
 ```bash
 # 启动PostgreSQL (Docker)
 docker run -d --name postgres \
-  -e POSTGRES_USER=stpuser \
-  -e POSTGRES_PASSWORD=stppassword \
-  -e POSTGRES_DB=stpdb \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=lumidoc \
   -p 5432:5432 \
   pgvector/pgvector:pg16
 
@@ -202,4 +202,4 @@ LightRAG服务 (本模块)
 - 支持水平扩展
 - 支持自定义嵌入模型
 - 支持自定义LLM模型
-- 支持插件化存储后端 
+- 支持插件化存储后端

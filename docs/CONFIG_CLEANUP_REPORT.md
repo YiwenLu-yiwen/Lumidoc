@@ -83,14 +83,14 @@ DEFAULT_TOP_K=40                  # 代码中无引用
 
 ```bash
 # 1. 重复配置项
-POSTGRES_DATABASE=stpdb            # 与POSTGRES_DB重复
+POSTGRES_DATABASE=lumidoc            # 与POSTGRES_DB重复
 NEO4J_USERNAME=neo4j               # 与NEO4J_USER重复
 DEEPSEEK_API_URL=...              # LLM服务已统一配置
 
-# 2. 残留的旧项目名称引用
-POSTGRES_USER=stpuser              # 应改为lumidocuser
-POSTGRES_PASSWORD=stppassword      # 应改为更安全的密码
-POSTGRES_DB=stpdb                  # 应改为lumidocdb
+# 2. 生产环境仍需覆盖本地默认凭据
+POSTGRES_USER=postgres              # 仅适用于本地开发
+POSTGRES_PASSWORD=postgres          # 生产环境必须注入强密码
+POSTGRES_DB=lumidoc                 # 已统一的数据库名
 
 # 3. 不一致的命名
 OLLAMA_EMBEDDING_URL vs OLLAMA_API_URL  # 命名不统一
@@ -194,10 +194,10 @@ MIN_CONTENT_LENGTH_FOR_LLM=1000
    - 统一数据库连接配置
    - 合并重复的API URL配置
 
-3. **更新品牌名称**
-   - `stpuser` → `lumidocuser`
-   - `stpdb` → `lumidocdb`
-   - `stppassword` → 使用更安全的密码
+3. **统一数据库默认值**
+   - 本地开发账号统一为 `postgres`
+   - 数据库名称统一为 `lumidoc`
+   - 生产环境通过密钥管理系统注入独立账号和强密码
 
 ### Phase 2: 配置标准化 (下周)
 
@@ -254,7 +254,7 @@ MIN_CONTENT_LENGTH_FOR_LLM=1000
 
 **当前问题**:
 ```bash
-POSTGRES_PASSWORD=stppassword      # 过于简单
+POSTGRES_PASSWORD=postgres      # 过于简单
 NEO4J_PASSWORD=123456789          # 弱密码
 REDIS_PASSWORD=123456789          # 弱密码
 S3_SECRET_KEY=minioadmin          # 默认密码

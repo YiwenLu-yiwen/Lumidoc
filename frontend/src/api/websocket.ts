@@ -3,34 +3,40 @@
  * 统一管理所有WebSocket连接
  */
 
+import type { GraphEntity, GraphRelationship, GraphStatistics } from '../types/graph';
+
 export interface WebSocketMessage {
   type: string;
   timestamp: string;
-  data?: any;
+  data?: unknown;
   project_id?: string;
   task_id?: string;
 }
 
 export interface ProgressUpdate {
+  type?: 'progress' | 'completed' | 'error';
   status: string;
   progress: number;
   stage: string;
   message: string;
   file_id?: string;
   processing_time?: number;
-  result?: any;
+  result?: unknown;
   error?: string;
 }
 
 export interface GraphUpdate {
   update_type: 'add_node' | 'add_relationship' | 'full';
-  node?: any;
-  relationship?: any;
+  node?: GraphEntity;
+  relationship?: GraphRelationship;
   graph?: {
-    nodes: any[];
-    relationships: any[];
+    nodes: GraphEntity[];
+    relationships: GraphRelationship[];
   };
 }
+
+export type ProcessingStatus = Record<string, unknown>;
+export type ServiceStatus = Record<string, unknown>;
 
 export interface SystemAlert {
   level: 'info' | 'warning' | 'error' | 'critical';
@@ -39,6 +45,7 @@ export interface SystemAlert {
   message: string;
   source: string;
   id?: string;
+  timestamp?: string;
 }
 
 export interface SystemMetrics {
@@ -100,7 +107,7 @@ export class WebSocketClient {
           try {
             const message: WebSocketMessage = JSON.parse(event.data);
             this.handleMessage(message);
-          } catch (error) {
+          } catch {
             console.warn('无法解析WebSocket消息:', event.data);
           }
         };
@@ -167,7 +174,7 @@ export class WebSocketClient {
     }
   }
 
-  send(message: any): void {
+  send(message: Record<string, unknown>): void {
     if (this.ws && this.isConnected) {
       this.ws.send(JSON.stringify(message));
     } else {
@@ -253,21 +260,21 @@ export class GraphWebSocketClient extends WebSocketClient {
     });
   }
 
-  onGraphStatistics(callback: (data: any) => void): void {
+  onGraphStatistics(callback: (data: GraphStatistics) => void): void {
     this.on('graph_statistics', (message) => {
-      callback(message.data);
+      callback(message.data as GraphStatistics);
     });
   }
 
-  onProcessingStatus(callback: (data: any) => void): void {
+  onProcessingStatus(callback: (data: ProcessingStatus) => void): void {
     this.on('processing_status', (message) => {
-      callback(message.data);
+      callback(message.data as ProcessingStatus);
     });
   }
 
-  onGraphStateSync(callback: (data: any) => void): void {
+  onGraphStateSync(callback: (data: NonNullable<GraphUpdate['graph']>) => void): void {
     this.on('graph_state_sync', (message) => {
-      callback(message.data);
+      callback(message.data as NonNullable<GraphUpdate['graph']>);
     });
   }
 
@@ -309,9 +316,9 @@ export class MonitoringWebSocketClient extends WebSocketClient {
     });
   }
 
-  onServiceStatus(callback: (data: any) => void): void {
+  onServiceStatus(callback: (data: ServiceStatus) => void): void {
     this.on('service_status', (message) => {
-      callback(message.data);
+      callback(message.data as ServiceStatus);
     });
   }
 
@@ -418,7 +425,7 @@ export class WebSocketManager {
 
   // 断开所有连接
   disconnectAll(): void {
-    this.connections.forEach((client, key) => {
+    this.connections.forEach((client) => {
       client.disconnect();
     });
     this.connections.clear();

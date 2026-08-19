@@ -7,13 +7,10 @@
 
 import os
 import logging
-import json
-from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 
 from ..services.stream_processor import FileProcessorStreamService
-from ..config import settings
 
 logger = logging.getLogger(__name__)
 

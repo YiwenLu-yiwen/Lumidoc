@@ -16,7 +16,7 @@ export default function ProjectLayout() {
     const checkProject = async () => {
       try {
         await projectApi.getProject(projectId);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('项目不存在或已被删除:', err);
         toast.error('项目不存在或已被删除，即将返回首页');
         // 跳转到首页
@@ -38,4 +38,4 @@ export default function ProjectLayout() {
       </div>
     </div>
   );
-} 
+}

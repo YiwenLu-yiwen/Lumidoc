@@ -3,9 +3,6 @@
 使用统一配置系统
 """
 
-import os
-from pathlib import Path
-from typing import Dict, Any
 from src.shared.config import QuestionServiceSettings, get_env
 
 # 创建全局设置实例
@@ -25,9 +22,9 @@ class ExtendedQuestionSettings:
     # 数据库配置
     db_host: str = get_env("DB_HOST", "localhost")
     db_port: str = get_env("DB_PORT", "5432")
-    db_name: str = get_env("DB_NAME", "stp")
+    db_name: str = get_env("DB_NAME", "lumidoc")
     db_user: str = get_env("DB_USER", "postgres")
-    db_password: str = get_env("DB_PASSWORD", "postgres")
+    db_password: str = get_env("DB_PASSWORD", get_env("POSTGRES_PASSWORD", ""))
     database_url: str = get_env("POSTGRES_URL", "")
 
     # 本地存储配置
@@ -105,4 +102,4 @@ DATABASE_URL = settings.database_url
 LOCAL_STORAGE_DIR = settings.local_storage_dir
 QUESTION_TYPES = settings.question_types
 DIFFICULTY_LEVELS = settings.difficulty_levels
-QUESTION_TEMPLATE = settings.question_template 
+QUESTION_TEMPLATE = settings.question_template

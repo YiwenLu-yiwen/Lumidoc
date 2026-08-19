@@ -6,11 +6,10 @@
 提供文件处理相关诊断功能的REST API
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, HTTPException, Body
 from typing import Dict, Any, Optional, List
 import logging
 import asyncio
-import json
 from pydantic import BaseModel
 import time
 

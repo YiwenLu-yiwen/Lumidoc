@@ -2,7 +2,7 @@
 
 ## 概述
 
-文件服务是STP平台的核心文件管理组件，负责文件上传、下载、存储、预览和元数据管理。该服务支持多种文件格式，提供安全的文件存储和高效的文件访问能力。
+文件服务是Lumidoc平台的核心文件管理组件，负责文件上传、下载、存储、预览和元数据管理。该服务支持多种文件格式，提供安全的文件存储和高效的文件访问能力。
 
 ## 服务信息
 
@@ -232,7 +232,7 @@ MINIO_CONFIG = {
     "access_key": "minioadmin",
     "secret_key": "minioadmin", 
     "secure": False,
-    "bucket_name": "stp-files"
+    "bucket_name": "lumidoc-files"
 }
 
 # 存储路径结构
@@ -518,10 +518,10 @@ python src/modules/file/database/ensure_tables.py
 
 ```bash
 # 创建存储桶
-mc mb minio/stp-files
+mc mb minio/lumidoc-files
 
 # 设置访问策略
-mc policy set public minio/stp-files/public/
+mc policy set public minio/lumidoc-files/public/
 
 # 查看存储统计
 mc admin info minio

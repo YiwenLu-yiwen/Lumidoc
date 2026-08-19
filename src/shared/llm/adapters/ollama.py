@@ -9,7 +9,6 @@ Ollama适配器实现
 import logging
 import json
 import httpx
-import asyncio
 from typing import Dict, List, Any, Optional, AsyncGenerator, Union
 
 from .base import BaseLLMAdapter
@@ -83,7 +82,7 @@ class OllamaAdapter(BaseLLMAdapter):
                     return data["response"]
                 else:
                     logger.error(f"Ollama API响应格式错误: {data}")
-                    raise Exception(f"Ollama API响应格式错误: 缺少response字段")
+                    raise Exception("Ollama API响应格式错误: 缺少response字段")
         except Exception as e:
             logger.error(f"调用Ollama API失败: {str(e)}")
             # 🔧 修复：抛出异常而不是返回错误字符串
@@ -184,7 +183,7 @@ class OllamaAdapter(BaseLLMAdapter):
                     return data["message"]["content"]
                 else:
                     logger.error(f"Ollama API响应格式错误: {data}")
-                    raise Exception(f"Ollama API响应格式错误: 缺少message.content字段")
+                    raise Exception("Ollama API响应格式错误: 缺少message.content字段")
         except httpx.TimeoutException as e:
             logger.error(f"调用Ollama API超时: {str(e)}")
             raise Exception(f"Ollama API调用超时: {str(e)}")
@@ -264,13 +263,12 @@ class OllamaAdapter(BaseLLMAdapter):
                     if "embedding" in data:
                         embeddings.append(data["embedding"])
                     else:
-                        logger.error(f"Ollama嵌入API响应格式错误: {data}")
-                        embeddings.append([])
+                        raise ValueError("Ollama嵌入API响应缺少embedding字段")
             
             return embeddings
         except Exception as e:
             logger.error(f"调用Ollama嵌入API失败: {str(e)}")
-            return [[]] * len(texts)
+            raise
     
     @property
     def model_info(self) -> Dict[str, Any]:
@@ -284,4 +282,4 @@ class OllamaAdapter(BaseLLMAdapter):
             "type": "ollama",
             "name": self.model_name,
             "url": self.base_url
-        } 
+        }

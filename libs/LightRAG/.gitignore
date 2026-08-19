@@ -1,0 +1,59 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+#.env/
+.venv/
+env/
+venv/
+# *.env
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Conda environment files
+conda-meta/
+*.conda
+
+# VSCode / JetBrains IDE
+.vscode/
+.idea/
+
+# MacOS
+.DS_Store
+
+# Logs
+*.log
+
+# Local settings
+*.local
+
+node_modules
+# models
+notebooks
+pdf_converted_images
+# projects
+.pytest_cache
+
+data
+
+*.cypher
+*.faiss
+*.pkl
+# .env
+
+SourceCode
+uploads
+content
+ch_PP*
+ch_ppocr*
+src/models/RapidOCR
+rag_storage
+logs
+rag_cache

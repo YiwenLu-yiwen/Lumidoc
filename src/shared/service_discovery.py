@@ -10,13 +10,11 @@ import asyncio
 import socket
 import logging
 import random
-from typing import Dict, Any, Optional, List, Tuple, Set
+from typing import Dict, Any, Optional, List
 import redis.asyncio as aioredis
 import uuid
-from datetime import datetime
 import httpx
 import traceback
-import aiohttp
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -29,12 +27,12 @@ REDIS_PASSWORD = os.environ.get("REDIS_PASSWORD", "")
 
 # 服务注册配置
 SERVICE_TTL = int(os.environ.get("SERVICE_TTL", "30"))  # 服务注册TTL(秒)
-SERVICE_KEY_PREFIX = "stp:services:"
+SERVICE_KEY_PREFIX = "lumidoc:services:"
 HEARTBEAT_INTERVAL = int(os.environ.get("HEARTBEAT_INTERVAL", "10"))  # 心跳间隔(秒)
 HEALTH_CHECK_INTERVAL = int(os.environ.get("HEALTH_CHECK_INTERVAL", "60"))  # 健康检查间隔(秒)
 HEALTH_CHECK_TIMEOUT = int(os.environ.get("HEALTH_CHECK_TIMEOUT", "10"))  # 健康检查超时(秒), 从5秒提高到10秒
 HEALTH_CHECK_RETRIES = int(os.environ.get("HEALTH_CHECK_RETRIES", "3"))  # 健康检查重试次数
-DEFAULT_HEALTH_CHECK_ENDPOINT = "/healthz"  # 默认健康检查端点 (Kubernetes标准)
+DEFAULT_HEALTH_CHECK_ENDPOINT = "/healthz"
 
 # 故障转移配置
 FAILOVER_RETRY_INTERVAL = int(os.environ.get("FAILOVER_RETRY_INTERVAL", "5"))  # 故障转移重试间隔(秒)
@@ -204,7 +202,7 @@ class ServiceRegistry:
         if not host:
             try:
                 host = socket.gethostname()
-            except:
+            except OSError:
                 host = "localhost"
         
         # 验证端口
@@ -710,7 +708,7 @@ class ServiceRegistry:
             self._redis = None
             try:
                 await self.connect(retry=False)
-            except:
+            except Exception:
                 pass
     
     async def _health_check_loop(self):
@@ -771,7 +769,7 @@ class ServiceRegistry:
                                     if status and status.lower() == "degraded":
                                         health_status = ServiceHealth.DEGRADED
                                     health_details = data
-                            except:
+                            except ValueError:
                                 pass
                             
                             # 更新健康状态
@@ -1001,295 +999,6 @@ class ServiceClient:
             self._registry = None
         ServiceClient._instance = None
 
-async def call_service(service_name: str, endpoint: str, method: str = "GET", params: Optional[Dict[str, Any]] = None, 
-                  data: Optional[Dict[str, Any]] = None, json_data: Optional[Dict[str, Any]] = None, 
-                  headers: Optional[Dict[str, str]] = None, timeout: float = 30.0, use_service_auth: bool = False) -> Dict[str, Any]:
-    """
-    调用服务API端点的通用函数
-    
-    Args:
-        service_name: 服务名称
-        endpoint: API端点路径
-        method: HTTP方法 (GET, POST, PUT, DELETE等)
-        params: URL查询参数
-        data: 表单数据
-        json_data: JSON数据
-        headers: 请求头
-        timeout: 请求超时时间(秒)
-        use_service_auth: 是否使用服务间认证
-        
-    Returns:
-        Dict[str, Any]: API响应结果
-    """
-    try:
-        # 🔧 修复：添加输入验证
-        if not service_name or not isinstance(service_name, str):
-            raise ValueError("service_name必须是非空字符串")
-        
-        if not endpoint or not isinstance(endpoint, str):
-            raise ValueError("endpoint必须是非空字符串")
-        
-        # 添加重试逻辑
-        max_retries = 3
-        retry_count = 0
-        last_error = None
-        
-        # 获取调用方服务名称用于日志记录
-        caller_service = os.environ.get("SERVICE_NAME", "unknown")
-        
-        # 🔧 修复：尝试多种方式获取服务URL
-        service_url_methods = [
-            # 1. 直接从环境变量获取
-            lambda: os.environ.get(f"{service_name.upper()}_SERVICE_URL"),
-            # 2. 从服务发现获取
-            lambda: asyncio.run(get_service_url(service_name)),
-            # 3. 从备选URL获取
-            lambda: os.environ.get(f"{service_name.upper()}_FALLBACK_URL"),
-            # 4. 使用默认端口
-            lambda: _get_service_url_fallback(service_name)
-        ]
-        
-        # 尝试从环境变量获取直接服务URL
-        direct_url_env = f"{service_name.upper()}_SERVICE_URL"
-        direct_url = os.environ.get(direct_url_env)
-        
-        while retry_count < max_retries:
-            try:
-                # 🔧 修复：逐个尝试不同的URL获取方法
-                service_url = None
-                for i, url_method in enumerate(service_url_methods):
-                    try:
-                        service_url = url_method()
-                        if service_url:
-                            logger.debug(f"[{service_name} <- {caller_service}] 使用方法{i+1}获取URL: {service_url}")
-                            break
-                    except Exception as e:
-                        logger.debug(f"[{service_name} <- {caller_service}] 方法{i+1}获取URL失败: {str(e)}")
-                        continue
-                
-                if not service_url:
-                    logger.error(f"[{service_name} <- {caller_service}] 无法获取服务URL")
-                    last_error = f"无法获取服务URL: {service_name}"
-                    
-                    # 如果是最后一次重试，返回错误
-                    if retry_count == max_retries - 1:
-                        return {"success": False, "error": last_error}
-                    
-                    # 继续重试
-                    retry_count += 1
-                    await asyncio.sleep(2 ** retry_count)
-                    continue
-                
-                # 规范化端点路径    
-                normalized_endpoint = normalize_endpoint(endpoint)
-                
-                # 构建完整的API URL
-                full_url = f"{service_url.rstrip('/')}/{normalized_endpoint}"
-                
-                # 设置请求头
-                if headers is None:
-                    headers = {}
-                
-                # 🔧 修复：改进的服务认证处理
-                if use_service_auth:
-                    auth_header = _get_service_auth_header()
-                    if auth_header:
-                        headers.update(auth_header)
-                    else:
-                        # 使用默认的服务认证
-                        service_token = os.environ.get("SERVICE_AUTH_TOKEN", "service-token-for-internal-use")
-                        headers["Authorization"] = f"Service {service_token}"
-                
-                # 确保Content-Type头
-                if "Content-Type" not in headers and json_data is not None:
-                    headers["Content-Type"] = "application/json"
-                
-                # 🔧 修复：使用连接池和更好的超时处理
-                timeout_config = httpx.Timeout(timeout, connect=10.0)
-                
-                async with httpx.AsyncClient(
-                    timeout=timeout_config,
-                    limits=httpx.Limits(max_connections=10, max_keepalive_connections=5)
-                ) as client:
-                    logger.info(f"[{service_name} <- {caller_service}] 调用服务API: {method} {full_url}")
-                    
-                    # 准备请求参数
-                    request_kwargs = {
-                        "headers": headers,
-                        "params": params
-                    }
-                    
-                    # 根据请求类型添加数据
-                    if json_data is not None:
-                        request_kwargs["json"] = json_data
-                    elif data is not None:
-                        request_kwargs["data"] = data
-                    
-                    # 发送请求
-                    response = await client.request(method, full_url, **request_kwargs)
-                    
-                    # 🔧 修复：更详细的响应处理
-                    if response.status_code == 200:
-                        try:
-                            result = response.json()
-                            logger.debug(f"[{service_name} <- {caller_service}] 调用成功")
-                            return result
-                        except json.JSONDecodeError:
-                            logger.debug(f"[{service_name} <- {caller_service}] 响应不是JSON格式，返回文本")
-                            return {"success": True, "data": response.text}
-                    
-                    elif response.status_code == 404:
-                        logger.warning(f"[{service_name} <- {caller_service}] 端点不存在: {normalized_endpoint}")
-                        return {"success": False, "error": f"端点不存在: {normalized_endpoint}"}
-                    
-                    elif response.status_code == 503:
-                        logger.warning(f"[{service_name} <- {caller_service}] 服务不可用，进行重试")
-                        last_error = "服务不可用"
-                        break  # 退出当前尝试，进行重试
-                    
-                    elif response.status_code >= 500:
-                        logger.warning(f"[{service_name} <- {caller_service}] 服务器错误: {response.status_code}")
-                        last_error = f"服务器错误: {response.status_code}"
-                        break  # 退出当前尝试，进行重试
-                    
-                    else:
-                        # 其他状态码的处理
-                        try:
-                            error_detail = response.json()
-                            error_msg = error_detail.get('detail', f'HTTP {response.status_code}')
-                        except:
-                            error_msg = f"HTTP {response.status_code}: {response.text[:100]}"
-                        
-                        logger.error(f"[{service_name} <- {caller_service}] 调用失败: {error_msg}")
-                        
-                        # 对于客户端错误（4xx），不重试
-                        if 400 <= response.status_code < 500:
-                            return {"success": False, "error": error_msg}
-                        
-                        # 对于服务器错误（5xx），进行重试
-                        last_error = error_msg
-                        break
-                        
-            except httpx.RequestError as e:
-                logger.warning(f"[{service_name} <- {caller_service}] 网络请求错误: {str(e)}")
-                last_error = f"网络请求错误: {str(e)}"
-                break  # 退出当前尝试，进行重试
-            
-            except Exception as e:
-                logger.error(f"[{service_name} <- {caller_service}] 未知错误: {str(e)}")
-                last_error = f"未知错误: {str(e)}"
-                break  # 退出当前尝试，进行重试
-        
-            # 🔧 修复：如果需要重试，等待后重试
-            retry_count += 1
-            if retry_count < max_retries:
-                wait_time = min(2 ** retry_count, 30)  # 指数退避，最大30秒
-                logger.warning(f"[{service_name} <- {caller_service}] 请求失败 (第{retry_count}次), {wait_time}秒后重试: {last_error}")
-                await asyncio.sleep(wait_time)
-            else:
-                logger.error(f"[{service_name} <- {caller_service}] 调用失败，已重试{max_retries}次")
-                # 退出重试循环
-    
-    except Exception as e:
-        logger.error(f"[{service_name} <- {caller_service}] 调用异常: {str(e)}")
-        logger.error(traceback.format_exc())
-        return {"success": False, "error": str(e)}
-    
-    # 🔧 修复：所有重试都失败后，返回标准化错误
-    return {
-        "success": False,
-        "error": f"服务调用失败: {last_error or '未知错误'}",
-        "service_name": service_name,
-        "endpoint": endpoint,
-        "retries": max_retries
-    }
-
-def _get_service_url_from_discovery(service_name: str) -> Optional[str]:
-    """从服务发现获取服务URL"""
-    try:
-        # 这里应该是从Redis或其他服务发现机制获取
-        # 暂时返回None，让其他方法处理
-        return None
-    except Exception as e:
-        logger.debug(f"从服务发现获取{service_name}服务URL失败: {str(e)}")
-        return None
-
-def _get_service_url_from_env(service_name: str) -> Optional[str]:
-    """从环境变量获取服务URL"""
-    try:
-        env_name = f"{service_name.upper()}_SERVICE_URL"
-        fallback_env_name = f"{service_name.upper()}_URL"
-        
-        url = os.environ.get(env_name) or os.environ.get(fallback_env_name)
-        if url:
-            logger.debug(f"从环境变量获取{service_name}服务URL: {url}")
-            return url
-        return None
-    except Exception as e:
-        logger.debug(f"从环境变量获取{service_name}服务URL失败: {str(e)}")
-        return None
-
-def _get_service_url_from_config(service_name: str) -> Optional[str]:
-    """从配置文件获取服务URL"""
-    try:
-        from src.shared.config_utils import get_service_url
-        url = get_service_url(service_name)
-        if url:
-            logger.debug(f"从配置获取{service_name}服务URL: {url}")
-            return url
-        return None
-    except Exception as e:
-        logger.debug(f"从配置获取{service_name}服务URL失败: {str(e)}")
-        return None
-
-def _get_service_url_fallback(service_name: str) -> Optional[str]:
-    """获取服务URL的备选方案"""
-    try:
-        # 🔧 修复：定义常见服务的默认端口
-        default_ports = {
-            "llm": 8080,
-            "chat": 8001,
-            "file": 8004,
-            "fileproc": 8005,
-            "lightrag": 8006,
-            "lightraglocal": 8006,
-            "auth": 8007,
-            "monitoring": 8008,
-            "project": 8020,
-            "question": 8002,
-            "graph": 8003
-        }
-        
-        port = default_ports.get(service_name.lower())
-        if port:
-            host = os.environ.get("SERVICE_HOST", "localhost")
-            url = f"http://{host}:{port}"
-            logger.debug(f"使用默认端口获取{service_name}服务URL: {url}")
-            return url
-        
-        return None
-    except Exception as e:
-        logger.debug(f"获取{service_name}服务默认URL失败: {str(e)}")
-        return None
-
-def _get_service_auth_header() -> Optional[Dict[str, str]]:
-    """获取服务认证头"""
-    try:
-        # 🔧 修复：实现服务间认证，统一使用SERVICE_AUTH_TOKEN
-        service_token = os.environ.get("SERVICE_AUTH_TOKEN", "service-token-for-internal-use")
-        if service_token:
-            return {"Authorization": f"Service {service_token}"}
-        
-        # 如果没有服务令牌，可以使用其他认证方式
-        api_key = os.environ.get("API_KEY")
-        if api_key:
-            return {"X-API-Key": api_key}
-        
-        return None
-    except Exception as e:
-        logger.debug(f"获取服务认证头失败: {str(e)}")
-        return None
-
 # 全局服务注册表实例
 service_registry = ServiceRegistry()
 
@@ -1454,7 +1163,9 @@ async def call_service(service_name: str, endpoint: str, method: str = "GET", pa
                 # 添加服务间认证
                 if use_service_auth:
                     # 使用服务间认证令牌
-                    service_token = os.environ.get("SERVICE_AUTH_TOKEN", "service-token-for-internal-use")
+                    service_token = os.environ.get("SERVICE_AUTH_TOKEN")
+                    if not service_token:
+                        raise RuntimeError("SERVICE_AUTH_TOKEN is required")
                     headers["Authorization"] = f"Service {service_token}"
                 
                 # 记录API调用信息
@@ -1496,7 +1207,7 @@ async def call_service(service_name: str, endpoint: str, method: str = "GET", pa
                             try:
                                 error_detail = e.response.json()
                                 error_msg = f"{error_msg} - {error_detail.get('detail', '')}"
-                            except:
+                            except ValueError:
                                 error_msg = f"{error_msg} - {e.response.text[:100]}"
                             
                             logger.error(f"[{service_name} <- {caller_service}] 调用服务API失败，{error_msg}")
@@ -1659,4 +1370,4 @@ def _get_redis_url() -> str:
         # 修正密码格式，确保正确处理特殊字符
         return f"redis://:{redis_password}@{redis_host}:{redis_port}/{redis_db}"
     else:
-        return f"redis://{redis_host}:{redis_port}/{redis_db}" 
+        return f"redis://{redis_host}:{redis_port}/{redis_db}"

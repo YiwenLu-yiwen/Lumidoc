@@ -1,24 +1,26 @@
 FROM python:3.11-slim
 
-# 设置工作目录
 WORKDIR /app
 
-# 复制依赖文件
-COPY requirements.txt .
+COPY requirements/service-core.txt /tmp/service-core.txt
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential \
+    && pip install --no-cache-dir -r /tmp/service-core.txt \
+    && apt-get purge -y --auto-remove build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
-# 安装Python依赖
-RUN pip install --no-cache-dir -r requirements.txt
+COPY src/modules/chat/requirements.txt /tmp/module-requirements.txt
+RUN pip install --no-cache-dir -r /tmp/module-requirements.txt
 
-# 复制源代码
-COPY src/modules/chat/ /app/
-COPY src/core/ /app/core/
-COPY src/services/ /app/services/
+COPY src/ /app/src/
+COPY scripts/docker_healthcheck.py /app/scripts/docker_healthcheck.py
 
-# 设置环境变量
 ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
 
-# 暴露端口
 EXPOSE 8001
 
-# 启动命令
-CMD ["python", "chat_service.py"] 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD ["python", "/app/scripts/docker_healthcheck.py", "http://127.0.0.1:8001/healthz"]
+
+CMD ["python", "-m", "src.modules.chat.main"]

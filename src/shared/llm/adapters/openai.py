@@ -9,7 +9,6 @@ OpenAI适配器实现
 import logging
 import json
 import httpx
-import asyncio
 from typing import Dict, List, Any, Optional, AsyncGenerator, Union
 
 from .base import BaseLLMAdapter
@@ -51,7 +50,7 @@ class OpenAIAdapter(BaseLLMAdapter):
         url = self.base_url
         
         # 检查是否需要添加API端点路径
-        if not url.endswith('/chat/completions') and not '/chat/completions' in url:
+        if not url.endswith('/chat/completions') and '/chat/completions' not in url:
             if url.endswith('/'):
                 url = url + 'chat/completions'
             else:
@@ -64,7 +63,7 @@ class OpenAIAdapter(BaseLLMAdapter):
         url = self.base_url
         
         # 检查是否需要添加API端点路径
-        if not url.endswith('/embeddings') and not '/embeddings' in url:
+        if not url.endswith('/embeddings') and '/embeddings' not in url:
             if url.endswith('/'):
                 url = url + 'embeddings'
             else:
@@ -123,7 +122,7 @@ class OpenAIAdapter(BaseLLMAdapter):
                     return data["choices"][0]["message"]["content"]
                 else:
                     logger.error(f"OpenAI API响应格式错误: {data}")
-                    raise Exception(f"OpenAI API响应格式错误: 缺少choices字段")
+                    raise Exception("OpenAI API响应格式错误: 缺少choices字段")
         except Exception as e:
             logger.error(f"调用OpenAI API失败: {str(e)}")
             # 🔧 修复：抛出异常而不是返回错误字符串
@@ -233,7 +232,7 @@ class OpenAIAdapter(BaseLLMAdapter):
                     return data["choices"][0]["message"]["content"]
                 else:
                     logger.error(f"OpenAI API响应格式错误: {data}")
-                    raise Exception(f"OpenAI API响应格式错误: 缺少choices字段")
+                    raise Exception("OpenAI API响应格式错误: 缺少choices字段")
         except Exception as e:
             logger.error(f"调用OpenAI API失败: {str(e)}")
             # 🔧 修复：抛出异常而不是返回错误字符串

@@ -8,7 +8,7 @@ LangChain集成
 
 import logging
 import asyncio
-from typing import Dict, List, Any, Optional, Union, Mapping
+from typing import List, Optional
 from langchain.llms.base import LLM
 from langchain.callbacks.manager import CallbackManagerForLLMRun
 
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 class LumidocLangChainLLM(LLM):
     """
-    STP项目的LangChain LLM实现
+    Lumidoc项目的LangChain LLM实现
     使用共享LLM适配器
     """
     
@@ -47,7 +47,7 @@ class LumidocLangChainLLM(LLM):
     @property
     def _llm_type(self) -> str:
         """返回LLM类型"""
-        return f"stp_{self.model_type}"
+        return f"lumidoc_{self.model_type}"
     
     def _call(
         self,

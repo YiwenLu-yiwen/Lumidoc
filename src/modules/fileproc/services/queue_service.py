@@ -4,18 +4,17 @@
 """
 文件处理队列服务
 基于Redis实现的异步消息队列，用于文件处理任务
-遵循STP微服务架构原则，支持分布式环境
+遵循Lumidoc微服务架构原则，支持分布式环境
 """
 
 import json
 import uuid
 import time
-import logging
 import asyncio
 import traceback
 from typing import Dict, Any, Optional, List, Callable, Awaitable
 import redis.asyncio as aioredis
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from ..config import settings
 from src.shared.logger import get_logger
@@ -80,8 +79,10 @@ class FileProcessingQueue:
                     # 连接可能已断开，关闭并重新连接
                     logger.warning("Redis连接可能已断开，尝试重新连接")
                     try:
-                        self._redis.close()
-                        await self._redis.wait_closed()
+                        if hasattr(self._redis, "aclose"):
+                            await self._redis.aclose()
+                        else:
+                            await self._redis.close()
                     except Exception:
                         pass
                     self._redis = None
@@ -90,7 +91,12 @@ class FileProcessingQueue:
             try:
                 # 获取Redis连接URL
                 redis_url = settings.get_redis_url()
-                logger.info(f"正在连接到Redis: {redis_url}")
+                logger.info(
+                    "正在连接到Redis: %s:%s DB=%s",
+                    settings.redis_host,
+                    settings.redis_port,
+                    settings.redis_db,
+                )
                 
                 # 连接Redis - 增加连接选项以提高可靠性
                 self._redis = await aioredis.from_url(
@@ -135,12 +141,17 @@ class FileProcessingQueue:
                 
                 # 关闭Redis连接 - 正确处理异步关闭
                 try:
-                    # 对于新版aioredis (redis-py)，需要使用await close()
-                    await self._redis.close()
+                    # redis-py 5+ 使用 aclose；兼容较早版本的异步 close。
+                    if hasattr(self._redis, "aclose"):
+                        await self._redis.aclose()
+                    else:
+                        await self._redis.close()
                     logger.info("Redis连接已关闭")
                 except AttributeError:
-                    # 对于旧版aioredis，使用close()并等待
-                    self._redis.close()
+                    # 兼容旧版 aioredis。
+                    close_result = self._redis.close()
+                    if asyncio.iscoroutine(close_result):
+                        await close_result
                     if hasattr(self._redis, 'wait_closed'):
                         await self._redis.wait_closed()
                     logger.info("Redis连接已关闭（旧版API）")
@@ -884,4 +895,4 @@ class FileProcessingQueue:
             return False
 
 # 创建全局队列实例
-file_processing_queue = FileProcessingQueue() 
+file_processing_queue = FileProcessingQueue()

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Dict, Any, Optional, Union
 from datetime import datetime
 
@@ -8,8 +8,9 @@ class ChatMessage(BaseModel):
     role: str
     content: str
     timestamp: Optional[Union[float, str, datetime]] = None
-    
-    @validator('timestamp', pre=True)
+
+    @field_validator('timestamp', mode='before')
+    @classmethod
     def validate_timestamp(cls, v):
         """验证时间戳，支持字符串、datetime和数字类型"""
         if v is None:
@@ -32,7 +33,7 @@ class ChatSession(BaseModel):
     """聊天会话模型"""
     session_id: str
     project_id: Optional[str] = None
-    messages: List[ChatMessage] = []
+    messages: List[ChatMessage] = Field(default_factory=list)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     graph_analysis: Optional[Dict[str, Any]] = None
@@ -45,6 +46,9 @@ class ChatRequest(BaseModel):
     user_id: Optional[str] = None
     session_id: Optional[str] = None
     use_stream: Optional[bool] = False
+    model: Optional[str] = Field(
+        None, min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.:/-]+$"
+    )
 
 
 class ChatResponse(BaseModel):
@@ -57,4 +61,4 @@ class GraphAnalysisRequest(BaseModel):
     """图谱分析请求模型"""
     query: str
     project_id: Optional[str] = None
-    context: Optional[Dict[str, Any]] = None 
+    context: Optional[Dict[str, Any]] = None

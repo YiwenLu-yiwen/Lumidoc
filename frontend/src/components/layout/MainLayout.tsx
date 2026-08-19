@@ -29,7 +29,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import ModernAccountModal from '@/components/ui/ModernAccountModal';
 import { ModelSelector } from '@/components/model/ModelSelector';
-import { useModel } from '@/hooks/useModel';
+import { ModelSelectionContext, useModel } from '@/hooks/useModel';
 import { 
   detectBrowserLanguage, 
   saveLanguage, 
@@ -53,46 +53,19 @@ interface ChatSession {
   model?: 'thinking' | 'fast';
 }
 
-type ThemeMode = 'light' | 'dark' | 'auto';
-
-// 模拟聊天会话数据
-const mockChatSessions: ChatSession[] = [
-  {
-    id: '1',
-    title: '文档分析讨论',
-    lastMessage: '请帮我分析这份财务报告...',
-    timestamp: new Date('2024-01-15T10:30:00'),
-    projectId: 'proj1',
-    isStarred: true,
-    messageCount: 15,
-    model: 'thinking'
-  },
-  {
-    id: '2', 
-    title: '代码重构建议',
-    lastMessage: '如何优化这段Python代码？',
-    timestamp: new Date('2024-01-14T16:45:00'),
-    projectId: 'proj2',
-    messageCount: 8,
-    model: 'fast'
-  },
-  {
-    id: '3',
-    title: '新项目规划',
-    lastMessage: '我想创建一个新的AI项目...',
-    timestamp: new Date('2024-01-13T09:15:00'),
-    messageCount: 23,
-    model: 'thinking'
-  }
-];
-
+interface ChatHistoryItem {
+  id?: string;
+  role?: 'user' | 'assistant' | string;
+  content?: string;
+  timestamp?: string;
+}
 
 export default function MainLayout({ children }: MainLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
   
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    const saved = localStorage.getItem('stp_sidebar_collapsed');
+    const saved = localStorage.getItem('lumidoc_sidebar_collapsed');
     return saved ? JSON.parse(saved) : false;
   });
   const [searchQuery, setSearchQuery] = useState('');
@@ -100,14 +73,23 @@ export default function MainLayout({ children }: MainLayoutProps) {
   const [currentLanguage, setCurrentLanguage] = useState<string>(detectBrowserLanguage());
   const { themeMode, isDarkMode, toggleTheme } = useTheme();
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
-  const [chatSessions] = useState<ChatSession[]>(mockChatSessions);
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [showStarredOnly, setShowStarredOnly] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false); // 管理员状态
   
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const { projects } = useProjects();
-  const { selectedModel, selectModel } = useModel();
+  const {
+    selectedModel,
+    availableModels,
+    loading: modelsLoading,
+    error: modelsError,
+    selectModel,
+  } = useModel();
+  const currentProject = projects[0] ?? null;
   
   // 从路由路径确定当前页面
   const getCurrentSection = () => {
@@ -126,6 +108,98 @@ export default function MainLayout({ children }: MainLayoutProps) {
   
   const sidebarRef = useRef<HTMLDivElement>(null);
   const languageMenuRef = useRef<HTMLDivElement>(null);
+
+  const getStoredUserId = (): string | undefined => {
+    try {
+      const raw = localStorage.getItem('lumidoc_user');
+      if (!raw) return undefined;
+      const parsed = JSON.parse(raw) as { id?: string };
+      return parsed.id;
+    } catch {
+      return undefined;
+    }
+  };
+
+  useEffect(() => {
+    const fetchChatSessions = async () => {
+      if (currentSection !== 'chat') return;
+      if (!token) {
+        setChatSessions([]);
+        setSessionsError('未检测到登录令牌');
+        return;
+      }
+      if (!currentProject?.id) {
+        setChatSessions([]);
+        setSessionsError('请先创建或选择项目');
+        return;
+      }
+
+      const gatewayUrl = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8888';
+      const userId = user?.id || getStoredUserId() || 'unknown';
+      const historyUrl = `${gatewayUrl}/chat/api/chat/history/${currentProject.id}?user_id=${userId}&include_archived=false&offset=0&limit=200`;
+
+      setSessionsLoading(true);
+      setSessionsError(null);
+
+      try {
+        const response = await fetch(historyUrl, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
+        if (!response.ok) {
+          throw new Error(`会话加载失败: HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        const historyItems: ChatHistoryItem[] = Array.isArray(data) ? data : [];
+        const compact = (text?: string): string => (text || '').replace(/\s+/g, ' ').trim();
+        const safeDate = (value?: string): Date => {
+          if (!value) return new Date();
+          const d = new Date(value);
+          return Number.isNaN(d.getTime()) ? new Date() : d;
+        };
+        const toTitle = (text?: string): string => {
+          const normalized = compact(text);
+          if (!normalized) return '新对话';
+          return normalized.length > 22 ? `${normalized.slice(0, 22)}...` : normalized;
+        };
+
+        const sorted = historyItems
+          .map((item, index) => ({
+            ...item,
+            _index: index,
+            _date: safeDate(item.timestamp)
+          }))
+          .sort((a, b) => b._date.getTime() - a._date.getTime());
+
+        const userMessages = sorted.filter((item) => item.role === 'user' && compact(item.content));
+        const sessions: ChatSession[] = (userMessages.length > 0 ? userMessages : sorted)
+          .slice(0, 50)
+          .map((item, index) => ({
+            id: String(item.id || `${currentProject.id}-${item._index || index}`),
+            title: toTitle(item.content),
+            lastMessage: compact(item.content) || '（空消息）',
+            timestamp: item._date,
+            projectId: currentProject.id,
+            messageCount: userMessages.length > 0 ? userMessages.length : sorted.length,
+            isStarred: false,
+            model: selectedModel?.type || 'thinking'
+          }));
+
+        setChatSessions(sessions);
+      } catch (error: unknown) {
+        console.error('[MainLayout] 加载会话失败:', error);
+        setChatSessions([]);
+        setSessionsError(error instanceof Error ? error.message : '加载会话失败');
+      } finally {
+        setSessionsLoading(false);
+      }
+    };
+
+    fetchChatSessions();
+  }, [currentSection, currentProject?.id, token, user?.id, selectedModel?.type]);
 
   // 主题状态现在由 ThemeContext 管理
 
@@ -223,24 +297,31 @@ export default function MainLayout({ children }: MainLayoutProps) {
   const toggleSidebar = () => {
     const newCollapsedState = !sidebarCollapsed;
     setSidebarCollapsed(newCollapsedState);
-    localStorage.setItem('stp_sidebar_collapsed', JSON.stringify(newCollapsedState));
+    localStorage.setItem('lumidoc_sidebar_collapsed', JSON.stringify(newCollapsedState));
   };
 
   // 创建新聊天
   const createNewChat = () => {
-    console.log('创建新聊天');
+    setSelectedChatId(null);
+    navigate('/app/chat');
   };
 
   // 删除聊天会话
   const deleteChatSession = (chatId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    console.log('删除聊天:', chatId);
+    setChatSessions((prev) => prev.filter((session) => session.id !== chatId));
   };
 
   // 收藏/取消收藏聊天
   const toggleStarChat = (chatId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    console.log('切换收藏状态:', chatId);
+    setChatSessions((prev) =>
+      prev.map((session) =>
+        session.id === chatId
+          ? { ...session, isStarred: !session.isStarred }
+          : session
+      )
+    );
   };
 
   // 切换语言
@@ -497,6 +578,9 @@ export default function MainLayout({ children }: MainLayoutProps) {
               <ModelSelector
                 selectedModel={selectedModel}
                 onModelSelect={selectModel}
+                models={availableModels}
+                loading={modelsLoading}
+                error={modelsError}
                 className="w-full text-xs"
               />
             </div>
@@ -529,12 +613,27 @@ export default function MainLayout({ children }: MainLayoutProps) {
             {/* 聊天会话列表 - 紧凑布局 */}
             <div className="flex-1 overflow-y-auto">
               <div className="p-1 space-y-0.5">
-                {filteredChatSessions.map((session) => (
+                {sessionsLoading && (
+                  <div className={`px-2 py-3 text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                    正在加载会话...
+                  </div>
+                )}
+                {!sessionsLoading && sessionsError && (
+                  <div className="px-2 py-3 text-xs text-red-500">
+                    {sessionsError}
+                  </div>
+                )}
+                {!sessionsLoading && !sessionsError && filteredChatSessions.length === 0 && (
+                  <div className={`px-2 py-3 text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                    暂无历史会话
+                  </div>
+                )}
+                {!sessionsLoading && !sessionsError && filteredChatSessions.map((session) => (
                   <div
                     key={session.id}
                     className={`group p-2 rounded-md cursor-pointer transition-all duration-200 ${
-                      selectedChatId === session.id 
-                        ? `${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-blue-50 border-blue-200'} border` 
+                      selectedChatId === session.id
+                        ? `${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-blue-50 border-blue-200'} border`
                         : `hover:${isDarkMode ? 'bg-gray-700' : 'bg-gray-100'}`
                     }`}
                     onClick={() => setSelectedChatId(session.id)}
@@ -559,7 +658,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
                             </span>
                             {session.model && (
                               <span className={`text-xs px-1.5 py-0.5 rounded flex items-center gap-0.5 ${
-                                session.model === 'thinking' 
+                                session.model === 'thinking'
                                   ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
                                   : 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
                               }`}>
@@ -636,7 +735,9 @@ export default function MainLayout({ children }: MainLayoutProps) {
 
         {/* 主内容区域 */}
         <div className="flex-1 bg-background">
-          {children}
+          <ModelSelectionContext.Provider value={{ selectedModel, selectModel }}>
+            {children}
+          </ModelSelectionContext.Provider>
         </div>
       </div>
 
@@ -647,4 +748,4 @@ export default function MainLayout({ children }: MainLayoutProps) {
       />
     </div>
   );
-} 
+}

@@ -8,8 +8,10 @@ from sqlalchemy import text
 
 from .models import ChatHistory
 from src.shared.config import ChatServiceSettings
-settings = ChatServiceSettings()
 from src.shared.database import get_redis_client
+from src.shared.time_utils import as_utc_naive, utc_now, utc_now_naive
+
+settings = ChatServiceSettings()
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -31,7 +33,7 @@ def migrate_old_messages_to_db(db: Session, days: int = 30) -> Dict[str, Any]:
     logger.info(f"开始迁移超过{days}天的聊天记录到PostgreSQL")
     
     # 计算截止日期
-    cutoff_date = datetime.utcnow() - timedelta(days=days)
+    cutoff_date = utc_now_naive() - timedelta(days=days)
     logger.info(f"截止日期: {cutoff_date.isoformat()}")
     
     # 用于保存统计信息
@@ -95,13 +97,15 @@ def migrate_old_messages_to_db(db: Session, days: int = 30) -> Dict[str, Any]:
                         if 'timestamp' in msg_data and msg_data['timestamp']:
                             try:
                                 # 假设时间戳是ISO格式
-                                msg_timestamp = datetime.fromisoformat(msg_data['timestamp'].replace('Z', '+00:00'))
+                                msg_timestamp = as_utc_naive(
+                                    datetime.fromisoformat(msg_data['timestamp'].replace('Z', '+00:00'))
+                                )
                             except ValueError:
                                 # 时间戳格式无效，使用当前时间
                                 logger.warning(f"无效的时间戳格式: {msg_data['timestamp']}")
-                                msg_timestamp = datetime.utcnow()
+                                msg_timestamp = utc_now_naive()
                         else:
-                            msg_timestamp = datetime.utcnow()
+                            msg_timestamp = utc_now_naive()
                         
                         # 检查消息是否超过截止日期
                         if msg_timestamp < cutoff_date:
@@ -113,7 +117,7 @@ def migrate_old_messages_to_db(db: Session, days: int = 30) -> Dict[str, Any]:
                                 role=msg_data.get('role', 'unknown'),
                                 content=msg_data.get('content', ''),
                                 timestamp=msg_timestamp,
-                                meta_data={"source": "redis_migration", "migrated_at": datetime.utcnow().isoformat()}
+                                meta_data={"source": "redis_migration", "migrated_at": utc_now().isoformat()}
                             )
                             
                             # 保存到数据库
@@ -190,4 +194,4 @@ def fetch_chat_history(db: Session, project_id: str, user_id: Optional[str] = No
     messages = query.order_by(ChatHistory.timestamp.desc()).offset(offset).limit(limit).all()
     
     # 转换为字典列表
-    return [msg.to_dict() for msg in messages] 
+    return [msg.to_dict() for msg in messages]

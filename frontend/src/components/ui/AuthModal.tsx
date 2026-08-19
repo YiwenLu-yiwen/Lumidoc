@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Lock, Eye, EyeOff } from 'lucide-react';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth, type User } from '@/context/AuthContext';
 
 interface Props {
   open: boolean;
@@ -16,6 +16,7 @@ export default function AuthModal({ open, onClose }: Props) {
   const [error, setError] = useState('');
   const [showReset, setShowReset] = useState(false);
   const [resetUser, setResetUser] = useState('');
+  const [resetCurrentPwd, setResetCurrentPwd] = useState('');
   const [resetPwd, setResetPwd] = useState('');
   const [resetMsg, setResetMsg] = useState('');
   const [registerSuccess, setRegisterSuccess] = useState(false);
@@ -173,8 +174,8 @@ export default function AuthModal({ open, onClose }: Props) {
                         };
                         
                         // 保存token和用户信息
-                        localStorage.setItem('stp_token', loginData.access_token);
-                        localStorage.setItem('stp_user', JSON.stringify(userData));
+                        localStorage.setItem('lumidoc_token', loginData.access_token);
+                        localStorage.setItem('lumidoc_user', JSON.stringify(userData));
                         
                         // 调用登录成功处理，但传递标记表明是注册后登录
                         login(userData, loginData.access_token);
@@ -191,7 +192,7 @@ export default function AuthModal({ open, onClose }: Props) {
                       try {
                         const errorData = await loginRes.json();
                         console.error('[AuthModal] 自动登录错误信息:', errorData);
-                      } catch (e) {
+                      } catch {
                         console.error('[AuthModal] 无法解析自动登录错误响应');
                       }
                       setIsRegister(false); // 切换到登录模式
@@ -226,8 +227,8 @@ export default function AuthModal({ open, onClose }: Props) {
           }
 
           // 先清除之前可能存在的token
-          localStorage.removeItem('stp_token');
-          localStorage.removeItem('stp_user');
+          localStorage.removeItem('lumidoc_token');
+          localStorage.removeItem('lumidoc_user');
           
           // 保存用户数据（避免undefined值）
           const userData = {
@@ -239,11 +240,11 @@ export default function AuthModal({ open, onClose }: Props) {
           // 先保存token到localStorage
           try {
             console.log('保存token到localStorage:', data.access_token.substring(0, 15) + '...');
-            localStorage.setItem('stp_token', data.access_token);
-            localStorage.setItem('stp_user', JSON.stringify(userData));
+            localStorage.setItem('lumidoc_token', data.access_token);
+            localStorage.setItem('lumidoc_user', JSON.stringify(userData));
             
             // 验证token是否正确保存
-            const savedToken = localStorage.getItem('stp_token');
+            const savedToken = localStorage.getItem('lumidoc_token');
             console.log('验证保存的token:', savedToken ? savedToken.substring(0, 15) + '...' : '无');
           } catch (storageError) {
             console.error('保存到localStorage失败:', storageError);
@@ -260,7 +261,7 @@ export default function AuthModal({ open, onClose }: Props) {
         setError('无法连接到认证服务器，请检查网络连接');
         setIsLoading(false);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('登录请求错误:', err);
       setError('账号或密码错误');
       setIsLoading(false);
@@ -270,8 +271,8 @@ export default function AuthModal({ open, onClose }: Props) {
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
     setResetMsg('');
-    if (!resetUser || !resetPwd) {
-      setResetMsg('账号或新密码不能为空');
+    if (!resetUser || !resetCurrentPwd || !resetPwd) {
+      setResetMsg('账号、当前密码和新密码不能为空');
       return;
     }
     if (resetUser === resetPwd) {
@@ -284,7 +285,11 @@ export default function AuthModal({ open, onClose }: Props) {
       const res = await fetch(`${gatewayUrl}/auth/api/reset_password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: resetUser, new_password: resetPwd }),
+        body: JSON.stringify({
+          username: resetUser,
+          current_password: resetCurrentPwd,
+          new_password: resetPwd,
+        }),
       });
       
       console.log(`[AuthModal] 密码重置响应状态: ${res.status}`);
@@ -299,16 +304,17 @@ export default function AuthModal({ open, onClose }: Props) {
       setTimeout(() => {
         setShowReset(false);
         setResetUser('');
+        setResetCurrentPwd('');
         setResetPwd('');
         setResetMsg('');
       }, 2000);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[AuthModal] 密码重置错误:', err);
       setResetMsg('重置失败');
     }
   };
 
-  const handleLoginSuccess = async (userData: any, token: string) => {
+  const handleLoginSuccess = async (userData: User, token: string) => {
     // 调用login函数设置用户信息和token
     login(userData, token);
     
@@ -388,6 +394,17 @@ export default function AuthModal({ open, onClose }: Props) {
               />
             </div>
             <div className="flex flex-col gap-1">
+              <label className="text-gray-400 text-sm mb-1">当前密码</label>
+              <input
+                className="bg-[#18181b] border border-gray-700 rounded px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                type="password"
+                placeholder="请输入当前密码"
+                value={resetCurrentPwd}
+                onChange={e => setResetCurrentPwd(e.target.value)}
+                required
+              />
+            </div>
+            <div className="flex flex-col gap-1">
               <label className="text-gray-400 text-sm mb-1">新密码</label>
               <div className="relative">
                 <input
@@ -424,6 +441,7 @@ export default function AuthModal({ open, onClose }: Props) {
               onClick={() => {
                 setShowReset(false);
                 setResetUser('');
+                setResetCurrentPwd('');
                 setResetPwd('');
                 setResetMsg('');
               }}

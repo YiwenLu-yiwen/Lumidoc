@@ -4,13 +4,10 @@ Redis队列工具
 """
 
 import json
+import os
 import uuid
-import time
-import asyncio
-import traceback
 import redis.asyncio as aioredis
-from typing import Dict, Any, Optional, List, Callable, Awaitable, Union
-from datetime import datetime, timedelta
+from typing import Dict, Any, Optional, Union
 
 import logging
 logger = logging.getLogger(__name__)
@@ -253,8 +250,8 @@ class RedisQueue:
         pipeline.delete(self.full_queue_name)
         
         # 执行
-        results = await pipeline.execute()
+        await pipeline.execute()
         cleared_count = len(message_ids)
         
         logger.info(f"队列已清空: {self.full_queue_name}, 移除了 {cleared_count} 条消息")
-        return cleared_count 
+        return cleared_count

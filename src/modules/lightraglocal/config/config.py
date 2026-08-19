@@ -3,8 +3,6 @@ LightRAG服务配置
 使用统一配置系统
 """
 
-import os
-from pathlib import Path
 from src.shared.config import RAGServiceSettings, get_env
 
 # 创建全局设置实例
@@ -22,17 +20,17 @@ DEFAULT_QUERY_MODE = settings.default_query_mode
 DEFAULT_STREAM = settings.default_stream
 
 # PostgreSQL配置 - 用于向量存储和KV存储
-DATABASE_URL = settings.database_url if hasattr(settings, 'database_url') else get_env('POSTGRES_URL', 'postgresql://stpuser:stppassword@localhost:5432/stpdb')
+DATABASE_URL = settings.database_url if hasattr(settings, 'database_url') else get_env('POSTGRES_URL', '')
 POSTGRES_HOST = get_env('POSTGRES_HOST', 'localhost')
 POSTGRES_PORT = int(get_env('POSTGRES_PORT', '5432'))
-POSTGRES_USER = get_env('POSTGRES_USER', 'stpuser')
-POSTGRES_PASSWORD = get_env('POSTGRES_PASSWORD', 'stppassword')
-POSTGRES_DATABASE = get_env('POSTGRES_DATABASE', 'stpdb')
+POSTGRES_USER = get_env('POSTGRES_USER', 'postgres')
+POSTGRES_PASSWORD = get_env('POSTGRES_PASSWORD', '')
+POSTGRES_DATABASE = get_env('POSTGRES_DATABASE', 'lumidoc')
 
 # Neo4j配置 - 用于图存储
 NEO4J_URI = settings.neo4j_uri if hasattr(settings, 'neo4j_uri') else get_env('NEO4J_URI', 'bolt://localhost:7687')
 NEO4J_USER = settings.neo4j_user if hasattr(settings, 'neo4j_user') else get_env('NEO4J_USERNAME', 'neo4j')
-NEO4J_PASSWORD = settings.neo4j_password if hasattr(settings, 'neo4j_password') else get_env('NEO4J_PASSWORD', 'password')
+NEO4J_PASSWORD = settings.neo4j_password if hasattr(settings, 'neo4j_password') else get_env('NEO4J_PASSWORD', '')
 
 LOCAL_STORAGE_DIR = settings.lightrag_local_storage_dir
 SERVER_PORT = settings.port
@@ -75,4 +73,4 @@ class LightRAGConfig:
     doc_status_storage = LIGHTRAG_DOC_STATUS_STORAGE
 
 # 全局配置实例
-config = LightRAGConfig() 
+config = LightRAGConfig()

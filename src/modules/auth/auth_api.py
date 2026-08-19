@@ -1,16 +1,14 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Body
+from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
-from datetime import timedelta, datetime
-from typing import Optional
+from datetime import timedelta
 from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
 from src.modules.auth.user_model import User, UserCreate
 from src.modules.auth.auth_service import AuthService
 from src.modules.auth.config.config import settings
 import jwt
-import logging
 import os
 import httpx
 from src.shared.logger import initialize_logging, get_logger
@@ -21,8 +19,9 @@ logger = get_logger(__name__)
 
 # 定义密码重置请求模型
 class PasswordReset(BaseModel):
-    username: str
-    new_password: str
+    username: str = Field(..., min_length=1)
+    current_password: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=6)
 
 # 定义登录请求模型
 class LoginRequest(BaseModel):
@@ -187,40 +186,23 @@ async def create_user(user: UserCreate):
 
 @app.post("/api/reset_password")
 async def reset_password(password_reset: PasswordReset):
-    """重置用户密码"""
+    """在验证当前密码后更新用户密码。"""
     try:
-        if not password_reset.username or not password_reset.new_password:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="用户名和新密码不能为空"
-            )
-            
         if password_reset.username == password_reset.new_password:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="用户名和密码不能相同"
             )
-            
-        # 确保数据库连接池已初始化
-        if auth_service.db_pool is None:
-            await auth_service._init_db_pool()
-            
-        # 检查用户是否存在
-        async with auth_service.db_pool.acquire() as conn:
-            user = await conn.fetchrow('SELECT * FROM users WHERE username = $1', password_reset.username)
-            if not user:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="用户不存在"
-                )
-                
-            # 生成新的密码哈希
-            hashed_password = auth_service.get_password_hash(password_reset.new_password)
-            
-            # 更新密码
-            await conn.execute(
-                'UPDATE users SET hashed_password = $1, updated_at = CURRENT_TIMESTAMP WHERE username = $2',
-                hashed_password, password_reset.username
+
+        changed = await auth_service.change_password(
+            username=password_reset.username,
+            current_password=password_reset.current_password,
+            new_password=password_reset.new_password,
+        )
+        if not changed:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="用户名或当前密码错误",
             )
             
         logger.info(f"用户 {password_reset.username} 的密码已重置")
@@ -231,7 +213,7 @@ async def reset_password(password_reset: PasswordReset):
         logger.error(f"重置密码失败: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"重置密码失败: {str(e)}"
+            detail="重置密码失败"
         )
 
 @app.get("/api/users/me/", response_model=User)
@@ -245,7 +227,12 @@ async def verify_token(current_user: User = Depends(get_current_user)):
     return {
         "valid": True,
         "user_id": current_user.id,
-        "username": current_user.username
+        "username": current_user.username,
+        "email": current_user.email,
+        "is_active": current_user.is_active,
+        "is_superuser": current_user.is_superuser,
+        "created_at": current_user.created_at,
+        "updated_at": current_user.updated_at,
     }
 
 @app.post("/api/refresh")
@@ -293,4 +280,4 @@ async def ping_backend():
     return False
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=settings.auth_service_port) 
+    uvicorn.run(app, host="0.0.0.0", port=settings.auth_service_port)

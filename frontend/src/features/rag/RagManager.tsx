@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { ragApi, RagFileStatusResponse } from '../../api/rag';
+import { isAxiosError } from 'axios';
+import { ragApi, RagFile, RagFileStatusResponse } from '../../api/rag';
 import { fileApi } from '../../api/file';
 import { detectBrowserLanguage, getTranslation } from '@/utils/language';
 import { useTheme } from '@/context/ThemeContext';
@@ -29,6 +30,23 @@ const STATUS_TEXT: { [key: string]: { 'zh-CN': string; 'en-US': string } } = {
   error: { 'zh-CN': '处理失败', 'en-US': 'Error' }
 };
 
+const ragFileMatches = (ragFile: RagFile, fileName: string): boolean => {
+  if (typeof ragFile === 'string') {
+    return ragFile === fileName;
+  }
+  return ragFile.filename === fileName ||
+    ragFile.name === fileName ||
+    ragFile.originalName === fileName ||
+    ragFile.displayName === fileName;
+};
+
+const getApiErrorDetail = (error: unknown): string | undefined => {
+  if (isAxiosError<{ detail?: string }>(error)) {
+    return error.response?.data?.detail;
+  }
+  return undefined;
+};
+
 export default function RagManager({ onQueryComplete }: RagManagerProps) {
   const { projectId = '' } = useParams<{ projectId: string }>();
   
@@ -45,7 +63,7 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
   };
   
   const [fileList, setFileList] = useState<string[]>([]);
-  const [ragFileList, setRagFileList] = useState<string[]>([]);
+  const [ragFileList, setRagFileList] = useState<RagFile[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [isImporting, setIsImporting] = useState(false);
   const [queryText, setQueryText] = useState('');
@@ -56,14 +74,8 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
   const [fileStatuses, setFileStatuses] = useState<RagFileStatusResponse['statuses']>({});
   const [isLoadingStatuses, setIsLoadingStatuses] = useState(false);
 
-  useEffect(() => {
-    fetchFileList();
-    fetchRagFileList();
-    fetchFileStatuses();
-  }, [projectId]);
-
   // 文件列表获取
-  const fetchFileList = async () => {
+  const fetchFileList = useCallback(async () => {
     try {
       const files = await fileApi.listFiles(projectId);
       setFileList(files.map(f => f.filename));
@@ -71,10 +83,10 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
       console.error('Failed to fetch file list:', err);
       toast.error(currentLanguage === 'zh-CN' ? '获取文件列表失败' : 'Failed to fetch file list');
     }
-  };
+  }, [currentLanguage, projectId]);
 
   // RAG文件列表获取
-  const fetchRagFileList = async () => {
+  const fetchRagFileList = useCallback(async () => {
     try {
       const response = await ragApi.getRagFiles(projectId);
       setRagFileList(response.files || []);
@@ -82,10 +94,10 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
       console.error('Failed to fetch RAG file list:', err);
       toast.error(currentLanguage === 'zh-CN' ? '获取知识库文件列表失败' : 'Failed to fetch knowledge base file list');
     }
-  };
+  }, [currentLanguage, projectId]);
   
   // 文件状态获取
-  const fetchFileStatuses = async () => {
+  const fetchFileStatuses = useCallback(async () => {
     try {
       setIsLoadingStatuses(true);
       const response = await ragApi.getRagFileStatus(projectId);
@@ -99,11 +111,16 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
     } finally {
       setIsLoadingStatuses(false);
     }
-  };
+  }, [projectId]);
+
+  useEffect(() => {
+    void fetchFileList();
+    void fetchRagFileList();
+    void fetchFileStatuses();
+  }, [fetchFileList, fetchFileStatuses, fetchRagFileList]);
 
   // 智能轮询进度和状态（优化间隔）
   const startPolling = () => {
-    let consecutiveNoChanges = 0;
     let pollingInterval = 3000; // 起始间隔：3秒，更快响应
     let pollTimeoutId: NodeJS.Timeout | null = null;
     
@@ -149,11 +166,9 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
         });
         
         if (hasChanges) {
-          consecutiveNoChanges = 0;
           pollingInterval = Math.max(pollingInterval / 1.2, 2000); // 有变化时减少间隔，最少2秒
           console.log(`[RagManager] 检测到状态变化，间隔调整为${pollingInterval}ms`);
         } else {
-          consecutiveNoChanges++;
           pollingInterval = Math.min(pollingInterval * 1.3, 30000); // 无变化时增加间隔，最多30秒
         }
         
@@ -226,17 +241,7 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
   const getSelectableFiles = () => {
     return fileList.filter(fileName => {
       // 检查是否已在RAG文件列表中（按文件名匹配）
-      const isInRag = ragFileList.some(ragFile => {
-        if (typeof ragFile === 'string') {
-          return ragFile === fileName;
-        }
-        // 如果是对象格式，检查多个可能的文件名字段
-        const fileObj = ragFile as any;
-        return fileObj.filename === fileName || 
-               fileObj.name === fileName || 
-               fileObj.originalName === fileName ||
-               fileObj.displayName === fileName;
-      });
+      const isInRag = ragFileList.some(ragFile => ragFileMatches(ragFile, fileName));
       
       // 检查文件状态中是否已完成RAG处理
       const fileStatus = Object.values(fileStatuses).find(status => 
@@ -315,9 +320,9 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
         );
         setIsImporting(false);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Import error:', err);
-      toast.error(err.response?.data?.detail || (currentLanguage === 'zh-CN' ? '知识库导入失败' : 'Knowledge base import failed'));
+      toast.error(getApiErrorDetail(err) || (currentLanguage === 'zh-CN' ? '知识库导入失败' : 'Knowledge base import failed'));
       setIsImporting(false);
     }
   };
@@ -336,9 +341,9 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
       if (onQueryComplete) {
         onQueryComplete(result.result);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Query error:', err);
-      toast.error(err.response?.data?.detail || (currentLanguage === 'zh-CN' ? '查询失败' : 'Query failed'));
+      toast.error(getApiErrorDetail(err) || (currentLanguage === 'zh-CN' ? '查询失败' : 'Query failed'));
     } finally {
       setIsQuerying(false);
     }
@@ -374,11 +379,12 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
           : `Delete failed: ${result.message}`
         );
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('删除RAG文件失败:', err);
+      const errorMessage = err instanceof Error ? err.message : (currentLanguage === 'zh-CN' ? '未知错误' : 'Unknown error');
       toast.error(currentLanguage === 'zh-CN' 
-        ? `删除失败: ${err.message || '未知错误'}`
-        : `Delete failed: ${err.message || 'Unknown error'}`
+        ? `删除失败: ${errorMessage}`
+        : `Delete failed: ${errorMessage}`
       );
     }
   };
@@ -461,16 +467,7 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
                 ) : (
                 fileList.map(file => {
                   // 检查文件是否已在知识库中或正在处理
-                  const isInRag = ragFileList.some(ragFile => {
-                    if (typeof ragFile === 'string') {
-                      return ragFile === file;
-                    }
-                    const fileObj = ragFile as any;
-                    return fileObj.filename === file || 
-                           fileObj.name === file || 
-                           fileObj.originalName === file ||
-                           fileObj.displayName === file;
-                  });
+                  const isInRag = ragFileList.some(ragFile => ragFileMatches(ragFile, file));
                   
                   const fileStatus = Object.values(fileStatuses).find(status => 
                     status.file_name === file

@@ -18,7 +18,7 @@ interface ThemeProviderProps {
 
 export function ThemeProvider({ children }: ThemeProviderProps) {
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => {
-    const saved = localStorage.getItem('stp_theme_mode') as ThemeMode;
+    const saved = localStorage.getItem('lumidoc_theme_mode') as ThemeMode;
     return saved && ['light', 'dark', 'auto'].includes(saved) ? saved : 'auto';
   });
 
@@ -28,7 +28,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   // 设置主题模式
   const setThemeMode = (mode: ThemeMode) => {
     setThemeModeState(mode);
-    localStorage.setItem('stp_theme_mode', mode);
+    localStorage.setItem('lumidoc_theme_mode', mode);
     
     // 立即更新 body 类名
     updateBodyClass(mode);

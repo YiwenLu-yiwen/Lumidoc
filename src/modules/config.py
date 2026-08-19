@@ -27,10 +27,10 @@ def get_port_from_url(url, default_port):
 
 class Settings(BaseSettings):
     # 数据库配置
-    DATABASE_URL: str = os.getenv("POSTGRES_URL", "postgresql://stpuser:stppassword@localhost:5432/stpdb")
-    POSTGRES_USER: str = os.getenv("POSTGRES_USER", "stpuser")
-    POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "stppassword")
-    POSTGRES_DB: str = os.getenv("POSTGRES_DB", "stpdb")
+    DATABASE_URL: str = os.getenv("POSTGRES_URL", "")
+    POSTGRES_USER: str = os.getenv("POSTGRES_USER", "postgres")
+    POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "")
+    POSTGRES_DB: str = os.getenv("POSTGRES_DB", "lumidoc")
     POSTGRES_HOST: str = os.getenv("POSTGRES_HOST", "localhost")
     POSTGRES_PORT: int = int(os.getenv("POSTGRES_PORT", "5432"))
     
@@ -112,18 +112,17 @@ class Settings(BaseSettings):
     # Neo4j配置
     NEO4J_URI: str = os.getenv("NEO4J_URI", "bolt://localhost:7687")
     NEO4J_USER: str = os.getenv("NEO4J_USER", "neo4j")
-    NEO4J_PASSWORD: str = os.getenv("NEO4J_PASSWORD", "123456789")
+    NEO4J_PASSWORD: str = os.getenv("NEO4J_PASSWORD", "")
     
     # 其他配置
     DEBUG_MODE: bool = os.getenv("DEBUG_MODE", "false").lower() in ("true", "1", "t")
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "info")
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-here")
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "")
     JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "RS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
-    SKIP_TOKEN_VERIFICATION: bool = os.getenv("SKIP_TOKEN_VERIFICATION", "false").lower() in ("true", "1", "t")
 
     # 基础配置
-    project_name: str = os.getenv("PROJECT_NAME", "STP")
+    project_name: str = os.getenv("PROJECT_NAME", "Lumidoc")
     
     # API密钥配置
     api_key: str = os.environ.get("API_KEY", "")
@@ -146,4 +145,4 @@ class Settings(BaseSettings):
         "extra": "allow"  # 允许额外字段
     }
 
-settings = Settings() 
+settings = Settings()

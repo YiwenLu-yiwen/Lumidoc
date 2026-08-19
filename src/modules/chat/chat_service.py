@@ -1,23 +1,18 @@
-from fastapi import FastAPI, HTTPException, Depends, WebSocket, Request, status, Response, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, WebSocket, Request
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from typing import List, Dict, Any, Optional
 import redis
-import os
 from src.modules.chat.chat_manager import ChatManager, process_special_format
 from src.modules.llm_chat import LLMToolService
-from src.shared.clients import default_lightrag_client as lightrag_service
-from src.modules.graph.services.graph_service import GraphService
+from src.shared.clients import default_graph_client
 from src.modules.chat.config.config import settings
 from src.database import get_db
 from sqlalchemy.orm import Session
 from src.modules.chat.chat_engine import ChatEngine
 import json
-from pathlib import Path
 import logging
-import traceback
 from fastapi.responses import StreamingResponse
-from src.modules.lightraglocal.config.config import config as rag_config
 from fastapi.routing import APIRouter
 import uuid
 from datetime import datetime
@@ -83,7 +78,7 @@ async def check_redis_connection():
 
 # 初始化服务
 llm_service = LLMToolService()
-graph_service = GraphService()
+graph_service = default_graph_client
 chat_engine = ChatEngine(llm_service, graph_service)
 chat_manager = ChatManager(llm_service=llm_service, graph_service=graph_service, chat_engine=chat_engine)
 
@@ -109,6 +104,7 @@ def get_chat_manager(db: Session = Depends(get_db)) -> ChatManager:
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(
+    http_request: Request,
     request: ChatRequest,
     session_id: Optional[str] = None,
     chat_manager: ChatManager = Depends(get_chat_manager)
@@ -128,7 +124,7 @@ async def chat(
         session_id = chat_manager.create_session(project_id=request.project_id)
     
     # 从请求中获取搜索模式和是否使用图谱，如果未提供则使用配置中的默认值
-    search_mode = getattr(request, "search_mode", None) or rag_config.default_query_mode
+    search_mode = getattr(request, "search_mode", None) or settings.default_query_mode
     use_graph = getattr(request, "use_graph", None)
     if use_graph is None:
         use_graph = True  # 默认使用图谱增强
@@ -139,13 +135,15 @@ async def chat(
         project_id=request.project_id,
         use_stream=request.use_stream,
         search_mode=search_mode,
-        use_graph=use_graph
+        use_graph=use_graph,
+        auth_header=http_request.headers.get("authorization")
     )
     
     return ChatResponse(response=response, session_id=session_id)
 
 @app.post("/chat/stream")
 async def chat_stream(
+    http_request: Request,
     request: ChatRequest,
     session_id: Optional[str] = None,
     chat_manager: ChatManager = Depends(get_chat_manager)
@@ -165,7 +163,7 @@ async def chat_stream(
         session_id = chat_manager.create_session(project_id=request.project_id)
     
     # 从请求中获取搜索模式和是否使用图谱，如果未提供则使用配置中的默认值
-    search_mode = getattr(request, "search_mode", None) or rag_config.default_query_mode
+    search_mode = getattr(request, "search_mode", None) or settings.default_query_mode
     use_graph = getattr(request, "use_graph", None)
     if use_graph is None:
         use_graph = True  # 默认使用图谱增强
@@ -180,7 +178,8 @@ async def chat_stream(
                 message=request.content,
                 user_id=user_id,
                 search_mode=search_mode,
-                use_graph=use_graph
+                use_graph=use_graph,
+                auth_header=http_request.headers.get("authorization")
             ):
                 # 发送SSE格式的数据，确保中文正常显示，使用content字段匹配前端期待
                 yield f"data: {json.dumps({'content': chunk, 'session_id': session_id}, ensure_ascii=False)}\n\n"
@@ -331,7 +330,7 @@ async def websocket_endpoint(websocket: WebSocket, project_id: str):
             data = await websocket.receive_text()
             response = await chat_manager.process_message(project_id, data)
             await websocket.send_text(response)
-    except Exception as e:
+    except Exception:
         await websocket.close()
 
 @app.delete("/chat/history/{project_id}", response_model=ApiResponse)
@@ -425,8 +424,10 @@ async def stream_chat(
         message = data.get("message")  # 修改为使用message字段
         content = data.get("content")  # 保持兼容，同时检查content字段
         user_id = data.get("user_id")
-        search_mode = data.get("search_mode", rag_config.default_query_mode)
+        search_mode = data.get("search_mode", settings.default_query_mode)
         use_graph = data.get("use_graph", True)  # 默认使用图谱增强
+        model = data.get("model")
+        auth_header = request.headers.get("authorization")
         
         # 优先使用message字段，然后是content字段
         content_to_use = message or content
@@ -449,7 +450,9 @@ async def stream_chat(
                     message=content_to_use,
                     user_id=user_id,
                     search_mode=search_mode,
-                    use_graph=use_graph
+                    use_graph=use_graph,
+                    auth_header=auth_header,
+                    model=model,
                 ):
                     if chunk and chunk.strip():
                         has_sent_content = True
@@ -953,4 +956,4 @@ async def migrate_old_chat_messages():
 chat_service = ChatService()
 
 if __name__ == "__main__":
-    uvicorn.run(app, host=settings.service_host, port=settings.service_port) 
+    uvicorn.run(app, host=settings.service_host, port=settings.service_port)

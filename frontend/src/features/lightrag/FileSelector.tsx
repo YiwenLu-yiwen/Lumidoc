@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Loader2, FileText, CheckCircle, AlertCircle } from 'lucide-react';
 
 interface FileItem {
@@ -15,9 +15,9 @@ interface FileSelectorProps {
   onFilesSelected?: (fileIds: string[]) => void;
 }
 
-export const FileSelector: React.FC<FileSelectorProps> = ({ 
-  projectId, 
-  onFilesSelected 
+export const FileSelector: React.FC<FileSelectorProps> = ({
+  projectId,
+  onFilesSelected
 }) => {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
@@ -25,33 +25,33 @@ export const FileSelector: React.FC<FileSelectorProps> = ({
   const [processing, setProcessing] = useState(false);
   const [message, setMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
 
-  // 获取项目文件列表
-  useEffect(() => {
-    fetchFiles();
-  }, [projectId]);
-
-  const showMessage = (type: 'success' | 'error', text: string) => {
+  const showMessage = useCallback((type: 'success' | 'error', text: string) => {
     setMessage({ type, text });
     setTimeout(() => setMessage(null), 5000);
-  };
+  }, []);
 
-  const fetchFiles = async () => {
+  const fetchFiles = useCallback(async () => {
     try {
       setLoading(true);
       const response = await fetch(`/api/v1/files/projects/${projectId}`);
       const data = await response.json();
-      
+
       if (data.success) {
         setFiles(data.files || []);
       } else {
         showMessage('error', data.message || '获取文件失败');
       }
-    } catch (error) {
+    } catch {
       showMessage('error', '网络错误，请重试');
     } finally {
       setLoading(false);
     }
-  };
+  }, [projectId, showMessage]);
+
+  // 获取项目文件列表
+  useEffect(() => {
+    void fetchFiles();
+  }, [fetchFiles]);
 
   const handleFileSelect = (fileId: string, checked: boolean) => {
     const newSelected = new Set(selectedFiles);
@@ -80,7 +80,7 @@ export const FileSelector: React.FC<FileSelectorProps> = ({
 
     try {
       setProcessing(true);
-      
+
       const response = await fetch(`/api/rag/projects/${projectId}/files/select`, {
         method: 'POST',
         headers: {
@@ -95,10 +95,10 @@ export const FileSelector: React.FC<FileSelectorProps> = ({
 
       if (data.success) {
         showMessage('success', `成功处理 ${data.processed_files} 个文件，插入 ${data.inserted_count} 个文档到LightRAG`);
-        
+
         // 清空选择
         setSelectedFiles(new Set());
-        
+
         // 通知父组件
         if (onFilesSelected) {
           onFilesSelected(Array.from(selectedFiles));
@@ -106,7 +106,7 @@ export const FileSelector: React.FC<FileSelectorProps> = ({
       } else {
         showMessage('error', data.message || '文件处理失败');
       }
-    } catch (error) {
+    } catch {
       showMessage('error', '网络错误，请重试');
     } finally {
       setProcessing(false);
@@ -115,7 +115,7 @@ export const FileSelector: React.FC<FileSelectorProps> = ({
 
   const getStatusBadge = (status: string) => {
     const baseStyle = "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium";
-    
+
     switch (status) {
       case 'completed':
         return (
@@ -155,7 +155,7 @@ export const FileSelector: React.FC<FileSelectorProps> = ({
   };
 
   const processedFiles = files.filter(file => file.status === 'completed');
-  const allProcessedSelected = processedFiles.length > 0 && 
+  const allProcessedSelected = processedFiles.length > 0 &&
     processedFiles.every(file => selectedFiles.has(file.id));
 
   if (loading) {
@@ -186,7 +186,7 @@ export const FileSelector: React.FC<FileSelectorProps> = ({
           </div>
         </div>
       </div>
-      
+
       <div className="p-6">
         {/* 消息提示 */}
         {message && (
@@ -196,7 +196,7 @@ export const FileSelector: React.FC<FileSelectorProps> = ({
             {message.text}
           </div>
         )}
-        
+
         {files.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
             <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
@@ -218,9 +218,9 @@ export const FileSelector: React.FC<FileSelectorProps> = ({
                   disabled={file.status !== 'completed'}
                   className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
                 />
-                
+
                 <FileText className="w-5 h-5 text-blue-500 flex-shrink-0" />
-                
+
                 <div className="flex-1 min-w-0">
                   <p className="font-medium truncate">{file.filename}</p>
                   <p className="text-sm text-gray-500">
@@ -228,13 +228,13 @@ export const FileSelector: React.FC<FileSelectorProps> = ({
                     {file.processed_at && ` • 处理时间: ${new Date(file.processed_at).toLocaleString()}`}
                   </p>
                 </div>
-                
+
                 <div className="flex-shrink-0">
                   {getStatusBadge(file.status)}
                 </div>
               </div>
             ))}
-            
+
             {selectedFiles.size > 0 && (
               <div className="pt-4 border-t">
                 <div className="flex items-center justify-between">
@@ -263,4 +263,4 @@ export const FileSelector: React.FC<FileSelectorProps> = ({
       </div>
     </div>
   );
-}; 
+};

@@ -1,9 +1,12 @@
 import { apiClient } from './client';
+import { isAxiosError } from 'axios';
 
 export interface User {
   id: number;
   username: string;
   nickname: string;
+  avatar?: string;
+  email?: string;
 }
 
 export interface LoginResponse {
@@ -11,6 +14,7 @@ export interface LoginResponse {
   username: string;
   nickname: string;
   access_token: string;
+  detail?: string;
 }
 
 export interface RegisterResponse {
@@ -47,7 +51,7 @@ export const authApi = {
       
       // 检查响应数据是否包含错误信息（处理401作为成功响应的情况）
       if (response.data && typeof response.data === 'object' && 'detail' in response.data) {
-        throw new Error(response.data.detail || '登录失败');
+        throw new Error(String(response.data.detail || '登录失败'));
       }
       
       // 确保响应包含必需的字段
@@ -56,14 +60,14 @@ export const authApi = {
       }
       
       // 保存token到本地存储
-      localStorage.setItem('stp_token', response.data.access_token);
+      localStorage.setItem('lumidoc_token', response.data.access_token);
       
       return response.data;
-    } catch (error: any) {
+    } catch (error: unknown) {
       // 如果是axios错误，提取错误信息
-      if (error.response) {
+      if (isAxiosError(error) && error.response) {
         const errorMessage = error.response.data?.detail || '账号或密码错误';
-        throw new Error(errorMessage);
+        throw new Error(String(errorMessage));
       }
       // 重新抛出其他错误
       throw error;
@@ -74,15 +78,20 @@ export const authApi = {
   refreshToken: async (): Promise<{access_token: string}> => {
     const response = await apiClient.post<{access_token: string}>('/auth/refresh_token');
     if (response.data.access_token) {
-      localStorage.setItem('stp_token', response.data.access_token);
+      localStorage.setItem('lumidoc_token', response.data.access_token);
     }
     return response.data;
   },
   
   // 重置密码
-  resetPassword: async (username: string, newPassword: string): Promise<{message: string}> => {
+  resetPassword: async (
+    username: string,
+    currentPassword: string,
+    newPassword: string
+  ): Promise<{message: string}> => {
     const response = await apiClient.post<{message: string}>('/auth/reset_password', {
       username,
+      current_password: currentPassword,
       new_password: newPassword
     });
     return response.data;
@@ -90,6 +99,6 @@ export const authApi = {
   
   // 退出登录
   logout: (): void => {
-    localStorage.removeItem('stp_token');
+    localStorage.removeItem('lumidoc_token');
   }
-}; 
+};

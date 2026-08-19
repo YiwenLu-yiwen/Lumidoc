@@ -8,8 +8,8 @@ import time
 import logging
 import functools
 import asyncio
-from typing import Optional, Callable, Any, Dict
-from fastapi import Request, Response, HTTPException
+from typing import Optional, Callable, Dict
+from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from contextlib import contextmanager
 

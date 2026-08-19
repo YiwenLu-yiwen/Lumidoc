@@ -1,21 +1,22 @@
-FROM node:20-slim
+FROM node:20-slim AS build
 
 WORKDIR /app
 
-# 复制依赖文件
 COPY package.json package-lock.json ./
-
-# 安装依赖
 RUN npm ci
 
-# 复制所有源代码
 COPY . .
-
-# 构建生产版本
 RUN npm run build
 
-# 用于开发环境
+
+FROM nginx:1.27-alpine
+
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+
 EXPOSE 3000
 
-# 开发模式启动命令
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"] 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD wget -q -O /dev/null http://127.0.0.1:3000/healthz || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]

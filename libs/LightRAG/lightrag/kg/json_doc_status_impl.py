@@ -20,6 +20,7 @@ from .shared_storage import (
     set_all_update_flags,
     clear_all_update_flags,
     try_initialize_namespace,
+    workspace_namespace,
 )
 
 
@@ -45,15 +46,16 @@ class JsonDocStatusStorage(DocStatusStorage):
         self._data = None
         self._storage_lock = None
         self.storage_updated = None
+        self._shared_namespace = workspace_namespace(self.namespace, self.workspace)
 
     async def initialize(self):
         """Initialize storage data"""
         self._storage_lock = get_storage_lock()
-        self.storage_updated = await get_update_flag(self.namespace)
+        self.storage_updated = await get_update_flag(self._shared_namespace)
         async with get_data_init_lock():
             # check need_init must before get_namespace_data
-            need_init = await try_initialize_namespace(self.namespace)
-            self._data = await get_namespace_data(self.namespace)
+            need_init = await try_initialize_namespace(self._shared_namespace)
+            self._data = await get_namespace_data(self._shared_namespace)
             if need_init:
                 loaded_data = load_json(self._file_name) or {}
                 async with self._storage_lock:
@@ -117,7 +119,7 @@ class JsonDocStatusStorage(DocStatusStorage):
                     f"Process {os.getpid()} doc status writting {len(data_dict)} records to {self.namespace}"
                 )
                 write_json(data_dict, self._file_name)
-                await clear_all_update_flags(self.namespace)
+                await clear_all_update_flags(self._shared_namespace)
 
     async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
         """
@@ -134,7 +136,7 @@ class JsonDocStatusStorage(DocStatusStorage):
                 if "chunks_list" not in doc_data:
                     doc_data["chunks_list"] = []
             self._data.update(data)
-            await set_all_update_flags(self.namespace)
+            await set_all_update_flags(self._shared_namespace)
 
         await self.index_done_callback()
 
@@ -163,7 +165,7 @@ class JsonDocStatusStorage(DocStatusStorage):
                     any_deleted = True
 
             if any_deleted:
-                await set_all_update_flags(self.namespace)
+                await set_all_update_flags(self._shared_namespace)
 
     async def drop(self) -> dict[str, str]:
         """Drop all document status data from storage and clean up resources
@@ -181,7 +183,7 @@ class JsonDocStatusStorage(DocStatusStorage):
         try:
             async with self._storage_lock:
                 self._data.clear()
-                await set_all_update_flags(self.namespace)
+                await set_all_update_flags(self._shared_namespace)
 
             await self.index_done_callback()
             logger.info(f"Process {os.getpid()} drop {self.namespace}")

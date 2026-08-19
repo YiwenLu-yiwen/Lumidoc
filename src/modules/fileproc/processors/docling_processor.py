@@ -6,11 +6,8 @@ Docling处理器 - 使用docling处理PDF文件并转换为Markdown
 """
 
 import os
-import logging
-import json
-import time
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional
 import asyncio
 import traceback
 import shutil
@@ -394,7 +391,6 @@ class DoclingProcessor:
             str: Markdown内容
         """
         try:
-            from pathlib import Path
             from docling.datamodel.pipeline_options import PdfPipelineOptions, RapidOcrOptions
             from docling.datamodel.accelerator_options import AcceleratorDevice, AcceleratorOptions
             from docling.document_converter import DocumentConverter, PdfFormatOption
@@ -418,14 +414,14 @@ class DoclingProcessor:
             rec_exists = os.path.exists(rec_model_path)
             cls_exists = os.path.exists(cls_model_path)
             
-            logger.info(f"OCR模型检测结果:")
+            logger.info("OCR模型检测结果:")
             logger.info(f"  检测模型: {det_model_path} - {'存在' if det_exists else '不存在'}")
             logger.info(f"  识别模型: {rec_model_path} - {'存在' if rec_exists else '不存在'}")
             logger.info(f"  分类模型: {cls_model_path} - {'存在' if cls_exists else '不存在'}")
             
             models_exist = det_exists and rec_exists and cls_exists
             if not models_exist:
-                logger.warning(f"OCR模型文件不完整，尝试从HuggingFace下载")
+                logger.warning("OCR模型文件不完整，尝试从HuggingFace下载")
                 try:
                     from huggingface_hub import snapshot_download
                     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.."))

@@ -9,7 +9,6 @@ LLM后处理器 - 对docling处理后的内容进行深度总结和格式化
 import os
 import re
 import asyncio
-import math
 from typing import Dict, Any, Optional, List, Tuple
 
 from src.shared.logger import get_logger
@@ -35,7 +34,7 @@ class LLMPostProcessor:
         self.enable_semantic_split = os.environ.get('LLM_SEMANTIC_SPLIT', 'true').lower() == 'true'  # 语义分段
         self.chunk_overlap = int(os.environ.get('LLM_CHUNK_OVERLAP', '200'))  # 分段重叠字符数
         
-        logger.info(f"LLM后处理器初始化:")
+        logger.info("LLM后处理器初始化:")
         logger.info(f"  启用状态: {'启用' if self.enable_llm_processing else '禁用'}")
         logger.info(f"  处理模式: {self.processing_mode}")
         logger.info(f"  最小内容长度: {self.min_content_length}")
@@ -74,7 +73,7 @@ class LLMPostProcessor:
             logger.info(f"内容质量评估: {quality_assessment}")
             
             # 如果内容质量良好，不需要处理
-            if quality_assessment["needs_processing"] == False:
+            if quality_assessment["needs_processing"] is False:
                 logger.info("内容质量良好，无需LLM后处理")
                 return {
                     "success": True,
@@ -422,7 +421,7 @@ class LLMPostProcessor:
             if isinstance(response, str):
                 return response
             elif isinstance(response, dict):
-                # STP格式
+                # Lumidoc格式
                 if "message" in response and "content" in response["message"]:
                     return response["message"]["content"]
                 # OpenAI格式

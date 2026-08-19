@@ -3,9 +3,8 @@
 提供统一的服务URL、主机和端口管理
 """
 
-import os
 import logging
-from typing import Dict, Optional
+from typing import Dict
 from urllib.parse import urlparse
 from .config_loader import get_env
 

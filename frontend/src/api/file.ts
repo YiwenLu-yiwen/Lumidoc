@@ -1,12 +1,42 @@
 import { apiClient } from './client';
 import { ApiResponse } from '../types/api';
 
+interface BatchDeleteResult {
+  deleted: unknown[];
+  failed: unknown[];
+}
+
+interface FileProcessResponse {
+  success: boolean;
+  message?: string;
+}
+
+interface RawFileInfo {
+  file_id?: string | number;
+  filename?: string;
+  display_name?: string;
+  path?: string;
+  size?: number;
+  file_type?: string;
+  content_type?: string;
+  created_at?: string;
+  updated_at?: string;
+  metadata?: string;
+  status?: string;
+  file_hash?: string;
+  name?: string;
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : '未知错误';
+}
+
 // 统一通过Gateway访问文件服务
 const gatewayURL = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8888';
 console.log('[File API] 通过Gateway访问文件服务:', gatewayURL);
 
 // 从后端响应数据转换为前端使用的FileInfo对象
-const convertToFileInfo = (file: any): FileInfo => {
+const convertToFileInfo = (file: RawFileInfo): FileInfo => {
   // 确保文件名正确解码
   const filename = file.filename || '';
   let displayName = '';
@@ -90,7 +120,7 @@ export interface FileProcessingStatus {
   progress: number;
   message?: string;
   task_id: string;
-  result?: any;
+  result?: unknown;
 }
 
 export const fileApi = {
@@ -123,7 +153,7 @@ export const fileApi = {
         // 使用XMLHttpRequest进行上传，支持进度跟踪
         const response = await new Promise<Response>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
-          let startTime = Date.now();
+          const startTime = Date.now();
           
           // 上传进度事件
           xhr.upload.addEventListener('progress', (event) => {
@@ -154,8 +184,8 @@ export const fileApi = {
             reject(new Error('上传请求失败'));
           });
           
-          xhr.open('POST', `${gatewayURL}/file/upload/${projectId}`);
-          xhr.setRequestHeader('Authorization', `Bearer ${localStorage.getItem('stp_token')}`);
+          xhr.open('POST', `${gatewayURL}/api/file/upload/${projectId}`);
+          xhr.setRequestHeader('Authorization', `Bearer ${localStorage.getItem('lumidoc_token')}`);
           xhr.send(formData);
         });
         
@@ -190,7 +220,7 @@ export const fileApi = {
             // 使用XMLHttpRequest进行上传，支持进度跟踪
             const response = await new Promise<Response>((resolve, reject) => {
               const xhr = new XMLHttpRequest();
-              let startTime = Date.now();
+              const startTime = Date.now();
               
               // 上传进度事件
               xhr.upload.addEventListener('progress', (event) => {
@@ -221,8 +251,8 @@ export const fileApi = {
                 reject(new Error('上传请求失败'));
               });
               
-              xhr.open('POST', `${gatewayURL}/file/upload/${projectId}`);
-              xhr.setRequestHeader('Authorization', `Bearer ${localStorage.getItem('stp_token')}`);
+              xhr.open('POST', `${gatewayURL}/api/file/upload/${projectId}`);
+              xhr.setRequestHeader('Authorization', `Bearer ${localStorage.getItem('lumidoc_token')}`);
               xhr.send(formData);
             });
             
@@ -271,7 +301,7 @@ export const fileApi = {
       console.log(`[File API] 请求获取项目${projectId}的文件列表`);
       // 尝试使用axios
       try {
-        const response = await apiClient.get(`/file/api/projects/${projectId}/files`);
+        const response = await apiClient.get(`/api/file/list/${projectId}`);
         
         // 检查响应数据结构
         if (!Array.isArray(response.data)) {
@@ -297,7 +327,7 @@ export const fileApi = {
         console.error('[File API] Axios获取失败，尝试使用fetch API:', axiosError);
         
         // 使用fetch API作为备选方案
-        const token = localStorage.getItem('stp_token');
+        const token = localStorage.getItem('lumidoc_token');
         const headers: Record<string, string> = {
           'Accept': 'application/json',
           'Cache-Control': 'no-cache, no-store'
@@ -307,7 +337,7 @@ export const fileApi = {
           headers['Authorization'] = `Bearer ${token}`;
         }
         
-        const response = await fetch(`${gatewayURL}/file/api/projects/${projectId}/files`, {
+        const response = await fetch(`${gatewayURL}/api/file/list/${projectId}`, {
           method: 'GET',
           headers
         });
@@ -338,8 +368,10 @@ export const fileApi = {
   },
   
   // 处理已上传的文件
-  processFile: async (_projectId: string, filePath: string): Promise<any> => {
-    const response = await apiClient.post<any>(`/file/process`, { file_path: filePath });
+  processFile: async (_projectId: string, filePath: string): Promise<FileProcessResponse> => {
+    const response = await apiClient.post<FileProcessResponse>(`/api/file/process/${filePath}`, null, {
+      params: { project_id: _projectId }
+    });
     return response.data;
   },
   
@@ -353,11 +385,11 @@ export const fileApi = {
       console.log(`[File API] 编码后的路径: ${encodedPath}`);
       
       // 构建完整的请求URL
-      const requestUrl = `${gatewayURL}/file/${projectId}/${encodedPath}`;
+      const requestUrl = `${gatewayURL}/api/file/${projectId}/${encodedPath}`;
       console.log(`[File API] 删除请求URL: ${requestUrl}`);
       
       // 获取身份验证令牌
-      const token = localStorage.getItem('stp_token');
+      const token = localStorage.getItem('lumidoc_token');
       const headers = {
         'Authorization': token ? `Bearer ${token}` : '',
         'Content-Type': 'application/json',
@@ -427,28 +459,27 @@ export const fileApi = {
         success: false,
         message: `删除请求失败: ${response.statusText}`
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[File API] 删除文件失败:', error);
-      console.error('[File API] 错误详情:', error.message, error.stack);
       
       // 返回错误信息
       return {
         success: false,
-        message: `删除文件出错: ${error.message || '未知错误'}`
+        message: `删除文件出错: ${getErrorMessage(error)}`
       };
     }
   },
   
   // 批量删除文件
-  batchDeleteFiles: async (projectId: string, fileHashes: string[]): Promise<ApiResponse> => {
+  batchDeleteFiles: async (projectId: string, fileHashes: string[]): Promise<ApiResponse<BatchDeleteResult>> => {
     try {
       console.log(`[File API] 批量删除文件，项目ID: ${projectId}，文件数量: ${fileHashes.length}`);
       
       // 修复API请求路径，使用正确的端点
-      const requestUrl = `${gatewayURL}/file/batch-delete`;
+      const requestUrl = `${gatewayURL}/api/file/batch-delete`;
       
       // 获取身份验证令牌
-      const token = localStorage.getItem('stp_token');
+      const token = localStorage.getItem('lumidoc_token');
       const headers = {
         'Authorization': token ? `Bearer ${token}` : '',
         'Content-Type': 'application/json',
@@ -472,13 +503,12 @@ export const fileApi = {
       console.log('[File API] 批量删除响应数据:', data);
       
       return data;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[File API] 批量删除文件失败:', error);
-      console.error('[File API] 错误详情:', error.message, error.stack);
       
       return {
         success: false,
-        message: `批量删除文件出错: ${error.message || '未知错误'}`
+        message: `批量删除文件出错: ${getErrorMessage(error)}`
       };
     }
   }

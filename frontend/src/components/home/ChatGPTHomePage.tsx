@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   MessageSquare, 
   Sparkles, 
@@ -51,32 +51,44 @@ export function ChatGPTHomePage() {
   const [showThinking, setShowThinking] = useState(false);
   const [thinkingCollapsed, setThinkingCollapsed] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
-  const [animationStarted, setAnimationStarted] = useState(false);
   const demoRef = useRef<HTMLDivElement>(null);
+  const animationStartedRef = useRef(false);
+  const animationTimersRef = useRef<Set<number>>(new Set());
+  const startAnimationRef = useRef<() => void>(() => {});
 
   // 完整的问题和答案文本（使用翻译）
   const fullQuestion = t('demoQuestion');
   const fullAnswer = t('demoAnswer');
 
   // 打字动画效果
-  const typeText = (text: string, callback: (currentText: string) => void, onComplete?: () => void) => {
+  const typeText = useCallback((text: string, callback: (currentText: string) => void, onComplete?: () => void) => {
     let currentIndex = 0;
-    const typingInterval = setInterval(() => {
+    const typingInterval = window.setInterval(() => {
       if (currentIndex <= text.length) {
         callback(text.slice(0, currentIndex));
         currentIndex++;
       } else {
         clearInterval(typingInterval);
+        animationTimersRef.current.delete(typingInterval);
         onComplete?.();
       }
     }, 120); // 每120ms打一个字符
+    animationTimersRef.current.add(typingInterval);
     return typingInterval;
-  };
+  }, []);
+
+  const scheduleAnimationStep = useCallback((callback: () => void, delay: number) => {
+    const timer = window.setTimeout(() => {
+      animationTimersRef.current.delete(timer);
+      callback();
+    }, delay);
+    animationTimersRef.current.add(timer);
+  }, []);
 
   // 启动动画序列
-  const startAnimation = () => {
-    if (animationStarted) return;
-    setAnimationStarted(true);
+  const startAnimation = useCallback(() => {
+    if (animationStartedRef.current) return;
+    animationStartedRef.current = true;
     
     // 重置状态
     setAnimationStep(0);
@@ -87,32 +99,32 @@ export function ChatGPTHomePage() {
     setIsTyping(true);
 
     // 步骤1: 用户问题打字动画
-    setTimeout(() => {
+    scheduleAnimationStep(() => {
       typeText(fullQuestion, setQuestionText, () => {
         setIsTyping(false);
         setAnimationStep(1);
         
         // 步骤2: 显示思考过程
-        setTimeout(() => {
+        scheduleAnimationStep(() => {
           setShowThinking(true);
           setAnimationStep(2);
           
           // 步骤3: 开始回答并折叠思考
-          setTimeout(() => {
+          scheduleAnimationStep(() => {
             setThinkingCollapsed(true);
             setAnimationStep(3);
             setIsTyping(true);
             
             // 步骤4: AI回答打字动画
-            setTimeout(() => {
+            scheduleAnimationStep(() => {
               typeText(fullAnswer, setAnswerText, () => {
                 setIsTyping(false);
                 setAnimationStep(4);
                 
                 // 5秒后重新开始动画
-                setTimeout(() => {
-                  setAnimationStarted(false);
-                  startAnimation();
+                scheduleAnimationStep(() => {
+                  animationStartedRef.current = false;
+                  startAnimationRef.current();
                 }, 5000);
               });
             }, 500);
@@ -120,14 +132,21 @@ export function ChatGPTHomePage() {
         }, 1000);
       });
     }, 1000);
-  };
+  }, [fullAnswer, fullQuestion, scheduleAnimationStep, typeText]);
+  startAnimationRef.current = startAnimation;
+
+  useEffect(() => () => {
+    animationTimersRef.current.forEach(timer => window.clearTimeout(timer));
+    animationTimersRef.current.clear();
+    animationStartedRef.current = false;
+  }, []);
 
   // 监听滚动，当演示区域进入视野时开始动画
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
         const entry = entries[0];
-        if (entry.isIntersecting && !animationStarted) {
+        if (entry.isIntersecting) {
           startAnimation();
         }
       },
@@ -137,16 +156,17 @@ export function ChatGPTHomePage() {
       }
     );
 
-    if (demoRef.current) {
-      observer.observe(demoRef.current);
+    const demoElement = demoRef.current;
+    if (demoElement) {
+      observer.observe(demoElement);
     }
 
     return () => {
-      if (demoRef.current) {
-        observer.unobserve(demoRef.current);
+      if (demoElement) {
+        observer.unobserve(demoElement);
       }
     };
-  }, [animationStarted]);
+  }, [startAnimation]);
 
   // 核心特性展示（使用翻译）
   const coreFeatures: FeatureCard[] = [
@@ -206,64 +226,64 @@ export function ChatGPTHomePage() {
       feature: t('responseSpeed'),
       traditional: false,
       traditionalText: t('cloudDeploymentLatency'),
-      stp: true,
-      stpText: t('localDeploymentFast'),
+      lumidoc: true,
+      lumidocText: t('localDeploymentFast'),
       icon: Clock
     },
     {
       feature: t('dataSecurity'),
       traditional: false,
       traditionalText: t('dataUploadRisk'),
-      stp: true,
-      stpText: t('dataStaysPrivate'),
+      lumidoc: true,
+      lumidocText: t('dataStaysPrivate'),
       icon: Shield
     },
     {
       feature: t('knowledgeManagement'),
       traditional: false,
       traditionalText: t('vectorSearchLimited'),
-      stp: true,
-      stpText: t('graphRAGRelations'),
+      lumidoc: true,
+      lumidocText: t('graphRAGRelations'),
       icon: Database
     },
     {
       feature: t('deploymentFlexibility'),
       traditional: false,
       traditionalText: t('monolithicArchitecture'),
-      stp: true,
-      stpText: t('microservicesFlexible'),
+      lumidoc: true,
+      lumidocText: t('microservicesFlexible'),
       icon: Server
     },
     {
       feature: t('multiModelSupport'),
       traditional: false,
       traditionalText: t('singleModelLimited'),
-      stp: true,
-      stpText: t('multiModelCollaboration'),
+      lumidoc: true,
+      lumidocText: t('multiModelCollaboration'),
       icon: Brain
     },
     {
       feature: t('documentProcessing'),
       traditional: false,
       traditionalText: t('basicOCRLimited'),
-      stp: true,
-      stpText: t('smartOCRAccurate'),
+      lumidoc: true,
+      lumidocText: t('smartOCRAccurate'),
       icon: FileSearch
     },
     {
       feature: t('projectManagement'),
       traditional: false,
       traditionalText: t('simpleFileManagement'),
-      stp: true,
-      stpText: t('multiTenantCollaboration'),
+      lumidoc: true,
+      lumidocText: t('multiTenantCollaboration'),
       icon: Users
     },
     {
       feature: t('systemArchitecture'),
       traditional: false,
       traditionalText: t('traditionalMonolith'),
-      stp: true,
-      stpText: t('modernMicroservices'),
+      lumidoc: true,
+      lumidocText: t('modernMicroservices'),
       icon: Layers
     }
   ];
@@ -760,7 +780,7 @@ export function ChatGPTHomePage() {
                       </div>
                     </div>
 
-                    {/* STP方案 */}
+                    {/* Lumidoc方案 */}
                     <div className={`p-6 border-l flex items-center ${
                       isDarkMode ? 'border-gray-700' : 'border-gray-200'
                     }`}>
@@ -769,7 +789,7 @@ export function ChatGPTHomePage() {
                           <Check className="w-6 h-6 text-green-500" />
                         </div>
                         <span className={`text-sm font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>
-                          {item.stpText}
+                          {item.lumidocText}
                         </span>
                       </div>
                     </div>

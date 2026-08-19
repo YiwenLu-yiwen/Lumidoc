@@ -9,14 +9,14 @@ function getPortFromUrl(url: string, defaultPort = 3000): number {
   try {
     const parsedUrl = new URL(url);
     return parseInt(parsedUrl.port) || defaultPort;
-  } catch (error) {
+  } catch {
     console.warn(`无法从URL解析端口: ${url}, 使用默认端口: ${defaultPort}`);
     return defaultPort;
   }
 }
 
 // 根据DEPLOYMENT_MODE配置URL
-function getServiceUrl(env: any, baseUrl: string, serverUrl?: string): string {
+function getServiceUrl(env: Record<string, string>, baseUrl: string, serverUrl?: string): string {
   const deploymentMode = env.DEPLOYMENT_MODE || 'localhost';
   
   if (deploymentMode === 'server' && serverUrl) {

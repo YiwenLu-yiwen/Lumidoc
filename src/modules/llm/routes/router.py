@@ -7,7 +7,7 @@ LLM API路由定义
 
 import logging
 import re
-from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks, Body
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field
@@ -191,7 +191,7 @@ async def generate_chat(
     """生成聊天回复接口"""
     try:
         # 将Pydantic模型转换为字典列表
-        messages = [msg.dict() for msg in request.messages]
+        messages = [msg.model_dump() for msg in request.messages]
         
         # 检查是否为流式请求
         if request.stream:
@@ -201,7 +201,8 @@ async def generate_chat(
                     messages,
                     temperature=request.temperature,
                     max_tokens=request.max_tokens,
-                    stop_sequences=request.stop_sequences
+                    stop_sequences=request.stop_sequences,
+                    model=request.model,
                 ):
                     # 返回JSON格式的流式数据，确保与LLMServiceClient期待的格式匹配
                     import json
@@ -217,7 +218,8 @@ async def generate_chat(
             messages,
             temperature=request.temperature,
             max_tokens=request.max_tokens,
-            stop_sequences=request.stop_sequences
+            stop_sequences=request.stop_sequences,
+            model=request.model,
         )
         
         return ChatGenerationResponse(
@@ -346,7 +348,10 @@ async def create_embeddings(
     """生成文本嵌入向量"""
     try:
         # 调用嵌入服务
-        embeddings = await llm_service.create_embeddings(request.texts)
+        embeddings = await llm_service.create_embeddings(
+            request.texts,
+            model=request.model,
+        )
         
         return EmbeddingResponse(
             embeddings=embeddings,
@@ -393,23 +398,6 @@ class EntityExtractionRequest(BaseModel):
 # 实体提取响应
 class EntityExtractionResponse(BaseModel):
     entities: List[str]
-
-# 三元组提取请求模型
-class TriplesExtractionRequest(BaseModel):
-    content: str
-    file_id: Optional[str] = None
-    project_id: Optional[str] = None
-    options: Optional[Dict[str, Any]] = None
-
-# 三元组对象
-class Triple(BaseModel):
-    head: str
-    relation: str
-    tail: str
-
-# 三元组提取响应
-class TriplesExtractionResponse(BaseModel):
-    triples: List[Triple]
 
 @router.post("/entities", response_model=EntityExtractionResponse)
 async def extract_entities(request: EntityExtractionRequest,
@@ -461,59 +449,6 @@ async def extract_entities(request: EntityExtractionRequest,
         logger.error(f"实体提取失败: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/triples", response_model=TriplesExtractionResponse)
-async def extract_triples(request: TriplesExtractionRequest,
-    llm_service: LLMService = Depends(get_llm_service)):
-    """
-    从内容中提取知识三元组 (主体-关系-客体)
-    """
-    try:
-        # 截取文本，防止过长
-        max_content_length = 8000
-        content = request.content
-        if len(content) > max_content_length:
-            content = content[:max_content_length] + "..."
-        
-        # 调用LLM提取三元组
-        prompt = f"""从以下文本中提取知识三元组。每个三元组应包含主体(头部)、关系和客体(尾部)。
-尽可能提取文本中隐含的关系和知识点，确保三元组的准确性和表达的完整性。
-将结果以每行一个三元组的格式返回，格式为 "主体 | 关系 | 客体"。
-不要添加解释或任何其他内容。
-
-文本内容:
-{content}
-
-三元组:"""
-        
-        # 获取LLM回答
-        response = await llm_service.generate_text(
-            prompt=prompt, 
-            max_tokens=500,
-            temperature=0.1,
-            model=request.options.get("model", "default") if request.options else "default"
-        )
-        
-        # 解析三元组
-        triples = []
-        if response:
-            lines = response.strip().split('\n')
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    continue
-                    
-                # 处理格式为 "head | relation | tail" 的行
-                if '|' in line:
-                    parts = [part.strip() for part in line.split('|', 2)]
-                    if len(parts) == 3:
-                        triple = Triple(head=parts[0], relation=parts[1], tail=parts[2])
-                        triples.append(triple)
-        
-        return TriplesExtractionResponse(triples=triples)
-    except Exception as e:
-        logger.error(f"三元组提取失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 # =============== Ollama 模型管理 API ===============
 
 # Ollama 模型信息
@@ -554,7 +489,6 @@ async def get_models():
         # 调用现有的模型服务逻辑
         # 这里我们需要访问Ollama API来获取模型列表
         import httpx
-        import asyncio
         from ..config.config import settings
         
         models = []
@@ -664,7 +598,7 @@ async def pull_model(request: ModelPullRequest, background_tasks: BackgroundTask
                             'message': f'模型 {model_name} 已存在',
                             'model': model_name
                         }
-            except:
+            except Exception:
                 pass  # 忽略检查错误，继续下载
         
         # 启动后台下载任务
@@ -753,4 +687,4 @@ async def download_model_task(model_name: str, ollama_url: str):
         
         logger.info(f"模型下载完成: {model_name}")
     except Exception as e:
-        logger.error(f"下载模型任务失败 [{model_name}]: {str(e)}") 
+        logger.error(f"下载模型任务失败 [{model_name}]: {str(e)}")

@@ -1052,12 +1052,12 @@ def initialize_share_data(workers: int = 1):
     _initialized = True
 
 
-async def initialize_pipeline_status():
+async def initialize_pipeline_status(namespace: str = "pipeline_status"):
     """
     Initialize pipeline namespace with default values.
     This function is called during FASTAPI lifespan for each worker.
     """
-    pipeline_namespace = await get_namespace_data("pipeline_status")
+    pipeline_namespace = await get_namespace_data(namespace)
 
     async with get_internal_lock():
         # Check if already initialized by checking for required fields
@@ -1209,6 +1209,11 @@ async def get_namespace_data(namespace: str) -> Dict[str, Any]:
                 _shared_dicts[namespace] = {}
 
     return _shared_dicts[namespace]
+
+
+def workspace_namespace(namespace: str, workspace: str | None) -> str:
+    """Scope process-shared state to a LightRAG workspace."""
+    return f"{workspace}:{namespace}" if workspace else namespace
 
 
 def finalize_share_data():

@@ -5,6 +5,8 @@
 认证服务启动入口
 """
 
+# ruff: noqa: E402 -- direct execution adjusts sys.path before package imports.
+
 import uvicorn
 import sys
 import os
@@ -36,25 +38,25 @@ async def lifespan(app):
     try:
         await health_checker.start()
         print("Auth服务启动成功")
-        
+
         # 注册到服务发现
         from src.shared.service_discovery import register_service
         await register_service("auth", port=settings.port, health_check_endpoint="/healthz")
-        
+
     except Exception as e:
         print(f"Auth服务启动失败: {str(e)}")
-        
+
     yield
-    
+
     # 关闭事件
     try:
         await health_checker.stop()
         print("Auth服务关闭")
-        
+
         # 从服务发现注销
         from src.shared.service_discovery import unregister_service
         await unregister_service("auth")
-        
+
     except Exception as e:
         print(f"Auth服务关闭失败: {str(e)}")
 
@@ -104,4 +106,4 @@ register_health_routes(app, health_checker)
 
 if __name__ == "__main__":
     print(f"启动认证服务 - 监听: 0.0.0.0:{settings.port}")
-    uvicorn.run(app, host="0.0.0.0", port=settings.port) 
+    uvicorn.run(app, host="0.0.0.0", port=settings.port)

@@ -4,7 +4,7 @@ Gateway限流中间件
 
 import logging
 import time
-from typing import Dict, List, Optional, Any, Callable
+from typing import Dict, Optional, Any, Callable
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware

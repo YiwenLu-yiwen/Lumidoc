@@ -1,11 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   User,
-  Settings,
   Moon,
   Sun,
   Monitor,
-  Globe,
   Bell,
   Shield,
   Database,
@@ -16,8 +14,6 @@ import {
   RefreshCw,
   Save,
   Check,
-  AlertCircle,
-  Info,
   Eye,
   EyeOff,
   Copy,
@@ -154,7 +150,7 @@ export function SettingsPage() {
       await new Promise(resolve => setTimeout(resolve, 1000));
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
-    } catch (error) {
+    } catch {
       setSaveStatus('error');
       setTimeout(() => setSaveStatus('idle'), 2000);
     }

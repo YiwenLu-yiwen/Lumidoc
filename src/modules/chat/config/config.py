@@ -3,12 +3,11 @@
 使用统一配置系统
 """
 
-import os
-from typing import Optional, Dict, Any, List
-from src.shared.config import ChatServiceSettings, get_env
+from src.shared.config import ChatServiceSettings, RAGServiceSettings, get_env
 
 # 创建全局设置实例
 settings_base = ChatServiceSettings()
+rag_settings = RAGServiceSettings()
 
 class ExtendedChatSettings:
     """扩展聊天服务配置，保持向后兼容性"""
@@ -27,8 +26,8 @@ class ExtendedChatSettings:
     postgres_host: str = get_env("POSTGRES_HOST", "localhost")
     postgres_port: int = get_env("POSTGRES_PORT", 5432, env_type=int)
     postgres_user: str = get_env("POSTGRES_USER", "postgres")
-    postgres_password: str = get_env("POSTGRES_PASSWORD", "postgres")
-    postgres_db: str = get_env("POSTGRES_DB", "stpdb")
+    postgres_password: str = get_env("POSTGRES_PASSWORD", "")
+    postgres_db: str = get_env("POSTGRES_DB", "lumidoc")
     
     # 构建PostgreSQL连接URL
     @property
@@ -48,5 +47,11 @@ class ExtendedChatSettings:
     session_timeout: int = settings_base.session_timeout
     storage_mode: str = settings_base.storage_mode
 
+    # Chat consumes the public RAG contract; it must not import RAG internals.
+    default_query_mode: str = rag_settings.default_query_mode
+    rag_top_k: int = rag_settings.default_top_k
+    rag_search_mode: str = rag_settings.default_query_mode
+    rag_use_rerank: bool = get_env("RAG_USE_RERANK", False, env_type=bool)
+
 # 创建配置实例
-settings = ExtendedChatSettings() 
+settings = ExtendedChatSettings()

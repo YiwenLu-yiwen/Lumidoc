@@ -2,7 +2,7 @@
 
 ## 概述
 
-LightRAG 服务是 STP 平台的核心知识图谱构建服务，负责将用户上传的文档转换为结构化的知识图谱，支持智能问答和知识检索。本文档详细说明文件处理的完整逻辑流程。
+LightRAG 服务是 Lumidoc 平台的核心知识图谱构建服务，负责将用户上传的文档转换为结构化的知识图谱，支持智能问答和知识检索。本文档详细说明文件处理的完整逻辑流程。
 
 ## 架构原理
 
@@ -17,10 +17,10 @@ LightRAG 服务是 STP 平台的核心知识图谱构建服务，负责将用户
 
 所有存储组件都使用统一的工作空间格式：
 ```
-stp_{project_id}_chunk_entity_relation
+lumidoc_{project_id}_chunk_entity_relation
 ```
 
-例如：`stp_project123_chunk_entity_relation`
+例如：`lumidoc_project123_chunk_entity_relation`
 
 ## 文件处理完整流程
 
@@ -132,7 +132,7 @@ graph TD
 **关键特性**:
 - 自动检测存储类型（entity/relationship）
 - 传递标准化namespace给父类
-- 修复workspace格式bug（避免`stp_X_chunk_entity_relationchunks`）
+- 修复workspace格式bug（避免`lumidoc_X_chunk_entity_relationchunks`）
 
 #### 4.3 图存储 (知识图谱)
 
@@ -163,7 +163,7 @@ graph TD
 ```python
 @classmethod
 def standardize(cls, input_namespace: str, fallback_project_id: Optional[str] = None) -> str:
-    """标准化工作空间格式为 stp_{project_id}_chunk_entity_relation"""
+    """标准化工作空间格式为 lumidoc_{project_id}_chunk_entity_relation"""
 
 @classmethod  
 def extract_project_id(cls, workspace: str) -> Optional[str]:
@@ -216,9 +216,9 @@ LightRAG批量处理: [file_001.txt, file_003.txt]
 DATABASE_CONFIG = {
     "host": "localhost",
     "port": 5432, 
-    "user": "stpuser",
-    "password": "stppassword",
-    "database": "stpdb"
+    "user": "postgres",
+    "password": "postgres",
+    "database": "lumidoc"
 }
 ```
 

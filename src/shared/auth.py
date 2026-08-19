@@ -3,15 +3,14 @@
 """
 
 from fastapi import Depends, HTTPException, status, Request, Response, Header
-from typing import Dict, Any, Optional, Union
+from typing import Optional
 import os
 import requests
 import logging
-import jwt
-from datetime import datetime, timedelta
+from datetime import datetime
 from pydantic import BaseModel
 from fastapi.security import OAuth2PasswordBearer
-from src.shared.jwt_utils import decode_jwt_token, is_token_expiring_soon, create_jwt_token, TOKEN_EXPIRE_MINUTES
+from src.shared.jwt_utils import decode_jwt_token, is_token_expiring_soon, TOKEN_EXPIRE_MINUTES
 
 # 初始化日志
 logger = logging.getLogger(__name__)
@@ -50,7 +49,7 @@ async def get_current_user_from_auth_service(token: str) -> Optional[User]:
         # 严格遵循项目原则：所有服务间调用必须通过Gateway
         from .service_discovery import call_service
         
-        logger.debug(f"通过Gateway验证用户令牌")
+        logger.debug("通过Gateway验证用户令牌")
         
         # 通过Gateway调用认证服务验证端点
         response = await call_service(
@@ -61,20 +60,28 @@ async def get_current_user_from_auth_service(token: str) -> Optional[User]:
             timeout=5.0
         )
         
-        if response and response.get("success", False):
-            # 身份验证成功
-            user_data = response.get("data") or response
-            logger.debug(f"验证成功: {user_data}")
-            return User(**user_data)
-        else:
-            # 身份验证失败
-            logger.warning(f"验证失败: {response}")
+        if not response:
+            logger.warning("认证服务未返回验证结果")
             return None
+
+        if response.get("success") is False or response.get("valid") is False:
+            logger.warning("认证服务拒绝了令牌")
+            return None
+
+        user_data = dict(response.get("data") or response)
+        if user_data.get("valid") is False:
+            logger.warning("认证服务拒绝了令牌")
+            return None
+        if "id" not in user_data and "user_id" in user_data:
+            user_data["id"] = user_data["user_id"]
+
+        logger.debug("认证服务已验证用户 %s", user_data.get("id"))
+        return User(**user_data)
     except Exception as e:
         logger.error(f"验证请求发生错误: {str(e)}")
         return None
 
-async def get_current_user(
+async def get_current_user_from_token(
     authorization: str = Header(None),
     token: str = Depends(oauth2_scheme)
 ) -> User:
@@ -94,9 +101,9 @@ async def get_current_user(
     # 检查是否是服务间调用
     if authorization and authorization.startswith("Service "):
         service_token = authorization.replace("Service ", "")
-        expected_token = os.environ.get("SERVICE_AUTH_TOKEN", "service-token-for-internal-use")
+        expected_token = os.environ.get("SERVICE_AUTH_TOKEN")
         
-        if service_token == expected_token:
+        if expected_token and service_token == expected_token:
             # 服务间认证成功，返回系统用户
             return User(
                 id=0,
@@ -144,7 +151,7 @@ async def get_current_user(
         logger.error(f"验证令牌失败: {str(e)}")
         raise HTTPException(status_code=401, detail="无效的认证令牌")
 
-def get_current_user(request: Request = None, response: Response = None) -> User:
+async def get_current_user(request: Request = None, response: Response = None) -> User:
     """
     识别当前用户，并支持令牌刷新
     
@@ -164,7 +171,9 @@ def get_current_user(request: Request = None, response: Response = None) -> User
             # 构造空请求和响应
             empty_request = Request(scope={"type": "http"})
             empty_response = Response()
-            return auth_get_current_user(request=empty_request, response=empty_response)
+            return await auth_get_current_user(
+                request=empty_request, response=empty_response
+            )
         except ImportError:
             logger.error("无法导入auth模块的get_current_user函数")
             raise HTTPException(
@@ -184,7 +193,7 @@ def get_current_user(request: Request = None, response: Response = None) -> User
     token = authorization.replace("Bearer ", "")
     
     # 从认证服务验证令牌
-    user = get_current_user_from_auth_service(token)
+    user = await get_current_user_from_auth_service(token)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -223,4 +232,4 @@ def get_current_user(request: Request = None, response: Response = None) -> User
         logger.warning(f"检查令牌有效期时出错: {str(e)}")
         # 忽略错误，继续使用原令牌
         
-    return user 
+    return user

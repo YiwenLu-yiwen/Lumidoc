@@ -64,7 +64,7 @@ const relationshipColors = {
   '组织关系': '#FFEAA7'
 }
 
-const getNodeColor = (node: any) => {
+const getNodeColor = (node: NodeData) => {
   // 首先尝试通过type获取颜色
   if (node.type && nodeColors[node.type as keyof typeof nodeColors]) {
     return {
@@ -112,7 +112,7 @@ const getNodeColor = (node: any) => {
   }
 }
 
-const getRelationshipColor = (edge: any) => {
+const getRelationshipColor = (edge: EdgeData) => {
   // 首先尝试通过label完全匹配
   if (edge.label && relationshipColors[edge.label as keyof typeof relationshipColors]) {
     return relationshipColors[edge.label as keyof typeof relationshipColors]
@@ -142,8 +142,9 @@ interface NodeData {
   id: string
   label?: string
   type?: string
+  role?: string
   description?: string
-  properties?: Record<string, any>
+  properties?: Record<string, unknown>
 }
 
 // Define the shape of our edge data from the API
@@ -151,12 +152,13 @@ interface EdgeData {
   source: string
   target: string
   label?: string
+  type?: string
 }
 
 interface CustomNode extends Node {
   type?: string
   description?: string
-  properties?: Record<string, any>
+  properties?: Record<string, unknown>
   file_path?: string
   degree?: number
 }
@@ -166,23 +168,24 @@ interface NodeDetails {
   label: string
   type?: string
   description?: string
-  properties?: Record<string, any>
+  properties?: Record<string, unknown>
   relationships?: Array<{
     type: string
     node: string
   }>
 }
 
+type GraphViewData = { nodes: NodeData[]; edges: EdgeData[] }
 
 export default function Graph() {
   const containerRef = useRef<HTMLDivElement>(null)
   const networkRef = useRef<Network | null>(null)
+  const graphNodesRef = useRef<CustomNode[]>([])
+  const renderGraphRef = useRef<(data: GraphViewData) => void>(() => {})
   const { projectId } = useParams()
   const [selectedNode, setSelectedNode] = useState<NodeDetails | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
-  const [_highlightedNodes, setHighlightedNodes] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
-  const [_graphData, setGraphData] = useState<{nodes: NodeData[], edges: EdgeData[]} | null>(null)
 
   // 初始加载图谱数据
   useEffect(() => {
@@ -202,8 +205,7 @@ export default function Graph() {
           edges: Array.isArray(data?.edges) ? data.edges : []
         }
         
-        setGraphData(safeData)
-        renderGraph(safeData)
+        renderGraphRef.current(safeData)
         
         // 显示加载结果
         if (safeData.nodes.length === 0) {
@@ -217,8 +219,7 @@ export default function Graph() {
         console.error('[Graph] 加载图谱数据失败:', error)
         // 提供空数据以确保界面正常工作
         const emptyData = { nodes: [], edges: [] }
-        setGraphData(emptyData)
-        renderGraph(emptyData)
+        renderGraphRef.current(emptyData)
         
         // 显示友好的错误提示
         toast('图谱数据加载失败', { 
@@ -233,7 +234,7 @@ export default function Graph() {
   }, [projectId])
 
   // 渲染图谱
-  const renderGraph = (data: {nodes: NodeData[], edges: EdgeData[]}) => {
+  const renderGraph = (data: GraphViewData) => {
     if (!containerRef.current) return
 
     // 处理空数据情况
@@ -282,6 +283,7 @@ export default function Graph() {
       }
       return customNode
     }).filter(node => node !== null) as CustomNode[]
+    graphNodesRef.current = nodes
 
     // 边的样式设置
     const edges = (data.edges as EdgeData[]).map((edge, index) => {
@@ -468,7 +470,6 @@ export default function Graph() {
           const neighborsData = await getNodeNeighbors(projectId, nodeId, 1)
           
           if (neighborsData && (neighborsData.nodes.length > 0 || neighborsData.edges.length > 0)) {
-            setGraphData(neighborsData)
             renderGraph(neighborsData)
             toast.success(`显示节点 ${nodeLabel} 的邻居`)
           } else {
@@ -483,60 +484,44 @@ export default function Graph() {
       }
     })
   }
+  renderGraphRef.current = renderGraph
 
 
   // 搜索节点
   const searchNodesLocal = (term: string) => {
     try {
       if (!networkRef.current || !term) {
-        setHighlightedNodes(new Set())
+        networkRef.current?.unselectAll()
         return
       }
 
-      const network = networkRef.current as any
-      if (network.body && network.body.data && network.body.data.nodes) {
-        const nodes = network.body.data.nodes.get()
-        const matches = new Set<string>()
-        
-        if (Array.isArray(nodes)) {
-          nodes.forEach((node: any) => {
-            if (!node) return
-            
-            const label = String(node.label || '').toLowerCase()
-            const type = String(node.type || '').toLowerCase()
-            const description = String(node.description || '').toLowerCase()
-            const searchTerm = term.toLowerCase()
-            
-            if (label.includes(searchTerm) || 
-                type.includes(searchTerm) || 
-                description.includes(searchTerm)) {
-              matches.add(node.id)
-            }
-          })
+      const matches = new Set<string>()
+      const normalizedTerm = term.toLowerCase()
 
-          setHighlightedNodes(matches)
-          
-          // 高亮匹配的节点
-          if (network.body.data.nodes.setSelection) {
-            network.body.data.nodes.setSelection({
-              nodes: Array.from(matches),
-              edges: []
-            })
-          }
-          
-          console.log(`[Graph] 本地搜索"${term}"找到 ${matches.size} 个匹配节点`)
+      graphNodesRef.current.forEach((node) => {
+        const label = String(node.label || '').toLowerCase()
+        const type = String(node.type || '').toLowerCase()
+        const description = String(node.description || '').toLowerCase()
+
+        if (label.includes(normalizedTerm) ||
+            type.includes(normalizedTerm) ||
+            description.includes(normalizedTerm)) {
+          matches.add(String(node.id))
         }
-      }
+      })
+
+      networkRef.current.selectNodes(Array.from(matches), false)
+      console.log(`[Graph] 本地搜索"${term}"找到 ${matches.size} 个匹配节点`)
     } catch (error) {
       console.error('[Graph] 本地搜索失败:', error)
-      setHighlightedNodes(new Set())
+      networkRef.current?.unselectAll()
     }
   }
 
   // 远程搜索节点
   const searchNodesRemote = async (term: string) => {
     if (!projectId || !term) {
-      setHighlightedNodes(new Set())
+      networkRef.current?.unselectAll()
       return
     }
 
@@ -545,12 +530,11 @@ export default function Graph() {
       const searchResult = await searchNodes(projectId, term)
       
       if (searchResult && searchResult.nodes) {
-        setGraphData(searchResult)
         renderGraph(searchResult)
         
         // 高亮搜索结果
         const matches = new Set(searchResult.nodes.map(node => node.id).filter(id => id))
-        setHighlightedNodes(matches)
+        networkRef.current?.selectNodes(Array.from(matches), false)
         
         if (searchResult.nodes.length > 0) {
           toast.success(`找到 ${searchResult.nodes.length} 个相关节点`)
@@ -592,10 +576,9 @@ export default function Graph() {
         <Button 
           onClick={() => {
             setSearchTerm('')
-            setHighlightedNodes(new Set())
+            networkRef.current?.unselectAll()
             if (projectId) {
               fetchGraphData(projectId).then(data => {
-                setGraphData(data)
                 renderGraph(data)
               }).catch(() => {
                 // 忽略错误，避免重复提示
@@ -634,7 +617,6 @@ export default function Graph() {
                     const neighborsData = await getNodeNeighbors(projectId, selectedNode.id, 1)
                     
                     if (neighborsData && (neighborsData.nodes.length > 0 || neighborsData.edges.length > 0)) {
-                      setGraphData(neighborsData)
                       renderGraph(neighborsData)
                       toast.success(`显示节点 ${selectedNode.label} 的邻居`)
                     } else {

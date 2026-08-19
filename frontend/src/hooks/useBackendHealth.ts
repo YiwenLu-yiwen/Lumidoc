@@ -24,7 +24,7 @@ export function useBackendHealth(options: UseBackendHealthOptions = {}) {
 
   const [isBackendOnline, setIsBackendOnline] = useState<boolean | null>(null);
   const [healthStatus, setHealthStatus] = useState<BackendHealthStatus | null>(null);
-  const [isChecking, setIsChecking] = useState(false);
+  const [isChecking] = useState(false);
   const [lastCheckTime, setLastCheckTime] = useState<Date | null>(null);
   // 使用useRef保证subscriberId在组件生命周期内保持不变
   const subscriberIdRef = useRef<string>(`health-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
@@ -53,12 +53,13 @@ export function useBackendHealth(options: UseBackendHealthOptions = {}) {
   // 订阅全局健康检查管理器 - 只在组件挂载时执行一次
   useEffect(() => {
     const manager = HealthCheckManager.getInstance();
+    const subscriberId = subscriberIdRef.current;
     
-    console.log(`[Backend Health] 订阅全局健康检查管理器: ${subscriberIdRef.current}`);
+    console.log(`[Backend Health] 订阅全局健康检查管理器: ${subscriberId}`);
     
     // 订阅健康状态变化
     const unsubscribe = manager.subscribe({
-      id: subscriberIdRef.current,
+      id: subscriberId,
       onHealthChange: (status) => {
         setHealthStatus(status);
         if (status) {
@@ -80,11 +81,6 @@ export function useBackendHealth(options: UseBackendHealthOptions = {}) {
       }
     });
 
-    // 如果启用自动检查，则启用全局管理器
-    if (autoCheck) {
-      manager.enable(checkInterval);
-    }
-
     // 获取当前状态
     const currentState = manager.getCurrentStatus();
     if (currentState.status) {
@@ -98,7 +94,7 @@ export function useBackendHealth(options: UseBackendHealthOptions = {}) {
     }
 
     return () => {
-      console.log(`[Backend Health] 取消订阅: ${subscriberIdRef.current}`);
+      console.log(`[Backend Health] 取消订阅: ${subscriberId}`);
       unsubscribe();
     };
   }, []); // 空依赖数组，只在组件挂载时执行一次

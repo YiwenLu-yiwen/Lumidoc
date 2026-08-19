@@ -1,12 +1,11 @@
 import os
-import logging
 from src.shared.logger import initialize_logging, get_logger
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import requests
 import json
-from typing import Optional, Dict, Any
+from typing import Optional, Dict
 from pathlib import Path
 from dotenv import load_dotenv
 

@@ -4,7 +4,7 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional, IO, Union, BinaryIO, Any
+from typing import Union
 from pathlib import Path
 
 

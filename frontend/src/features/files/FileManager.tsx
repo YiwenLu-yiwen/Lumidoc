@@ -6,7 +6,7 @@ import { Spinner } from '../../components/ui';
 import useAuthState from '../../hooks/useAuthState';
 
 // 存储标签状态的本地存储键名
-const TAB_STORAGE_KEY = 'stp_file_manager_active_tab';
+const TAB_STORAGE_KEY = 'lumidoc_file_manager_active_tab';
 
 const FileManager = () => {
   // 使用认证状态钩子，确保用户已登录

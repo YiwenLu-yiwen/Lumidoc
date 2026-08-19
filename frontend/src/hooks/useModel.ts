@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { createContext, useCallback, useContext, useState, useEffect } from 'react';
 import { ModelInfo, getAvailableModels } from '@/api/modelService';
 
 export interface ModelState {
@@ -6,6 +6,21 @@ export interface ModelState {
   availableModels: ModelInfo[];
   loading: boolean;
   error: string | null;
+}
+
+export interface ModelSelectionContextValue {
+  selectedModel: ModelInfo | null;
+  selectModel: (model: ModelInfo) => void;
+}
+
+export const ModelSelectionContext = createContext<ModelSelectionContextValue | null>(null);
+
+export function useSelectedModel(): ModelSelectionContextValue {
+  const value = useContext(ModelSelectionContext);
+  if (!value) {
+    throw new Error('useSelectedModel must be used inside MainLayout');
+  }
+  return value;
 }
 
 export function useModel() {
@@ -17,26 +32,21 @@ export function useModel() {
   });
 
   // 加载模型列表
-  const loadModels = async () => {
+  const loadModels = useCallback(async () => {
     setState(prev => ({ ...prev, loading: true, error: null }));
     
     try {
       const response = await getAvailableModels();
       const availableModels = response.models;
       
-      // 如果没有选中模型，自动选择第一个可用的模型
-      let selectedModel = state.selectedModel;
-      if (!selectedModel && availableModels.length > 0) {
-        // 优先选择可用的思考模型
-        const thinkingModel = availableModels.find(m => m.isAvailable && m.type === 'thinking');
-        const anyAvailableModel = availableModels.find(m => m.isAvailable);
-        selectedModel = thinkingModel || anyAvailableModel || null;
-      }
-      
       setState(prev => ({
         ...prev,
         availableModels,
-        selectedModel,
+        selectedModel:
+          availableModels.find(model => model.id === prev.selectedModel?.id) ||
+          availableModels.find(model => model.isAvailable && model.type === 'thinking') ||
+          availableModels.find(model => model.isAvailable) ||
+          null,
         loading: false
       }));
     } catch (error) {
@@ -47,7 +57,7 @@ export function useModel() {
         loading: false
       }));
     }
-  };
+  }, []);
 
   // 选择模型
   const selectModel = (model: ModelInfo) => {
@@ -57,7 +67,7 @@ export function useModel() {
     }));
     
     // 保存到 localStorage
-    localStorage.setItem('stp_selected_model', JSON.stringify(model));
+    localStorage.setItem('lumidoc_selected_model', JSON.stringify(model));
   };
 
   // 获取模型类型统计
@@ -97,7 +107,7 @@ export function useModel() {
   // 初始化
   useEffect(() => {
     // 尝试从 localStorage 恢复选中的模型
-    const savedModel = localStorage.getItem('stp_selected_model');
+    const savedModel = localStorage.getItem('lumidoc_selected_model');
     if (savedModel) {
       try {
         const model = JSON.parse(savedModel) as ModelInfo;
@@ -107,8 +117,8 @@ export function useModel() {
       }
     }
 
-    loadModels();
-  }, []);
+    void loadModels();
+  }, [loadModels]);
 
   return {
     ...state,

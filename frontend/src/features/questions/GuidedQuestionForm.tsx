@@ -1,4 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import type {
+  GeneratedQuestion,
+  GeneratedQuestionsPayload,
+  GuidedQuestionRow,
+  QuestionStreamEvent
+} from './types';
 
 const QUESTION_TYPES = [
   { label: "单选题", value: "single" },
@@ -17,22 +23,22 @@ const DIRECTIONS = [
 
 interface GuidedQuestionFormProps {
   projectId: string;
-  onQuestionsGenerated?: (questions: any[]) => void;
+  onQuestionsGenerated?: (questions: GeneratedQuestion[]) => void;
 }
 
 export default function GuidedQuestionForm({ projectId, onQuestionsGenerated }: GuidedQuestionFormProps) {
   console.log('projectId in GuidedQuestionForm', projectId);
   const [count, setCount] = useState(1);
-  const [rows, setRows] = useState<any[]>([]);
+  const [rows, setRows] = useState<GuidedQuestionRow[]>([]);
   const [brandNames, setBrandNames] = useState<string[]>([]);
   const [generating, setGenerating] = useState(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
-  const [generatedQuestions, setGeneratedQuestions] = useState<any[]>([]);
+  const [generatedQuestions, setGeneratedQuestions] = useState<GeneratedQuestion[]>([]);
   const [graphEmpty, setGraphEmpty] = useState(false);
 
   // 检查知识图谱是否为空
-  const checkGraphEmpty = async () => {
+  const checkGraphEmpty = useCallback(async () => {
     if (!projectId) return;
     try {
       const res = await fetch(`/api/projects/${projectId}/graph`);
@@ -42,12 +48,12 @@ export default function GuidedQuestionForm({ projectId, onQuestionsGenerated }: 
       console.error('Failed to check graph:', error);
       setGraphEmpty(true);
     }
-  };
+  }, [projectId]);
 
   // 页面加载时检查知识图谱
   useEffect(() => {
     checkGraphEmpty();
-  }, [projectId]);
+  }, [checkGraphEmpty]);
 
   // 获取品牌名
   useEffect(() => {
@@ -85,7 +91,7 @@ export default function GuidedQuestionForm({ projectId, onQuestionsGenerated }: 
   }, [count]);
 
   // 行内容变更
-  const handleChange = (idx: number, key: string, value: string) => {
+  const handleChange = (idx: number, key: keyof GuidedQuestionRow, value: string) => {
     setRows((prev) =>
       prev.map((row, i) => (i === idx ? { ...row, [key]: value } : row))
     );
@@ -115,7 +121,7 @@ export default function GuidedQuestionForm({ projectId, onQuestionsGenerated }: 
       return `请出一道题，题型为【${QUESTION_TYPES.find(t => t.value === row.type)?.label || row.type}】，考察内容为【${row.brand}】，考察方向为【${row.direction}】${row.note ? `，备注：【${row.note}】` : ''}。本题随机种子：${randomSeed + idx}`;
     }).join('\n');
     const finalPrompt = `${prompt}\n请严格只输出如下JSON格式，不要有任何注释、解释、代码块标记或多余内容，只能输出JSON本体：{"questions":[{"type":"","question":"","options":["(A)选项A","(B)选项B",...],"answer":"","explanation":""}]}`;
-    
+
     try {
       const response = await fetch(`/api/projects/${projectId}/generate_questions`, {
         method: 'POST',
@@ -130,7 +136,7 @@ export default function GuidedQuestionForm({ projectId, onQuestionsGenerated }: 
       }
 
       let accumulatedText = '';
-      let questionsJson = null;
+      let questionsJson: GeneratedQuestionsPayload | null = null;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -142,19 +148,19 @@ export default function GuidedQuestionForm({ projectId, onQuestionsGenerated }: 
 
         for (const line of lines) {
           if (line.startsWith('data: ')) {
-            const data = JSON.parse(line.slice(6));
-            
+            const data = JSON.parse(line.slice(6)) as QuestionStreamEvent;
+
             if (data.error) {
               throw new Error(data.error);
             }
-            
+
             if (data.chunk) {
               accumulatedText += data.chunk;
               // 尝试解析完整的JSON
               try {
                 const match = accumulatedText.match(/\{[\s\S]*\}/);
                 if (match) {
-                  questionsJson = JSON.parse(match[0]);
+                  questionsJson = JSON.parse(match[0]) as GeneratedQuestionsPayload;
                   if (questionsJson.questions && questionsJson.questions.length > 0) {
                     setGeneratedQuestions(questionsJson.questions);
                     if (onQuestionsGenerated) {
@@ -162,12 +168,12 @@ export default function GuidedQuestionForm({ projectId, onQuestionsGenerated }: 
                     }
                   }
                 }
-              } catch (e) {
+              } catch {
                 // JSON解析失败，继续累积文本
                 continue;
               }
             }
-            
+
             if (data.done) {
               break;
             }
@@ -185,8 +191,8 @@ export default function GuidedQuestionForm({ projectId, onQuestionsGenerated }: 
       } else {
         setErrorMsg('AI未生成题目，请检查输入。');
       }
-    } catch (e: any) {
-      if (e.name === 'AbortError') {
+    } catch (e: unknown) {
+      if (e instanceof Error && e.name === 'AbortError') {
         setErrorMsg('已终止生成');
       } else {
         setErrorMsg('请求失败: ' + (e instanceof Error ? e.message : String(e)));
@@ -278,7 +284,7 @@ export default function GuidedQuestionForm({ projectId, onQuestionsGenerated }: 
                     <div className="font-semibold mb-2 text-white">{q.question}</div>
                     {Array.isArray(q.options) && q.options.length > 0 && (
                       <ul className="mb-2 pl-4 list-disc text-base text-gray-300">
-                        {(q.options as any[]).map((opt: any, j: number) => (
+                        {q.options.map((opt, j) => (
                           <li key={j}>{opt}</li>
                         ))}
                       </ul>
@@ -294,4 +300,4 @@ export default function GuidedQuestionForm({ projectId, onQuestionsGenerated }: 
       )}
     </div>
   );
-} 
+}

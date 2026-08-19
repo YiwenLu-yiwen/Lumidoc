@@ -11,6 +11,7 @@ from .shared_storage import (
     get_storage_lock,
     get_update_flag,
     set_all_update_flags,
+    workspace_namespace,
 )
 
 from dotenv import load_dotenv
@@ -53,6 +54,7 @@ class NetworkXStorage(BaseGraphStorage):
             )
         self._storage_lock = None
         self.storage_updated = None
+        self._shared_namespace = workspace_namespace(self.namespace, self.workspace)
         self._graph = None
 
         # Load initial graph
@@ -68,7 +70,7 @@ class NetworkXStorage(BaseGraphStorage):
     async def initialize(self):
         """Initialize storage data"""
         # Get the update flag for cross-process update notification
-        self.storage_updated = await get_update_flag(self.namespace)
+        self.storage_updated = await get_update_flag(self._shared_namespace)
         # Get the storage lock for use in other methods
         self._storage_lock = get_storage_lock()
 
@@ -415,7 +417,7 @@ class NetworkXStorage(BaseGraphStorage):
                 # Save data to disk
                 NetworkXStorage.write_nx_graph(self._graph, self._graphml_xml_file)
                 # Notify other processes that data has been updated
-                await set_all_update_flags(self.namespace)
+                await set_all_update_flags(self._shared_namespace)
                 # Reset own update flag to avoid self-reloading
                 self.storage_updated.value = False
                 return True  # Return success
@@ -446,7 +448,7 @@ class NetworkXStorage(BaseGraphStorage):
                     os.remove(self._graphml_xml_file)
                 self._graph = nx.Graph()
                 # Notify other processes that data has been updated
-                await set_all_update_flags(self.namespace)
+                await set_all_update_flags(self._shared_namespace)
                 # Reset own update flag to avoid self-reloading
                 self.storage_updated.value = False
                 logger.info(

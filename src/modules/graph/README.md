@@ -2,7 +2,7 @@
 
 ## 概述
 
-`graph` 模块是STP平台的知识图谱服务，负责从文档中提取实体和关系，构建结构化的知识图谱，支持复杂查询和语义理解。该模块将非结构化文本转化为结构化数据，为STP系统提供深度语义理解能力和可视化支持。
+`graph` 模块是Lumidoc平台的知识图谱服务，负责从文档中提取实体和关系，构建结构化的知识图谱，支持复杂查询和语义理解。该模块将非结构化文本转化为结构化数据，为Lumidoc系统提供深度语义理解能力和可视化支持。
 
 ## 模块架构
 
@@ -415,7 +415,7 @@ RUN mkdir -p /app/data/graph
 ENV PYTHONPATH=/app
 ENV GRAPH_DB_URI=neo4j://neo4j:7687
 ENV GRAPH_DB_USER=neo4j
-ENV GRAPH_DB_PASSWORD=password
+ENV GRAPH_DB_PASSWORD=${NEO4J_PASSWORD}
 ENV SERVICE_AUTH_TOKEN=your-internal-auth-token
 
 # 暴露端口
@@ -437,7 +437,7 @@ GRAPH_DB_TYPE=neo4j  # 或 arangodb, tigergraph
 # Neo4j连接配置
 NEO4J_URI=bolt://localhost:7687
 NEO4J_USER=neo4j
-NEO4J_PASSWORD=password
+NEO4J_PASSWORD=<set-in-deployment-environment>
 
 # 服务认证
 SERVICE_AUTH_TOKEN=your-internal-auth-token
@@ -505,4 +505,4 @@ graph LR
 3. **图谱构建缓慢**
    - 增加处理并行度
    - 调整批处理大小
-   - 监控资源使用情况 
+   - 监控资源使用情况

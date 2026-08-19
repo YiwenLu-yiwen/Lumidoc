@@ -7,13 +7,11 @@
 """
 
 import json
-import asyncio
-import logging
 from typing import Dict, Set, Optional, List
 from enum import Enum
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
-from datetime import datetime, timedelta
+from datetime import datetime
 import psutil
 import time
 
@@ -93,7 +91,7 @@ class MonitoringConnectionManager:
     def disconnect_admin(self, websocket: WebSocket):
         """断开管理员WebSocket连接"""
         self.admin_connections.discard(websocket)
-        logger.info(f"管理员监控WebSocket已断开连接")
+        logger.info("管理员监控WebSocket已断开连接")
     
     def disconnect_project(self, websocket: WebSocket, project_id: str):
         """断开项目特定的监控连接"""
@@ -133,7 +131,7 @@ class MonitoringConnectionManager:
         for connection in self.admin_connections.copy():
             try:
                 await connection.send_text(message_str)
-                logger.debug(f"告警已发送到管理员连接")
+                logger.debug("告警已发送到管理员连接")
             except Exception as e:
                 logger.warning(f"发送告警到管理员失败: {str(e)}")
                 disconnected_admins.add(connection)
@@ -175,7 +173,7 @@ class MonitoringConnectionManager:
         for connection in self.admin_connections.copy():
             try:
                 await connection.send_text(message_str)
-                logger.debug(f"系统指标已发送到管理员")
+                logger.debug("系统指标已发送到管理员")
             except Exception as e:
                 logger.warning(f"发送系统指标失败: {str(e)}")
                 disconnected_admins.add(connection)
@@ -199,7 +197,7 @@ class MonitoringConnectionManager:
         for connection in self.admin_connections.copy():
             try:
                 await connection.send_text(message_str)
-                logger.debug(f"服务状态已发送到管理员")
+                logger.debug("服务状态已发送到管理员")
             except Exception as e:
                 logger.warning(f"发送服务状态失败: {str(e)}")
                 disconnected_admins.add(connection)
@@ -295,14 +293,14 @@ async def websocket_admin_monitoring_endpoint(websocket: WebSocket):
                     logger.warning(f"无法解析管理员消息: {data}")
                     
             except WebSocketDisconnect:
-                logger.info(f"管理员主动断开监控连接")
+                logger.info("管理员主动断开监控连接")
                 break
             except Exception as e:
                 logger.error(f"处理管理员监控WebSocket消息时出错: {str(e)}")
                 break
                 
     except WebSocketDisconnect:
-        logger.info(f"管理员监控WebSocket连接断开")
+        logger.info("管理员监控WebSocket连接断开")
     except Exception as e:
         logger.error(f"管理员监控WebSocket连接错误: {str(e)}")
     finally:

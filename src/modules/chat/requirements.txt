@@ -1,0 +1,1 @@
+# Chat currently needs no dependencies beyond requirements/service-core.txt.

@@ -2,7 +2,7 @@
 // 确保字段命名和类型与后端一致
 
 // API响应基本类型
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
   success: boolean;
   message?: string;
   data?: T;
@@ -12,7 +12,7 @@ export interface ErrorResponse {
   success: boolean;
   error: string;
   code?: number;
-  details?: Record<string, any>;
+  details?: Record<string, unknown>;
 }
 
 export interface PaginatedResponse<T> {
@@ -80,7 +80,7 @@ export interface ChatSession {
   messages: ChatMessage[];
   created_at?: string;
   updated_at?: string;
-  graph_analysis?: Record<string, any>;
+  graph_analysis?: Record<string, unknown>;
 }
 
 export interface ChatRequest {
@@ -108,7 +108,7 @@ export interface ProjectBase {
   description?: string;
 }
 
-export interface ProjectCreate extends ProjectBase {}
+export type ProjectCreate = ProjectBase;
 
 export interface ProjectUpdate {
   name?: string;
@@ -159,7 +159,7 @@ export interface FileInfo {
 export interface FileProcessRequest {
   file_id: string;
   project_id?: string;
-  options?: Record<string, any>;
+  options?: Record<string, unknown>;
 }
 
 // 图谱相关类型
@@ -167,7 +167,7 @@ export interface GraphNode {
   id: string;
   label: string;
   type: string;
-  properties: Record<string, any>;
+  properties: Record<string, unknown>;
 }
 
 export interface GraphEdge {
@@ -175,7 +175,7 @@ export interface GraphEdge {
   source: string;
   target: string;
   label: string;
-  properties: Record<string, any>;
+  properties: Record<string, unknown>;
 }
 
 export interface GraphData {
@@ -186,7 +186,7 @@ export interface GraphData {
 export interface GraphAnalysisRequest {
   query: string;
   project_id?: string;
-  context?: Record<string, any>;
+  context?: Record<string, unknown>;
 }
 
 // 知识框架分析类型
@@ -202,4 +202,4 @@ export interface KnowledgeFrameworkResponse {
   graph_node_count: number;
   graph_edge_count: number;
   has_graph_data: boolean;
-} 
+}

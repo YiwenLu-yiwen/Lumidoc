@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 async def main():
     """主函数"""
     try:
-        print("\n========== STP 文件服务诊断工具 ==========\n")
+        print("\n========== Lumidoc 文件服务诊断工具 ==========\n")
         print("正在加载诊断模块...")
         
         # 导入诊断工具
@@ -52,7 +52,7 @@ async def main():
         sys.exit(1)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="STP文件服务诊断工具")
+    parser = argparse.ArgumentParser(description="Lumidoc文件服务诊断工具")
     parser.add_argument("--fix", action="store_true", help="尝试自动修复发现的问题")
     parser.add_argument("--verbose", action="store_true", help="显示详细诊断信息")
     

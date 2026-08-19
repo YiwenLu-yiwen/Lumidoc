@@ -3,28 +3,20 @@ import {
   Send,
   Paperclip,
   Mic,
-  MicOff,
   Square,
   RotateCcw,
   Copy,
   ThumbsUp,
   ThumbsDown,
-  MoreHorizontal,
-  Edit3,
-  Trash2,
   BookOpen,
   FileText,
-  Image,
   Code,
   Calculator,
-  Globe,
   Zap,
   Brain,
   Sparkles,
   ChevronDown,
-  X,
-  Plus,
-  Download
+  X
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -219,7 +211,7 @@ export default function EnhancedChatInterface() {
   };
 
   // 使用建议
-  const useSuggestion = (suggestion: string) => {
+  const handleSuggestion = (suggestion: string) => {
     setInputValue(suggestion);
     setShowSuggestions(false);
     textareaRef.current?.focus();
@@ -289,9 +281,9 @@ export default function EnhancedChatInterface() {
 
               {/* 消息文本 */}
               <div className={`${isUser ? 'text-white' : 'text-gray-900 dark:text-gray-100'}`}>
-                <ReactMarkdown className="prose prose-sm max-w-none dark:prose-invert">
-                  {message.content}
-                </ReactMarkdown>
+                <div className="prose prose-sm max-w-none dark:prose-invert">
+                  <ReactMarkdown>{message.content}</ReactMarkdown>
+                </div>
               </div>
 
               {/* 元数据 */}
@@ -373,7 +365,7 @@ export default function EnhancedChatInterface() {
                   key={index}
                   variant="outline"
                   className="h-auto p-4 text-left justify-start hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                  onClick={() => useSuggestion(suggestion.text)}
+                  onClick={() => handleSuggestion(suggestion.text)}
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center">

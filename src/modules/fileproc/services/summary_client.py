@@ -8,9 +8,7 @@
 import os
 import logging
 import httpx
-import json
-from typing import Dict, Any, Optional
-import asyncio
+from typing import Dict, Any
 
 from src.shared.service_discovery import get_service_url
 

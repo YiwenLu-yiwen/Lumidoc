@@ -1,11 +1,11 @@
-# STP PostgreSQL 数据库分析文档
+# Lumidoc PostgreSQL 数据库分析文档
 
 ## 概述
 
-STP（Smart Text Processing）系统使用 PostgreSQL 作为主数据库，通过 Docker 容器管理。数据库包含 pgvector 扩展以支持向量搜索功能。
+Lumidoc 使用 PostgreSQL 作为主数据库，并通过 Docker 容器管理。数据库包含 pgvector 扩展以支持向量搜索功能。
 
 ### 数据库基本信息
-- **数据库名称**: `stp` (环境变量: `POSTGRES_DB`)
+- **数据库名称**: `lumidoc` (环境变量: `POSTGRES_DB`)
 - **用户名**: `postgres` (环境变量: `POSTGRES_USER`)  
 - **密码**: `postgres` (环境变量: `POSTGRES_PASSWORD`)
 - **Docker镜像**: `ankane/pgvector:latest`
@@ -338,18 +338,18 @@ async def vector_search(db, query_embedding: list, project_id: str, limit: int =
 #!/bin/bash
 BACKUP_DIR="/backup/postgres"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-CONTAINER_NAME="stp_postgres"
+CONTAINER_NAME="lumidoc_postgres"
 
 # 创建备份目录
 mkdir -p $BACKUP_DIR
 
 # 执行备份
-docker exec -t $CONTAINER_NAME pg_dump -U postgres stp | gzip > $BACKUP_DIR/stp_backup_$TIMESTAMP.sql.gz
+docker exec -t $CONTAINER_NAME pg_dump -U postgres lumidoc | gzip > $BACKUP_DIR/lumidoc_backup_$TIMESTAMP.sql.gz
 
 # 保留最近7天的备份
-find $BACKUP_DIR -name "stp_backup_*.sql.gz" -mtime +7 -delete
+find $BACKUP_DIR -name "lumidoc_backup_*.sql.gz" -mtime +7 -delete
 
-echo "备份完成: stp_backup_$TIMESTAMP.sql.gz"
+echo "备份完成: lumidoc_backup_$TIMESTAMP.sql.gz"
 ```
 
 ### 2. 定期维护任务
@@ -360,10 +360,10 @@ echo "备份完成: stp_backup_$TIMESTAMP.sql.gz"
 0 2 * * * /path/to/backup_postgres.sh
 
 # 每周日凌晨3点执行VACUUM分析
-0 3 * * 0 docker exec stp_postgres psql -U postgres -d stp -c "VACUUM ANALYZE;"
+0 3 * * 0 docker exec lumidoc_postgres psql -U postgres -d lumidoc -c "VACUUM ANALYZE;"
 
 # 每月1号凌晨4点重建索引
-0 4 1 * * docker exec stp_postgres psql -U postgres -d stp -c "REINDEX DATABASE stp;"
+0 4 1 * * docker exec lumidoc_postgres psql -U postgres -d lumidoc -c "REINDEX DATABASE lumidoc;"
 ```
 
 ### 3. 监控建议
@@ -374,7 +374,7 @@ SELECT
     pg_database.datname,
     pg_size_pretty(pg_database_size(pg_database.datname)) AS size
 FROM pg_database
-WHERE datname = 'stp';
+WHERE datname = 'lumidoc';
 
 -- 检查表大小
 SELECT 
@@ -440,19 +440,19 @@ LIMIT 10;
 docker ps | grep postgres
 
 # 查看容器日志
-docker logs stp_postgres --tail 100
+docker logs lumidoc_postgres --tail 100
 
 # 进入容器执行SQL
-docker exec -it stp_postgres psql -U postgres -d stp
+docker exec -it lumidoc_postgres psql -U postgres -d lumidoc
 
 # 重启容器
-docker restart stp_postgres
+docker restart lumidoc_postgres
 
 # 导出数据
-docker exec stp_postgres pg_dump -U postgres stp > backup.sql
+docker exec lumidoc_postgres pg_dump -U postgres lumidoc > backup.sql
 
 # 导入数据
-docker exec -i stp_postgres psql -U postgres stp < backup.sql
+docker exec -i lumidoc_postgres psql -U postgres lumidoc < backup.sql
 ```
 
 ### 6. 灾难恢复
@@ -463,7 +463,7 @@ docker exec -i stp_postgres psql -U postgres stp < backup.sql
    docker-compose stop
    
    # 恢复数据库
-   gunzip < backup.sql.gz | docker exec -i stp_postgres psql -U postgres -d stp
+   gunzip < backup.sql.gz | docker exec -i lumidoc_postgres psql -U postgres -d lumidoc
    
    # 重启服务
    docker-compose up -d

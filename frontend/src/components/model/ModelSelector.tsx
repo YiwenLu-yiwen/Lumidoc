@@ -11,12 +11,15 @@ import {
   HardDrive
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ModelInfo, getAvailableModels } from '@/api/modelService';
+import { ModelInfo } from '@/api/modelService';
 import { useTheme } from '@/context/ThemeContext';
 
 interface ModelSelectorProps {
   selectedModel?: ModelInfo | null;
   onModelSelect: (model: ModelInfo) => void;
+  models: ModelInfo[];
+  loading?: boolean;
+  error?: string | null;
   disabled?: boolean;
   className?: string;
 }
@@ -24,12 +27,13 @@ interface ModelSelectorProps {
 export function ModelSelector({ 
   selectedModel, 
   onModelSelect, 
+  models,
+  loading = false,
+  error = null,
   disabled = false,
   className = '' 
 }: ModelSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [models, setModels] = useState<ModelInfo[]>([]);
-  const [loading, setLoading] = useState(true);
   // const [currentLanguage] = useState('zh-CN'); // 简化语言处理
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -71,31 +75,6 @@ export function ModelSelector({
         return 'text-gray-500';
     }
   };
-
-  // 加载模型列表
-  useEffect(() => {
-    const loadModels = async () => {
-      setLoading(true);
-      try {
-        const response = await getAvailableModels();
-        setModels(response.models);
-        
-        // 如果没有选中模型，自动选择第一个可用模型
-        if (!selectedModel && response.models.length > 0) {
-          const firstAvailable = response.models.find(m => m.isAvailable);
-          if (firstAvailable) {
-            onModelSelect(firstAvailable);
-          }
-        }
-      } catch (error) {
-        console.error('加载模型列表失败:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadModels();
-  }, [selectedModel, onModelSelect]);
 
   // 点击外部关闭下拉菜单
   useEffect(() => {
@@ -142,13 +121,21 @@ export function ModelSelector({
     );
   }
 
+  if (error) {
+    return (
+      <div className="px-3 py-2 rounded-lg text-sm text-red-500 bg-red-500/10">
+        {error}
+      </div>
+    );
+  }
+
   return (
     <div className={`relative ${className}`} ref={dropdownRef}>
       {/* 选择器按钮 */}
       <Button
         variant="outline"
         onClick={() => !disabled && setIsOpen(!isOpen)}
-        disabled={disabled}
+        disabled={disabled || models.length === 0}
         className={`w-full justify-between ${
           isDarkMode 
             ? 'bg-gray-800 border-gray-700 hover:bg-gray-700' 
@@ -185,7 +172,9 @@ export function ModelSelector({
               </div>
             </>
           ) : (
-            <span className="text-gray-500">选择模型</span>
+            <span className="text-gray-500">
+              {models.length === 0 ? '无可用模型' : '选择模型'}
+            </span>
           )}
         </div>
         

@@ -16,6 +16,17 @@ export interface ModelResponse {
   total: number;
 }
 
+interface RawModel {
+  id: string;
+  name?: string;
+  display_name?: string;
+  provider?: ModelInfo['provider'];
+  description?: string;
+  context_length?: number;
+  max_tokens?: number;
+  available?: boolean;
+}
+
 /**
  * 根据模型名称自动识别模型类型
  * @param modelName 模型名称
@@ -66,10 +77,10 @@ export function detectModelType(modelName: string): 'thinking' | 'fast' {
 export async function getAvailableModels(): Promise<ModelResponse> {
   try {
     const response = await apiClient.get('/api/v1/llm/models');
-    const rawModels = response.data.models || [];
+    const rawModels = (response.data.models || []) as RawModel[];
     
     // 处理模型数据并自动识别类型
-    const models: ModelInfo[] = rawModels.map((model: any) => {
+    const models: ModelInfo[] = rawModels.map((model) => {
       const modelType = detectModelType(model.name || model.id);
       
       return {
@@ -90,65 +101,7 @@ export async function getAvailableModels(): Promise<ModelResponse> {
     };
   } catch (error) {
     console.error('获取模型列表失败:', error);
-    
-    // 返回默认的模拟模型列表
-    const mockModels: ModelInfo[] = [
-      {
-        id: 'deepseek-chat',
-        name: 'deepseek-chat',
-        displayName: 'DeepSeek Chat',
-        provider: 'deepseek',
-        type: 'fast',
-        description: 'DeepSeek高性能对话模型',
-        contextLength: 32768,
-        isAvailable: true
-      },
-      {
-        id: 'deepseek-reasoning',
-        name: 'deepseek-reasoning',
-        displayName: 'DeepSeek Reasoning',
-        provider: 'deepseek',
-        type: 'thinking',
-        description: 'DeepSeek推理思考模型',
-        contextLength: 32768,
-        isAvailable: true
-      },
-      {
-        id: 'gpt-4',
-        name: 'gpt-4',
-        displayName: 'GPT-4',
-        provider: 'openai',
-        type: 'thinking',
-        description: 'OpenAI GPT-4 模型',
-        contextLength: 8192,
-        isAvailable: false
-      },
-      {
-        id: 'gpt-3.5-turbo',
-        name: 'gpt-3.5-turbo',
-        displayName: 'GPT-3.5 Turbo',
-        provider: 'openai',
-        type: 'fast',
-        description: 'OpenAI GPT-3.5 快速模型',
-        contextLength: 4096,
-        isAvailable: false
-      },
-      {
-        id: 'ollama-llama2',
-        name: 'llama2:7b',
-        displayName: 'Llama 2 7B',
-        provider: 'ollama',
-        type: 'fast',
-        description: '本地运行的Llama 2 模型',
-        contextLength: 4096,
-        isAvailable: true
-      }
-    ];
-    
-    return {
-      models: mockModels,
-      total: mockModels.length
-    };
+    throw new Error('获取模型列表失败，请检查LLM服务是否可用');
   }
 }
 

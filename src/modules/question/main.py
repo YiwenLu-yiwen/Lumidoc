@@ -5,6 +5,8 @@
 问题服务启动入口
 """
 
+# ruff: noqa: E402 -- direct execution adjusts sys.path before package imports.
+
 import uvicorn
 import sys
 import os
@@ -26,4 +28,4 @@ settings_base = QuestionServiceSettings()
 from .config.config import settings
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=settings.port) 
+    uvicorn.run(app, host="0.0.0.0", port=settings.port)

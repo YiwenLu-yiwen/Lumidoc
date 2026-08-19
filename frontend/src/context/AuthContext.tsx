@@ -1,26 +1,13 @@
-// 导出用户角色和项目权限枚举放在最上方，避免循环依赖
-export enum UserRole {
-  ADMIN = "admin",
-  USER = "user",
-  GUEST = "guest"
-}
-
-// 定义项目访问权限类型
-export enum ProjectAccessLevel {
-  OWNER = "owner",     // 可以做所有操作，包括删除项目
-  EDITOR = "editor",   // 可以编辑、上传和删除文件
-  VIEWER = "viewer",   // 只能查看文件
-  NONE = "none"        // 无权限
-}
-
-// 导入放在枚举之后，避免循环引用
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import axios, { AxiosResponse, AxiosError } from 'axios';
+import { ProjectAccessLevel, UserRole } from './authTypes';
 
-interface User {
+export interface User {
   id: string;
   username: string;
   nickname: string;
+  email?: string;
+  avatar?: string;
   role?: UserRole;  // 用户角色
   projects?: Record<string, ProjectAccessLevel>;  // 用户拥有的项目权限
 }
@@ -41,8 +28,8 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const USER_KEY = 'stp_user';
-const TOKEN_KEY = 'stp_token';
+const USER_KEY = 'lumidoc_user';
+const TOKEN_KEY = 'lumidoc_token';
 
 // 配置全局HTTP请求拦截器
 const setupAxiosInterceptors = (logout: () => void) => {
@@ -81,16 +68,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // 初始化函数：一次性读取所有缓存数据
   useEffect(() => {
     // 初始化时检查localStorage中的token
-    const storedToken = localStorage.getItem('stp_token');
+    const storedToken = localStorage.getItem('lumidoc_token');
     if (storedToken) {
       // 添加防止重复初始化的标志
-      if ((window as any).__authInitialized) {
+      if (window.__authInitialized) {
         console.log('[AuthContext] 已初始化，跳过重复初始化');
         return;
       }
       
       try {
-        const storedUser = localStorage.getItem('stp_user');
+        const storedUser = localStorage.getItem('lumidoc_user');
         if (storedUser) {
           const userData = JSON.parse(storedUser);
           console.log('[AuthContext] 恢复用户状态:', userData.username);
@@ -101,7 +88,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           setIsAuthenticated(true);
           
           // 尝试读取项目权限
-          const storedPermissions = localStorage.getItem('stp_project_permissions');
+          const storedPermissions = localStorage.getItem('lumidoc_project_permissions');
           if (storedPermissions) {
             try {
               const permissions = JSON.parse(storedPermissions);
@@ -124,13 +111,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           }
           
           // 设置初始化标志
-          (window as any).__authInitialized = true;
+          window.__authInitialized = true;
         }
       } catch (e) {
         console.error('[AuthContext] 初始化用户状态时出错:', e);
         // 出错时清除缓存
-        localStorage.removeItem('stp_token');
-        localStorage.removeItem('stp_user');
+        localStorage.removeItem('lumidoc_token');
+        localStorage.removeItem('lumidoc_user');
       }
     }
   }, []);
@@ -147,7 +134,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     
     // 更新localStorage，但不触发重渲染
     try {
-      localStorage.setItem('stp_project_permissions', JSON.stringify(projectPermissionsRef.current));
+      localStorage.setItem('lumidoc_project_permissions', JSON.stringify(projectPermissionsRef.current));
     } catch (e) {
       console.error('[AuthContext] 保存项目权限到localStorage失败:', e);
     }
@@ -224,23 +211,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setIsAuthenticated(false);
     
     // 清空所有与Lumidoc相关的 localStorage 和 sessionStorage
-    const stpKeys = [
+    const lumidocKeys = [
       USER_KEY,
       TOKEN_KEY,
-      'stp_project_permissions',
-      'stp_projects',
-      'stp_current_project'
+      'lumidoc_project_permissions',
+      'lumidoc_projects',
+      'lumidoc_current_project'
     ];
     
     // 清除指定的键
-    stpKeys.forEach(key => localStorage.removeItem(key));
+    lumidocKeys.forEach(key => localStorage.removeItem(key));
     
     // 清空与项目相关的本地存储
     try {
       const keysToRemove = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && (key.includes('project') || key.includes('stp_'))) {
+        if (key && (key.includes('project') || key.includes('lumidoc_'))) {
           keysToRemove.push(key);
         }
       }
@@ -249,7 +236,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // 清除会话存储中的Lumidoc相关数据
       for (let i = 0; i < sessionStorage.length; i++) {
         const key = sessionStorage.key(i);
-        if (key && (key.includes('stp_') || key.includes('project'))) {
+        if (key && (key.includes('lumidoc_') || key.includes('project'))) {
           sessionStorage.removeItem(key);
         }
       }
@@ -262,7 +249,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     // 清空 IndexedDB（如有）
     if (window.indexedDB) {
       // 如有多个数据库名可列出
-      const dbs = ['stp_db']; // 如有多个数据库名请补充
+      const dbs = ['lumidoc_db']; // 如有多个数据库名请补充
       dbs.forEach(dbName => {
         try {
           const req = window.indexedDB.deleteDatabase(dbName);

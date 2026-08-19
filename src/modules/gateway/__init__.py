@@ -11,5 +11,5 @@ Gateway API模块
 """
 
 __version__ = "1.0.0"
-__author__ = "STP Team"
-__description__ = "STP系统统一API网关" 
+__author__ = "Lumidoc Team"
+__description__ = "Lumidoc系统统一API网关"

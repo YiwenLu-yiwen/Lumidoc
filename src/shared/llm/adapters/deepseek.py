@@ -9,7 +9,6 @@ Deepseek适配器实现
 import logging
 import json
 import httpx
-import asyncio
 from typing import Dict, List, Any, Optional, AsyncGenerator, Union
 
 from .base import BaseLLMAdapter
@@ -51,7 +50,7 @@ class DeepseekAdapter(BaseLLMAdapter):
         url = self.base_url
         
         # 检查是否需要添加API端点路径
-        if not url.endswith('/chat/completions') and not '/chat/completions' in url:
+        if not url.endswith('/chat/completions') and '/chat/completions' not in url:
             if url.endswith('/'):
                 url = url + 'chat/completions'
             else:
@@ -64,7 +63,7 @@ class DeepseekAdapter(BaseLLMAdapter):
         url = self.base_url
         
         # 检查是否需要添加API端点路径
-        if not url.endswith('/embeddings') and not '/embeddings' in url:
+        if not url.endswith('/embeddings') and '/embeddings' not in url:
             if url.endswith('/'):
                 url = url + 'embeddings'
             else:

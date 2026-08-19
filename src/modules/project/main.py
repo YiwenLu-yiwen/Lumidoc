@@ -5,20 +5,18 @@
 项目服务入口
 """
 
+# ruff: noqa: E402 -- direct execution adjusts sys.path before package imports.
+
 import uvicorn
 import sys
 import os
-import logging
 from src.shared.logger import initialize_logging, get_logger
-import asyncio
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
-import socket
 from contextlib import asynccontextmanager
 from typing import List
 from sqlalchemy.orm import Session
 import traceback
-from datetime import datetime
 
 # 确保路径正确
 current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -34,7 +32,7 @@ if modules_dir not in sys.path:
 from src.shared.config import ProjectServiceSettings
 settings_base = ProjectServiceSettings()
 from .config.config import settings
-from src.modules.auth.dependencies import get_current_user
+from src.shared.auth import get_current_user
 from src.database import get_db
 from .models.project import Project as DBProject
 from .project_service import ProjectPermissionResponse
@@ -113,8 +111,8 @@ health_checker = create_health_checker("project_service")
 
 # 创建应用
 app = FastAPI(
-    title="STP项目服务",
-    description="STP平台项目管理微服务",
+    title="Lumidoc项目服务",
+    description="Lumidoc平台项目管理微服务",
     version=settings.version,
     lifespan=lifespan
 )
@@ -212,7 +210,7 @@ async def get_user_project_permissions(
 async def root():
     """根路由"""
     return {
-        "service": "STP项目微服务",
+        "service": "Lumidoc项目微服务",
         "version": settings.version,
         "status": "running"
     }

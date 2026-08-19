@@ -5,17 +5,17 @@
 启动聊天服务的独立脚本
 """
 
+# ruff: noqa: E402 -- direct execution adjusts sys.path before package imports.
+
 import uvicorn
 import sys
 import os
-import logging
 from contextlib import asynccontextmanager
 from src.shared.logger import initialize_logging, get_logger
-from fastapi import FastAPI, Depends, HTTPException, Body, Query
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-from sqlalchemy.orm import Session
-from typing import List, Dict, Any, Optional
+from typing import Optional
 import traceback
 import asyncio
 from pydantic import BaseModel, Field
@@ -31,7 +31,7 @@ if modules_dir not in sys.path:
     sys.path.insert(0, modules_dir)
 
 # 导入原有模块
-from src.modules.chat.chat_service import app as chat_app, api_router as chat_api_router
+from src.modules.chat.chat_service import api_router as chat_api_router
 # 更新配置导入
 from src.shared.config import ChatServiceSettings
 settings = ChatServiceSettings()
@@ -39,12 +39,9 @@ from src.shared.database import get_db, close_db_pool
 from src.modules.chat.data_migration import migrate_old_messages_to_db
 
 # 导入定期任务功能
-from fastapi_utils.tasks import repeat_every
 
 # 导入服务和路由
 from src.modules.chat.chat_service import chat_service, migrate_old_chat_messages
-from src.modules.chat.models.chat_history import ChatHistory
-from src.modules.chat.models.chat_message import ChatMessage
 
 # 导入文档相关模块
 from src.shared.docs.version import get_version_info
@@ -67,7 +64,7 @@ async def migrate_old_messages_background_task() -> None:
     while True:
         try:
             logger.info("开始执行自动聊天记录迁移任务")
-            
+
             # 获取数据库会话 - 正确的异步方式
             async for db in get_db():
                 try:
@@ -79,7 +76,7 @@ async def migrate_old_messages_background_task() -> None:
                 finally:
                     # 数据库连接会在异步生成器中自动管理
                     break
-            
+
             # 等待24小时（86400秒）
             await asyncio.sleep(86400)
         except Exception as e:
@@ -91,30 +88,30 @@ async def migrate_old_messages_background_task() -> None:
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     migration_task = None
-    
+
     # 启动事件
     try:
         # 初始化服务
         # 数据库连接由shared.database模块自动管理
-        
+
         # 注册服务
         from src.shared.service_discovery import register_service
         await register_service("chat", port=settings.port, health_check_endpoint="/healthz")
-        
+
         # 迁移老聊天数据
         asyncio.create_task(migrate_old_chat_messages())
-        
+
         # 启动定期任务
         migration_task = asyncio.create_task(migrate_old_messages_background_task())
-        
+
         logger.info("聊天服务启动成功")
     except Exception as e:
         logger.error(f"聊天服务启动失败: {str(e)}")
         traceback.print_exc()
         # 不要直接退出，让服务继续运行
-        
+
     yield
-    
+
     # 关闭事件
     try:
         # 停止定期任务
@@ -124,21 +121,21 @@ async def lifespan(app: FastAPI):
                 await migration_task
             except asyncio.CancelledError:
                 pass
-        
+
         # 关闭数据库连接池
         await close_db_pool()
-        
+
         # 注销服务
         from src.shared.service_discovery import unregister_service
         await unregister_service("chat")
-        
+
         logger.info("聊天服务关闭")
     except Exception as e:
         logger.error(f"聊天服务关闭失败: {str(e)}")
 
 # 创建FastAPI实例
 app = FastAPI(
-    title="聊天服务", 
+    title="聊天服务",
     description="提供聊天和消息处理服务",
     lifespan=lifespan
 )
@@ -214,4 +211,4 @@ async def chat_with_graph(request: GraphEnhancedChatRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=settings.port) 
+    uvicorn.run(app, host="0.0.0.0", port=settings.port)

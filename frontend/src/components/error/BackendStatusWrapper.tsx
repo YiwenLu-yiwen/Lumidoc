@@ -19,7 +19,7 @@ export const BackendStatusWrapper: React.FC<BackendStatusWrapperProps> = ({
   const [initialCheckCompleted, setInitialCheckCompleted] = useState(false);
   const [showOfflineError, setShowOfflineError] = useState(false);
 
-  const { isBackendOnline, isChecking, fullHealthCheck } = useBackendHealth({
+  const { isBackendOnline, isChecking } = useBackendHealth({
     autoCheck: enableHealthCheck,
     checkInterval: 300000, // 5分钟检查一次，合理的频率
     onBackendOffline: () => {

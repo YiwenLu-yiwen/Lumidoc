@@ -51,7 +51,7 @@ export function detectBrowserLanguage(): string {
   }
 
   // 优先从 localStorage 获取用户设置的语言
-  const savedLanguage = localStorage.getItem('stp_language');
+  const savedLanguage = localStorage.getItem('lumidoc_language');
   if (savedLanguage && supportedLanguages.some(lang => lang.code === savedLanguage)) {
     console.log('🔍 使用localStorage语言:', savedLanguage);
     cachedLanguage = savedLanguage;
@@ -109,7 +109,7 @@ export function detectAutoTheme(): 'light' | 'dark' {
 
 // 保存语言设置
 export function saveLanguage(languageCode: string) {
-  localStorage.setItem('stp_language', languageCode);
+  localStorage.setItem('lumidoc_language', languageCode);
   // 清除缓存，强制重新检测
   clearLanguageCache();
 }
@@ -256,7 +256,7 @@ export const translations = {
     dropFilesHere: '拖拽文件到此处或点击上传',
     supportedFormats: '支持格式',
     uploading: '上传中',
-    processing: '处理中',
+    processingStatus: '处理中',
     completed: '已完成',
     error: '错误',
     ocrResult: 'OCR识别结果',
@@ -339,7 +339,7 @@ export const translations = {
     yesterday: '昨天',
     expandSidebar: '展开侧边栏',
     collapseSidebar: '收起侧边栏',
-    thinking: '思考',
+    thinkingModeLabel: '思考',
     fast: '快速',
     fileManagement: '文件管理',
     
@@ -360,7 +360,7 @@ export const translations = {
     dataSecurity: '数据安全',
     knowledgeManagement: '知识管理',
     deploymentFlexibility: '部署灵活性',
-    documentProcessing: '文档处理',
+    documentProcessingFeature: '文档处理',
     traditional: '传统方案',
     ourSolution: '我们的方案',
     cloudDeploymentLatency: '云端部署，延迟100-500ms',
@@ -582,7 +582,7 @@ export const translations = {
     dropFilesHere: 'Drop files here or click to upload',
     supportedFormats: 'Supported formats',
     uploading: 'Uploading',
-    processing: 'Processing',
+    processingStatus: 'Processing',
     completed: 'Completed',
     error: 'Error',
     ocrResult: 'OCR Recognition Result',
@@ -665,7 +665,7 @@ export const translations = {
     yesterday: 'Yesterday',
     expandSidebar: 'Expand sidebar',
     collapseSidebar: 'Collapse sidebar',
-    thinking: 'Thinking',
+    thinkingModeLabel: 'Thinking',
     fast: 'Fast',
     fileManagement: 'File Management',
     
@@ -686,7 +686,7 @@ export const translations = {
     dataSecurity: 'Data Security',
     knowledgeManagement: 'Knowledge Management',
     deploymentFlexibility: 'Deployment Flexibility',
-    documentProcessing: 'Document Processing',
+    documentProcessingFeature: 'Document Processing',
     traditional: 'Traditional Solution',
     ourSolution: 'Our Solution',
     cloudDeploymentLatency: 'Cloud deployment, 100-500ms latency',
@@ -1211,7 +1211,8 @@ export const translations = {
 };
 
 // 获取翻译文本
-export function getTranslation(languageCode: string, key: keyof typeof translations['zh-CN']): string {
-  const lang = translations[languageCode as keyof typeof translations] || translations['zh-CN'];
-  return lang[key] || translations['zh-CN'][key];
+export function getTranslation(languageCode: string, key: string): string {
+  const lang = (translations[languageCode as keyof typeof translations] || translations['zh-CN']) as Record<string, string>;
+  const fallback = translations['zh-CN'] as Record<string, string>;
+  return lang[key] || fallback[key] || key;
 }

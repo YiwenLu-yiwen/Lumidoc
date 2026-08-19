@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import QuestionExporter from './QuestionExporter';
 import GuidedQuestionForm from './GuidedQuestionForm';
+import type { GeneratedQuestion, GeneratedQuestionsPayload, QuestionStreamEvent } from './types';
 
 const QUESTION_TYPES = [
   { label: '单选题', value: 'single' },
@@ -14,18 +15,18 @@ export default function QuestionGenerator() {
   console.log('projectId in QuestionGenerator', projectId);
   const [mode, setMode] = useState<'quick' | 'guided'>('quick');
   const [typeCounts, setTypeCounts] = useState<{ [key: string]: number }>({});
-  const [questions, setQuestions] = useState<any[]>([]);
+  const [questions, setQuestions] = useState<GeneratedQuestion[]>([]);
 
   // 题目展示区 mock
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState<any>({});
+  const [editForm, setEditForm] = useState<Partial<GeneratedQuestion>>({});
 
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [graphEmpty, setGraphEmpty] = useState(false);
 
   const [showAllHistory, setShowAllHistory] = useState(false);
-  const [currentQuestions, setCurrentQuestions] = useState<any[]>([]);
+  const [currentQuestions, setCurrentQuestions] = useState<GeneratedQuestion[]>([]);
 
   const [abortController, setAbortController] = useState<AbortController | null>(null);
 
@@ -45,11 +46,11 @@ export default function QuestionGenerator() {
   };
 
   // 提取 fetchHistory
-  const fetchHistory = async () => {
+  const fetchHistory = useCallback(async (): Promise<GeneratedQuestion[]> => {
     if (!projectId) return [];
     const res = await fetch(`/api/projects/${projectId}/history_questions`);
     if (res.ok) {
-      const data = await res.json();
+      const data = await res.json() as Partial<GeneratedQuestionsPayload>;
       if (data && data.questions && Array.isArray(data.questions)) {
         // setHistoryQuestions(data.questions);
         // 不自动 setQuestions
@@ -57,24 +58,24 @@ export default function QuestionGenerator() {
       }
     }
     return [];
-  };
+  }, [projectId]);
 
   // 页面加载时自动读取历史题目
   useEffect(() => {
     fetchHistory();
-  }, [projectId]);
+  }, [fetchHistory]);
 
   // 获取项目名称
   useEffect(() => {
     if (projectId) {
       fetch(`/api/projects/${projectId}`)
         .then(res => res.json())
-        .then(data => setProjectName(data.name || ''));
+        .then((data: { name?: string }) => setProjectName(data.name || ''));
     }
   }, [projectId]);
 
   // 检查知识图谱是否为空
-  const checkGraphEmpty = async () => {
+  const checkGraphEmpty = useCallback(async () => {
     if (!projectId) return;
     try {
       const res = await fetch(`/api/projects/${projectId}/graph`);
@@ -84,12 +85,12 @@ export default function QuestionGenerator() {
       console.error('Failed to check graph:', error);
       setGraphEmpty(true);
     }
-  };
+  }, [projectId]);
 
   // 页面加载时检查知识图谱
   useEffect(() => {
     checkGraphEmpty();
-  }, [projectId]);
+  }, [checkGraphEmpty]);
 
   // 切换模式
   const handleModeChange = (m: 'quick' | 'guided') => {
@@ -118,7 +119,7 @@ export default function QuestionGenerator() {
     setAbortController(controller);
     const randomSeed = Math.floor(Math.random() * 1000000);
     const query = `请出${typeCounts['single'] || 0}道单选题, ${typeCounts['multiple'] || 0}道多选题, ${typeCounts['truefalse'] || 0}道判断题，对于非正确选项应当基于数据库和显示进行产生。选择题的选项请以字符串数组形式输出，每个选项为一个元素，不要用一个字符串拼接所有选项。本次随机种子：${randomSeed}。请严格只输出如下JSON格式，不要有任何注释、解释、代码块标记或多余内容，只能输出JSON本体：{"questions":[{"type":"","question":"","options":["(A)选项A","(B)选项B",...],"answer":"","explanation":""}]}`;
-    
+
     try {
       const response = await fetch(`/api/projects/${projectId}/generate_questions`, {
         method: 'POST',
@@ -133,7 +134,7 @@ export default function QuestionGenerator() {
       }
 
       let accumulatedText = '';
-      let questionsJson = null;
+      let questionsJson: GeneratedQuestionsPayload | null = null;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -145,30 +146,30 @@ export default function QuestionGenerator() {
 
         for (const line of lines) {
           if (line.startsWith('data: ')) {
-            const data = JSON.parse(line.slice(6));
-            
+            const data = JSON.parse(line.slice(6)) as QuestionStreamEvent;
+
             if (data.error) {
               throw new Error(data.error);
             }
-            
+
             if (data.chunk) {
               accumulatedText += data.chunk;
               // 尝试解析完整的JSON
               try {
                 const match = accumulatedText.match(/\{[\s\S]*\}/);
                 if (match) {
-                  questionsJson = JSON.parse(match[0]);
+                  questionsJson = JSON.parse(match[0]) as GeneratedQuestionsPayload;
                   if (questionsJson.questions && questionsJson.questions.length > 0) {
                     setQuestions(questionsJson.questions);
                     setCurrentQuestions(questionsJson.questions);
                   }
                 }
-              } catch (e) {
+              } catch {
                 // JSON解析失败，继续累积文本
                 continue;
               }
             }
-            
+
             if (data.done) {
               break;
             }
@@ -188,8 +189,8 @@ export default function QuestionGenerator() {
         setErrorMsg('AI未生成题目，请检查知识库或参数。');
         setTypeCounts({});
       }
-    } catch (e) {
-      if ((e as any).name === 'AbortError') {
+    } catch (e: unknown) {
+      if (e instanceof Error && e.name === 'AbortError') {
         setErrorMsg('已终止生成');
       } else {
         setErrorMsg('请求失败: ' + (e instanceof Error ? e.message : String(e)));
@@ -209,7 +210,7 @@ export default function QuestionGenerator() {
 
   // 保存编辑
   const handleEditSave = async (idx: number) => {
-    const newQuestions = questions.map((q, i) => i === idx ? { ...editForm } : q);
+    const newQuestions = questions.map((q, i) => i === idx ? { ...q, ...editForm } : q);
     setQuestions(newQuestions);
     setCurrentQuestions(newQuestions);
     // setHistoryQuestions(newQuestions);
@@ -378,7 +379,7 @@ export default function QuestionGenerator() {
                       <input
                         className="w-full border border-gray-700 rounded px-2 py-1 mb-1 text-lg font-semibold bg-[#181818] text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         value={editForm.question || ''}
-                        onChange={e => setEditForm((f: any) => ({ ...f, question: e.target.value }))}
+                        onChange={e => setEditForm(f => ({ ...f, question: e.target.value }))}
                       />
                       <div>
                         <span className="text-base font-medium text-gray-300">选项：</span>
@@ -389,27 +390,27 @@ export default function QuestionGenerator() {
                                 className="border border-gray-700 rounded px-2 py-1 flex-1 bg-[#181818] text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 value={opt}
                                 onChange={e => {
-                                  const opts = [...editForm.options];
+                                  const opts = [...(editForm.options ?? [])];
                                   opts[i] = e.target.value;
-                                  setEditForm((f: any) => ({ ...f, options: opts }));
+                                  setEditForm(f => ({ ...f, options: opts }));
                                 }}
                               />
                               <button className="text-red-400" onClick={() => {
-                                const opts = [...editForm.options];
+                                const opts = [...(editForm.options ?? [])];
                                 opts.splice(i, 1);
-                                setEditForm((f: any) => ({ ...f, options: opts }));
+                                setEditForm(f => ({ ...f, options: opts }));
                               }}>删除</button>
                             </li>
                           ))}
                         </ul>
-                        <button className="mt-1 text-blue-400" onClick={() => setEditForm((f: any) => ({ ...f, options: [...(f.options || []), ''] }))}>添加选项</button>
+                        <button className="mt-1 text-blue-400" onClick={() => setEditForm(f => ({ ...f, options: [...(f.options || []), ''] }))}>添加选项</button>
                       </div>
                       <div>
                         <span className="text-base font-medium text-gray-300">答案：</span>
                         <input
                           className="border border-gray-700 rounded px-2 py-1 w-full bg-[#181818] text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                           value={Array.isArray(editForm.answer) ? editForm.answer.join('、') : (editForm.answer || '')}
-                          onChange={e => setEditForm((f: any) => ({ ...f, answer: e.target.value }))}
+                          onChange={e => setEditForm(f => ({ ...f, answer: e.target.value }))}
                         />
                         <span className="text-gray-500 text-xs ml-2">多个答案用"、"分隔</span>
                       </div>
@@ -418,7 +419,7 @@ export default function QuestionGenerator() {
                         <textarea
                           className="border border-gray-700 rounded px-2 py-1 w-full bg-[#181818] text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                           value={editForm.explanation || ''}
-                          onChange={e => setEditForm((f: any) => ({ ...f, explanation: e.target.value }))}
+                          onChange={e => setEditForm(f => ({ ...f, explanation: e.target.value }))}
                         />
                       </div>
                       <div className="mt-2 flex gap-4">
@@ -450,4 +451,4 @@ export default function QuestionGenerator() {
       {showExporter && <QuestionExporter questions={questions} projectName={projectName} onClose={() => setShowExporter(false)} />}
     </div>
   );
-} 
+}

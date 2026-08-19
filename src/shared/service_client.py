@@ -9,11 +9,10 @@ import logging
 import uuid
 import time
 import importlib
-from typing import Optional, Dict, Any, Callable, Awaitable, TypeVar, Generic, Type
+from typing import Optional, Dict, Any, Callable, Awaitable, TypeVar, Generic
 import httpx
 from fastapi import HTTPException
 import functools
-from concurrent.futures import TimeoutError as ConcurrentTimeoutError
 
 # 返回值类型
 T = TypeVar('T')
@@ -196,7 +195,7 @@ class ServiceClientBase(Generic[T]):
                 # 尝试返回JSON，如果不是JSON则返回文本
                 try:
                     return response.json()
-                except:
+                except ValueError:
                     return response.text
                     
         except httpx.HTTPStatusError as e:
@@ -208,7 +207,7 @@ class ServiceClientBase(Generic[T]):
                 error_data = e.response.json()
                 if "detail" in error_data:
                     detail = error_data["detail"]
-            except:
+            except ValueError:
                 pass
                 
             raise HTTPException(status_code=status_code, detail=detail)
@@ -223,4 +222,4 @@ class ServiceClientBase(Generic[T]):
 
 # 为了保持向后兼容性，从service_discovery导入ServiceClient
 # 这样依赖于service_client.py中的ServiceClient的代码可以继续工作
-from .service_discovery import ServiceClient 
+from .service_discovery import ServiceClient as ServiceClient  # noqa: E402

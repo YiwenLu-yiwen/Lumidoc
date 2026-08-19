@@ -8,13 +8,12 @@ JWT工具函数
 import os
 import jwt
 import logging
-from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, List
+from datetime import datetime, timedelta, timezone
+from typing import Dict, Any, Optional
 from pathlib import Path
 from dotenv import load_dotenv
-import time
-from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 from fastapi import HTTPException
+from src.shared.time_utils import utc_now
 
 # 加载环境变量
 env_path = Path(__file__).resolve().parent.parent.parent / '.env'
@@ -25,28 +24,23 @@ if env_path.exists():
 logger = logging.getLogger(__name__)
 
 # 从环境变量获取JWT算法设置
-JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "RS256")
-JWT_SECRET_KEY = os.environ.get("SECRET_KEY", "your-local-secret-key-here")  # 与.env保持一致的默认值
+JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
+JWT_SECRET_KEY = os.environ.get("SECRET_KEY", "")
 TOKEN_EXPIRE_MINUTES = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))  # 默认24小时
 
 # 令牌刷新阈值（剩余有效期小于此值时刷新令牌，单位：分钟）
 TOKEN_REFRESH_THRESHOLD_MINUTES = int(os.environ.get("TOKEN_REFRESH_THRESHOLD_MINUTES", "10"))
 
-# 项目根目录路径
-ROOT_DIR = Path(__file__).resolve().parent.parent.parent
-
 # 当使用RS256算法时需要的公钥和私钥文件路径
-# 优先使用环境变量中的绝对路径，否则使用相对于项目根目录的路径
-PUBLIC_KEY_PATH = os.environ.get("JWT_PUBLIC_KEY_PATH", str(ROOT_DIR / "src/modules/auth/key/jwt_public_key.pem"))
-PRIVATE_KEY_PATH = os.environ.get("JWT_PRIVATE_KEY_PATH", str(ROOT_DIR / "src/modules/auth/key/jwt_private_key.pem"))
+# 密钥不属于源码或镜像，必须由部署环境显式挂载并配置。
+PUBLIC_KEY_PATH = os.environ.get("JWT_PUBLIC_KEY_PATH", "")
+PRIVATE_KEY_PATH = os.environ.get("JWT_PRIVATE_KEY_PATH", "")
 
 # 缓存密钥
 _public_key = None
 _private_key = None
 
 logger.info(f"JWT配置: 算法={JWT_ALGORITHM}, 过期时间={TOKEN_EXPIRE_MINUTES}分钟")
-logger.info(f"JWT公钥路径: {PUBLIC_KEY_PATH}")
-logger.info(f"JWT私钥路径: {PRIVATE_KEY_PATH}")
 
 def get_public_key(force_reload=False):
     """
@@ -63,10 +57,16 @@ def get_public_key(force_reload=False):
         
     # 如果使用对称算法，直接返回密钥
     if JWT_ALGORITHM.startswith("HS"):
+        if not JWT_SECRET_KEY:
+            logger.error("使用HS系列JWT算法时必须配置SECRET_KEY")
+            return None
         return JWT_SECRET_KEY
     
     # 使用非对称算法，加载公钥文件
     try:
+        if not PUBLIC_KEY_PATH:
+            logger.error("使用非对称JWT算法时必须配置JWT_PUBLIC_KEY_PATH")
+            return None
         # 严格使用环境变量中指定的路径
         key_path = Path(PUBLIC_KEY_PATH)
         
@@ -128,10 +128,16 @@ def get_private_key(force_reload=False):
         
     # 如果使用对称算法，直接返回密钥
     if JWT_ALGORITHM.startswith("HS"):
+        if not JWT_SECRET_KEY:
+            logger.error("使用HS系列JWT算法时必须配置SECRET_KEY")
+            return None
         return JWT_SECRET_KEY
     
     # 使用非对称算法，加载私钥文件
     try:
+        if not PRIVATE_KEY_PATH:
+            logger.error("使用非对称JWT算法时必须配置JWT_PRIVATE_KEY_PATH")
+            return None
         # 严格使用环境变量中指定的路径
         key_path = Path(PRIVATE_KEY_PATH)
         
@@ -196,9 +202,9 @@ def create_jwt_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = 
     
     # 设置过期时间
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = utc_now() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
+        expire = utc_now() + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
         
     to_encode["exp"] = expire
     
@@ -213,9 +219,7 @@ def create_jwt_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = 
         return None
     
     try:
-        # 记录更多调试信息
         logger.info(f"使用 {JWT_ALGORITHM} 算法创建令牌")
-        logger.debug(f"令牌数据: {to_encode}")
         
         # 执行JWT编码
         encoded = jwt.encode(to_encode, key, algorithm=JWT_ALGORITHM)
@@ -230,7 +234,7 @@ def create_jwt_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = 
             logger.error(f"生成的令牌格式不正确，期望3部分但得到{len(parts)}部分")
             return None
             
-        logger.info(f"成功生成令牌: {encoded_str[:20]}... (已截断)")
+        logger.info("成功生成JWT令牌")
         return encoded_str
     except Exception as e:
         logger.error(f"JWT编码失败: {str(e)}")
@@ -289,10 +293,10 @@ def is_token_expiring_soon(token: str, threshold_minutes: Optional[int] = None) 
         payload = jwt.decode(token, options={"verify_signature": False})
         
         # 获取过期时间
-        expiry = datetime.fromtimestamp(payload["exp"])
+        expiry = datetime.fromtimestamp(payload["exp"], tz=timezone.utc)
         
         # 计算剩余时间
-        remaining = expiry - datetime.utcnow()
+        remaining = expiry - utc_now()
         
         # 如果剩余时间小于阈值，返回True
         return remaining.total_seconds() < threshold_minutes * 60
@@ -318,7 +322,7 @@ def verify_key_pair():
             return False
             
         # 创建测试数据并签名
-        test_data = {"test": "data", "time": datetime.utcnow().isoformat()}
+        test_data = {"test": "data", "time": utc_now().isoformat()}
         
         # 使用私钥签名
         try:
@@ -368,14 +372,9 @@ def refresh_token(user_id: str) -> str:
     返回:
         新的JWT令牌
     """
-    # 创建新的令牌负载
-    payload = {
-        "sub": user_id,
-        "exp": int(time.time()) + 3600 * 24  # 24小时后过期
-    }
-    
-    # 使用私钥签名
-    token = jwt.encode(payload, PRIVATE_KEY, algorithm=JWT_ALGORITHM)
+    token = create_jwt_token({"sub": user_id}, timedelta(days=1))
+    if token is None:
+        raise RuntimeError("无法刷新JWT令牌")
     logger.info(f"已为用户 {user_id} 刷新令牌")
-    
-    return token 
+
+    return token

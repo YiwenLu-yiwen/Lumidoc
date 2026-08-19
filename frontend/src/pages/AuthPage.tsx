@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { isAxiosError } from 'axios';
 import { Sparkles, CheckCircle, XCircle } from 'lucide-react';
 import { LoginInterface } from '@/components/auth/LoginInterface';
 import { useAuth } from '@/context/AuthContext';
@@ -8,7 +9,6 @@ import { authApi } from '@/api/auth';
 import { detectBrowserLanguage, getTranslation } from '@/utils/language';
 
 export function AuthPage() {
-  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user, login } = useAuth();
   
@@ -18,10 +18,6 @@ export function AuthPage() {
     return getTranslation(currentLanguage, key);
   };
   
-  // 从URL参数获取模式，默认为登录
-  const mode = searchParams.get('mode') || 'login';
-  const isRegisterMode = mode === 'register';
-
   // 获取当前主题
   const { isDarkMode } = useTheme();
 
@@ -78,21 +74,22 @@ export function AuthPage() {
         
         // 由于useEffect会自动触发跳转，这里不需要手动navigate
       }, 2000); // 显示成功消息2秒
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('登录错误:', error);
       
       let errorMessage = t('loginFailedCheckCredentials');
+      const status = isAxiosError(error) ? error.response?.status : undefined;
+      const message = error instanceof Error ? error.message.toLowerCase() : '';
       
       // 优先检查HTTP状态码
-      if (error.response?.status === 401) {
+      if (status === 401) {
         errorMessage = t('accountOrPasswordIncorrect');
-      } else if (error.response?.status === 400) {
+      } else if (status === 400) {
         errorMessage = t('loginFailedCheckCredentials');
-      } else if (error.response?.status >= 500) {
+      } else if (status && status >= 500) {
         errorMessage = t('serverError');
-      } else if (error.message) {
+      } else if (message) {
         // 检查error.message中是否包含已知的错误信息
-        const message = error.message.toLowerCase();
         if (message.includes('账号') || message.includes('密码') || message.includes('password') || message.includes('account')) {
           errorMessage = t('accountOrPasswordIncorrect');
         } else if (message.includes('网络') || message.includes('network') || message.includes('fetch')) {
@@ -148,19 +145,20 @@ export function AuthPage() {
         
         // 由于useEffect会自动触发跳转，这里不需要手动navigate
       }, 2000); // 显示成功消息2秒
-    } catch (error: any) {
+    } catch (error: unknown) {
       let errorMessage = t('registrationFailed');
+      const status = isAxiosError(error) ? error.response?.status : undefined;
+      const message = error instanceof Error ? error.message.toLowerCase() : '';
       
       // 优先检查HTTP状态码
-      if (error.response?.status === 400) {
+      if (status === 400) {
         errorMessage = t('userExistsOrInvalidInput');
-      } else if (error.response?.status === 409) {
+      } else if (status === 409) {
         errorMessage = t('userExistsOrInvalidInput');
-      } else if (error.response?.status >= 500) {
+      } else if (status && status >= 500) {
         errorMessage = t('serverError');
-      } else if (error.message) {
+      } else if (message) {
         // 检查error.message中是否包含已知的错误信息
-        const message = error.message.toLowerCase();
         if (message.includes('用户') || message.includes('邮箱') || message.includes('user') || message.includes('email') || message.includes('exist')) {
           errorMessage = t('userExistsOrInvalidInput');
         } else if (message.includes('网络') || message.includes('network') || message.includes('fetch')) {

@@ -5,8 +5,8 @@
 
 import logging
 import traceback
-from typing import Callable, Dict, Any, Type, Optional, TypeVar, Union, cast
-from fastapi import FastAPI, Request, Response
+from typing import Callable, TypeVar, Union, cast
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError as PydanticValidationError

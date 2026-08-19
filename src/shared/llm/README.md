@@ -1,6 +1,6 @@
-# STP 共享 LLM 库
+# Lumidoc 共享 LLM 库
 
-本库提供了STP项目中使用大语言模型的统一接口和工具。它作为共享基础设施提供给所有微服务。
+本库提供了Lumidoc项目中使用大语言模型的统一接口和工具。它作为共享基础设施提供给所有微服务。
 
 ## 设计原则
 
@@ -58,12 +58,12 @@ text = await adapter.generate("你好，请介绍一下自己")
 提供与LangChain框架的集成：
 
 ```python
-from src.shared.llm import STPLangChainLLM
+from src.shared.llm import LumidocLangChainLLM
 from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate
 
 # 创建LLM
-llm = STPLangChainLLM()
+llm = LumidocLangChainLLM()
 
 # 创建提示模板
 prompt = PromptTemplate(
@@ -179,13 +179,13 @@ if __name__ == "__main__":
 ### 在微服务中使用
 
 ```python
-from src.shared.llm import STPLangChainLLM
+from src.shared.llm import LumidocLangChainLLM
 from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate
 
 class MyProcessor:
     def __init__(self):
-        self.llm = STPLangChainLLM()
+        self.llm = LumidocLangChainLLM()
         self.prompt = PromptTemplate(
             input_variables=["query"],
             template="请回答以下问题：{query}"

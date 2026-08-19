@@ -5,17 +5,12 @@ import os
 import logging
 import time
 import threading
-import asyncio
-from typing import Dict, Any, Optional, List, Callable
 from sqlalchemy import create_engine, inspect, event, text
 from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy.exc import SQLAlchemyError, DBAPIError, OperationalError, DisconnectionError
-from sqlalchemy.pool import QueuePool
+from sqlalchemy.exc import DisconnectionError
 from dotenv import load_dotenv
 from pathlib import Path
 import importlib
-import sys
-from src.shared.database import get_db
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -24,9 +19,9 @@ logger = logging.getLogger(__name__)
 DEFAULT_DB_CONFIG = {
     'host': 'localhost',
     'port': 5432,
-    'user': 'stpuser',
-    'password': 'stppassword',
-    'database': 'stpdb'
+    'user': 'postgres',
+    'password': '',
+    'database': 'lumidoc'
 }
 
 # 创建基础模型类
@@ -118,8 +113,11 @@ def get_database_url():
         'database': os.getenv('POSTGRES_DB') or DEFAULT_DB_CONFIG['database']
     }
     
+    if not db_config['password']:
+        raise RuntimeError("POSTGRES_PASSWORD is required")
+
     url = f"postgresql://{db_config['user']}:{db_config['password']}@{db_config['host']}:{db_config['port']}/{db_config['database']}"
-    logger.info(f"使用组合配置生成数据库URL")
+    logger.info("使用组合配置生成数据库URL")
     return url
 
 def create_db_engine(url: str):
@@ -216,7 +214,7 @@ def check_database_exists(engine_url):
         
         with temp_engine.connect() as conn:
             # 检查数据库是否存在 - 修复：使用text()函数包装SQL语句
-            result = conn.execute(text(f"SELECT 1 FROM pg_database WHERE datname=:db_name"), {"db_name": db_name})
+            result = conn.execute(text("SELECT 1 FROM pg_database WHERE datname=:db_name"), {"db_name": db_name})
             exists = result.scalar() == 1
             
             if not exists:
@@ -375,4 +373,4 @@ try:
 except Exception as e:
     logger.error(f"数据库初始模块加载时出错: {str(e)}")
     connection_state = DBConnectionState.ERROR
-    connection_error = str(e) 
+    connection_error = str(e)

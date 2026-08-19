@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import { fileApi } from '../../../api/file';
 import { ragApi, RagBuildResponse } from '../../../api/rag';
@@ -20,7 +20,7 @@ const FileTypeIcon = ({ type }: { type: string }) => {
     if (type.includes('zip') || type.includes('archive')) return '🗄️';
     return '📄';
   };
-  
+
   return <span className="text-lg">{getIconClass()}</span>;
 };
 
@@ -37,9 +37,26 @@ const formatDate = (dateStr: string): string => {
   try {
     const date = new Date(dateStr);
     return date.toLocaleDateString();
-  } catch (e) {
+  } catch {
     return dateStr;
   }
+};
+
+type UnknownRecord = Record<string, unknown>;
+
+const asRecord = (value: unknown): UnknownRecord | null => {
+  if (typeof value === 'object' && value !== null) {
+    return value as UnknownRecord;
+  }
+  return null;
+};
+
+const asString = (value: unknown, fallback = ''): string => {
+  return typeof value === 'string' ? value : fallback;
+};
+
+const asNumber = (value: unknown): number | undefined => {
+  return typeof value === 'number' ? value : undefined;
 };
 
 export interface FilesListProps {
@@ -56,7 +73,7 @@ interface FilePreview {
   error?: string;
   originalName: string;
   displayName?: string;
-  metadata?: any;
+  metadata?: unknown;
   isProcessed?: boolean;
   fileId?: string;
   fileHash?: string;
@@ -102,7 +119,7 @@ const RagStatus = {
   FAILED: 'failed'        // 索引失败
 };
 
-export const FILE_TYPE_STORAGE_KEY = 'stp_file_list_type';
+export const FILE_TYPE_STORAGE_KEY = 'lumidoc_file_list_type';
 
 const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange }) => {
   const [files, setFiles] = useState<FileItem[]>([]);
@@ -115,15 +132,19 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
   const [ragServiceAvailable, setRagServiceAvailable] = useState<boolean>(true);
   // 添加退避策略计数器
   const [errorCount, setErrorCount] = useState<number>(0);
+  const filesRef = useRef(files);
+  const errorCountRef = useRef(errorCount);
+  filesRef.current = files;
+  errorCountRef.current = errorCount;
   // 持久化文件类型，解决刷新问题
   const [currentFileType, setCurrentFileType] = useState<'regular' | 'rag'>(fileType);
   // 添加防重复提交保护
   const [isImporting, setIsImporting] = useState<boolean>(false);
   useAuth(); // 保持认证上下文的连接
-  
+
   // 主题检测
   const { isDarkMode } = useTheme();
-  
+
   // 在组件挂载和文件类型变化时保存到本地存储
   useEffect(() => {
     try {
@@ -134,7 +155,7 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
       console.error('保存文件类型失败:', e);
     }
   }, [fileType]);
-  
+
   // 在组件挂载时，尝试从本地存储恢复文件类型
   useEffect(() => {
     try {
@@ -152,14 +173,14 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
   useEffect(() => {
     const handleAddImportingFiles = (event: CustomEvent) => {
       const { files: importingFiles } = event.detail;
-      
+
       // 只有RAG文件列表才响应这个事件
       if (currentFileType === 'rag' && importingFiles && Array.isArray(importingFiles)) {
         console.log(`[FilesList RAG] 收到添加导入文件事件，文件数量: ${importingFiles.length}`);
-        
+
         setFiles(prev => {
           // 移除重复的文件，添加新的处理中文件
-          const existing = prev.filter(f => !importingFiles.some((pf: FileItem) => 
+          const existing = prev.filter(f => !importingFiles.some((pf: FileItem) =>
             getFileUniqueId(f) === getFileUniqueId(pf)
           ));
           return [...existing, ...importingFiles];
@@ -175,10 +196,10 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
       document.removeEventListener('addImportingFiles', handleAddImportingFiles as EventListener);
     };
   }, [currentFileType]);
-  
+
   // 检查用户是否有编辑权限
   const canEdit = true; // 临时设置所有用户拥有编辑权限，解决删除按钮显示问题
-  
+
   // 获取文件状态文本 - 改进版
   const getStatusText = (file: FileItem) => {
     // 优先显示RAG状态（如果存在）
@@ -194,12 +215,12 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
           return '索引失败';
       }
     }
-    
+
     // 如果正在导入，显示导入状态
     if (file.isImporting) {
       return '索引中';
     }
-    
+
     // 显示基础文件处理状态
     switch (file.status) {
       case FileStatus.PENDING:
@@ -234,12 +255,12 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
           return 'bg-red-800 text-red-200 border-red-700';
       }
     }
-    
+
     // 如果正在导入，显示动画效果
     if (file.isImporting) {
       return 'bg-blue-800 text-blue-200 border-blue-700 animate-pulse';
     }
-    
+
     // 基础状态样式
     switch (file.status) {
       case FileStatus.PENDING:
@@ -259,20 +280,20 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
 
   // 判断文件是否可操作
   const isFileActionable = (file: FileItem) => {
-    return file.status === FileStatus.COMPLETED || 
+    return file.status === FileStatus.COMPLETED ||
            file.status === FileStatus.FAILED ||
            !file.status;
   };
-  
+
   // 🔧 新增：判断文件是否可以导入到知识库
   const canImportToRag = (file: FileItem) => {
     // 只有已完成处理的文件才能导入，且不能重复导入
-    return file.status === FileStatus.COMPLETED && 
-           !file.isInRag && 
+    return file.status === FileStatus.COMPLETED &&
+           !file.isInRag &&
            !file.isImporting &&
            file.ragStatus !== RagStatus.COMPLETED;
   };
-  
+
   // 🔧 新增：判断文件是否已在知识库中
   const isFileInRag = (file: FileItem) => {
     return file.isInRag || file.ragStatus === RagStatus.COMPLETED;
@@ -290,7 +311,7 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
   // 刷新文件列表
   const refreshFiles = async () => {
     if (!projectId) return;
-    
+
     setLoading(true);
     setError(null);
     try {
@@ -301,15 +322,15 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
         if (!result || !Array.isArray(result)) {
           throw new Error('获取到的文件列表格式无效');
         }
-        
+
         // 检查文件对象的结构
         const hasValidStructure = result.every(f => f && typeof f.filename === 'string');
         if (!hasValidStructure) {
           throw new Error('文件数据结构异常');
         }
-        
+
         console.log(`[FilesList] 获取到${result.length}个文件`);
-        
+
         // 🔧 更新：映射常规文件数据，包含RAG状态
         setFiles(result.map(f => ({
           originalName: f.filename, // 保留原始文件名用于API调用
@@ -333,13 +354,13 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
         console.log(`[FilesList] 刷新项目${projectId}的RAG文件列表`);
         const response = await ragApi.getRagFiles(projectId);
         console.log(`[FilesList] RAG文件API响应:`, response);
-        
+
         // 成功获取结果，重置错误计数并标记服务可用
         setRagServiceAvailable(true);
         setErrorCount(0);
-        
+
         // 处理API响应
-        let resultArray: any[] = [];
+        let resultArray: unknown[] = [];
         if (response && typeof response === 'object') {
           // 如果是新格式 {success: true, files: Array}
           if (response.success && Array.isArray(response.files)) {
@@ -348,9 +369,9 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
           // 如果直接是数组格式(兼容旧版)
           else if (Array.isArray(response)) {
             resultArray = response;
-          } 
+          }
           // 处理404 Not Found响应格式
-          else if ((response as any).detail === 'Not Found') {
+          else if ((response as { detail?: string }).detail === 'Not Found') {
             console.log('[FilesList] RAG服务返回404 Not Found，使用空数组');
             resultArray = [];
           }
@@ -359,30 +380,33 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
             resultArray = [];
           }
         }
-        
+
         console.log(`[FilesList] 处理后的RAG文件数组:`, resultArray);
-        
+
         // 🔧 更新：映射RAG文件数据，包含完整的状态信息
         if (resultArray.length > 0) {
-          setFiles(resultArray.map((file: any) => ({
-            originalName: typeof file === 'string' ? file : (file.filename || file.name || ''),
-            displayName: typeof file === 'string' ? file : (file.display_name || file.filename || file.name || ''),
-            size: file.size,
-            fileType: file.file_type || 'unknown',
-            contentType: file.content_type || file.file_type || 'text/markdown',
-            createdAt: file.created_at,
-            status: file.status || 'completed',
-            fileId: file.file_id ? String(file.file_id) : '',
-            fileHash: file.file_hash || '',
-            path: file.path || '',
+          setFiles(resultArray.map((file) => {
+            const fileRecord = asRecord(file);
+            return ({
+            originalName: typeof file === 'string' ? file : asString(fileRecord?.filename ?? fileRecord?.name, ''),
+            displayName: typeof file === 'string' ? file : asString(fileRecord?.display_name ?? fileRecord?.filename ?? fileRecord?.name, ''),
+            size: asNumber(fileRecord?.size),
+            fileType: asString(fileRecord?.file_type, 'unknown'),
+            contentType: asString(fileRecord?.content_type ?? fileRecord?.file_type, 'text/markdown'),
+            createdAt: asString(fileRecord?.created_at),
+            status: asString(fileRecord?.status, 'completed'),
+            fileId: fileRecord?.file_id ? String(fileRecord.file_id) : '',
+            fileHash: asString(fileRecord?.file_hash),
+            path: asString(fileRecord?.path),
             // 🔧 新增：RAG状态相关字段
-            ragStatus: file.rag_status || RagStatus.COMPLETED, // RAG文件默认已完成
+            ragStatus: asString(fileRecord?.rag_status, RagStatus.COMPLETED), // RAG文件默认已完成
             isInRag: true, // RAG列表中的文件都已在知识库中
             isImporting: false, // 显示的文件不应该在导入中
-            docId: file.doc_id || '', // RAG文档ID
-            importedAt: file.selected_at || file.rag_processed_at, // 导入时间
-            errorMessage: file.rag_error_message || '' // 错误信息
-          } as FileItem)));
+            docId: asString(fileRecord?.doc_id), // RAG文档ID
+            importedAt: asString(fileRecord?.selected_at ?? fileRecord?.rag_processed_at), // 导入时间
+            errorMessage: asString(fileRecord?.rag_error_message) // 错误信息
+          } as FileItem);
+          }));
         } else {
           console.log('[FilesList] RAG文件列表为空');
           setFiles([]);
@@ -400,29 +424,29 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
   useEffect(() => {
     const loadFiles = async () => {
       if (!projectId) return;
-      
+
       setLoading(true);
       setError(null);
-      
+
       try {
         let fileList: FileItem[] = [];
-        
+
         // 使用持久化的文件类型，而不是传入的fileType
         if (currentFileType === 'regular') {
           // 获取常规文件
           console.log(`[FilesList] 加载项目${projectId}的常规文件列表`);
           const result = await fileApi.listFiles(projectId);
           console.log(`[FilesList] 获取到${result.length}个文件:`, result);
-          
+
           fileList = result.map(file => {
             // 确保文件名不为空
             const originalName = file.filename || '';
             let displayName = '';
-            
+
             try {
               // 尝试使用display_name或解码filename
               displayName = file.display_name || decodeURIComponent(originalName);
-              
+
               // 如果displayName为空或无效，尝试从路径中提取文件名
               if (!displayName || displayName === 'undefined' || displayName === 'null') {
                 if (file.path) {
@@ -444,24 +468,24 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
                   displayName = originalName;
                 }
               }
-              
+
               // 检查displayName是否为哈希值（通常是64位十六进制字符）
               if (/^[a-f0-9]{64}\.\w+$/i.test(displayName)) {
                 // 如果是哈希值，使用更友好的名称
                 displayName = file.name || '未命名文件';
               }
-              
+
               // 如果仍然为空，设置为未命名文件
               if (!displayName) {
                 displayName = '未命名文件';
               }
-              
+
               console.log(`[FilesList] 处理文件名: 原始名=${originalName}, 显示名=${displayName}, 路径=${file.path || '无'}`);
             } catch (e) {
               console.warn(`[FilesList] 文件名解码失败:`, e);
               displayName = originalName || '未命名文件';
             }
-            
+
             return {
               originalName: originalName,
               displayName: displayName,
@@ -475,7 +499,7 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
               path: file.path || ''
             } as FileItem;
           });
-          
+
           console.log('[FilesList] 处理后的文件列表:', fileList);
           setFiles(fileList);
         } else {
@@ -484,17 +508,17 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
           try {
             const response = await ragApi.getRagFiles(projectId);
             console.log(`[FilesList] RAG文件API响应:`, response);
-            
+
             // 检查是否有错误
             if (!response.success) {
               console.warn(`[FilesList] RAG文件API返回错误:`, response.error);
-              
+
               // 处理认证错误
               if (response.authError) {
                 setError(response.error || '认证失败，请重新登录');
                 setRagServiceAvailable(false);
                 fileList = [];
-              } 
+              }
               // 处理其他错误
               else {
                 setError(response.error || 'RAG服务暂时不可用');
@@ -506,42 +530,48 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
               setRagServiceAvailable(true);
               setErrorCount(0);
               setError(null);
-              
+
               // 处理成功响应
-              const resultArray: any[] = response.files || [];
+              const resultArray: unknown[] = response.files || [];
               console.log(`[FilesList] 处理后的RAG文件数组:`, resultArray);
-              
+
               // 确保result是数组，否则使用空数组
               if (resultArray.length > 0) {
-                fileList = resultArray.map((file: any) => ({
-                  originalName: typeof file === 'string' ? file : (file.filename || file.name || ''),
-                  displayName: typeof file === 'string' ? file : (file.display_name || file.displayName || file.filename || file.name || ''),
-                  size: file.size,
-                  fileType: file.file_type || file.fileType || 'unknown',
-                  contentType: file.content_type || file.contentType || file.file_type || file.fileType || 'text/markdown',
-                  createdAt: file.created_at || file.createdAt,
-                  status: file.status || file.rag_status || 'completed',
-                  fileId: file.file_id || file.id ? String(file.file_id || file.id) : '',
-                  fileHash: file.file_hash || file.fileHash || '',
-                  path: file.path || ''
-                } as FileItem));
+                fileList = resultArray.map((file) => {
+                  const fileRecord = asRecord(file);
+                  return ({
+                  originalName: typeof file === 'string' ? file : asString(fileRecord?.filename ?? fileRecord?.name, ''),
+                  displayName: typeof file === 'string' ? file : asString(fileRecord?.display_name ?? fileRecord?.displayName ?? fileRecord?.filename ?? fileRecord?.name, ''),
+                  size: asNumber(fileRecord?.size),
+                  fileType: asString(fileRecord?.file_type ?? fileRecord?.fileType, 'unknown'),
+                  contentType: asString(fileRecord?.content_type ?? fileRecord?.contentType ?? fileRecord?.file_type ?? fileRecord?.fileType, 'text/markdown'),
+                  createdAt: asString(fileRecord?.created_at ?? fileRecord?.createdAt),
+                  status: asString(fileRecord?.status ?? fileRecord?.rag_status, 'completed'),
+                  fileId: (fileRecord?.file_id || fileRecord?.id) ? String(fileRecord?.file_id || fileRecord?.id) : '',
+                  fileHash: asString(fileRecord?.file_hash ?? fileRecord?.fileHash),
+                  path: asString(fileRecord?.path)
+                } as FileItem);
+                });
               } else {
                 console.log('[FilesList] RAG文件列表为空');
                 fileList = [];
               }
             }
-          } catch (ragError: any) {
+          } catch (ragError: unknown) {
             console.error('[FilesList] 获取RAG文件失败:', ragError);
-            
+
             // 增加错误计数
             setErrorCount(prev => prev + 1);
-            
+
             // 如果是404错误，标记RAG服务状态
-            if (ragError.status === 404) {
+            const errorRecord = asRecord(ragError);
+            const errorStatus = errorRecord?.status;
+            if (errorStatus === 404) {
               console.log('[FilesList] RAG文件服务返回404错误');
-              
+
               // 检查响应内容，区分"无文件"和"服务不可用"
-              const errorDetail = ragError.data?.detail || '';
+              const ragErrorData = asRecord(errorRecord?.data);
+              const errorDetail = asString(ragErrorData?.detail, '');
               if (typeof errorDetail === 'string' && errorDetail.toLowerCase().includes('not found')) {
                 // 很可能是服务不可用
                 setRagServiceAvailable(false);
@@ -551,7 +581,7 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
                 setRagServiceAvailable(true);
                 setError(null);
               }
-              
+
               fileList = [];
             } else {
               // 其他错误
@@ -560,37 +590,38 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
             }
           }
         }
-        
+
         // 确保所有文件都有显示名称，如果没有则使用原始文件名
         fileList = fileList.map(file => ({
           ...file,
           displayName: file.displayName || decodeURIComponent(file.originalName || '')
         }));
-        
+
         console.log('[FilesList] 处理后的文件列表:', fileList);
         setFiles(fileList);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('获取文件列表错误:', err);
-        setError(err.message || '获取文件列表失败');
-        toast.error('获取文件列表失败: ' + (err.message || '未知错误'));
+        const errorMessage = err instanceof Error ? err.message : '未知错误';
+        setError(errorMessage || '获取文件列表失败');
+        toast.error('获取文件列表失败: ' + (errorMessage || '未知错误'));
       } finally {
         setLoading(false);
       }
     };
-    
+
     loadFiles();
-    
+
     // 🔧 智能刷新机制：根据文件状态和用户活动动态调整刷新频率
     let consecutiveNoChanges = 0; // 连续无变化次数
     let lastFileStates = new Map<string, string>(); // 记录上次文件状态
     let userLastActive = Date.now(); // 用户最后活动时间
     let isTabVisible = true; // 标签页是否可见
-    
+
     // 监听用户活动
     const updateUserActivity = () => {
       userLastActive = Date.now();
     };
-    
+
     // 监听标签页可见性
     const handleVisibilityChange = () => {
       isTabVisible = !document.hidden;
@@ -600,39 +631,39 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
         setTimeout(loadFiles, 100);
       }
     };
-    
+
     // 添加事件监听器
     document.addEventListener('mousemove', updateUserActivity);
     document.addEventListener('keydown', updateUserActivity);
     document.addEventListener('click', updateUserActivity);
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    
+
     // 智能计算刷新间隔
     const updateInterval = () => {
-      const hasProcessingFiles = files.some(file => 
+      const hasProcessingFiles = filesRef.current.some(file =>
         file.status === FileStatus.PROCESSING || file.status === FileStatus.PENDING || file.isImporting
       );
-      
+
       const isUserInactive = (Date.now() - userLastActive) > 60000; // 用户1分钟内无活动
-      
+
       // 如果RAG服务不可用，使用退避策略
-      if (currentFileType === 'rag' && (!ragServiceAvailable || errorCount > 0)) {
-        return Math.min(60000 * Math.pow(2, Math.min(errorCount, 4)), 600000); // 1分钟到10分钟（增加基础间隔）
+      if (currentFileType === 'rag' && (!ragServiceAvailable || errorCountRef.current > 0)) {
+        return Math.min(60000 * Math.pow(2, Math.min(errorCountRef.current, 4)), 600000); // 1分钟到10分钟（增加基础间隔）
       }
-      
+
       // 如果标签页不可见，大幅减少刷新频率
       if (!isTabVisible) {
         return hasProcessingFiles ? 60000 : 600000; // 1分钟或10分钟（大幅减少）
       }
-      
+
       // 如果连续多次无变化，逐渐增加间隔
       if (consecutiveNoChanges > 3) {
         const backoffMultiplier = Math.min(consecutiveNoChanges - 3, 5);
-        return hasProcessingFiles ? 
+        return hasProcessingFiles ?
           Math.min(30000 + (backoffMultiplier * 15000), 120000) : // 30秒到2分钟
           Math.min(120000 + (backoffMultiplier * 60000), 600000); // 2分钟到10分钟
       }
-      
+
       // 根据文件状态和用户活动决定刷新频率（大幅优化）
       if (hasProcessingFiles) {
         return isUserInactive ? 30000 : 15000; // 活跃时15秒，不活跃时30秒（从5秒改为15秒）
@@ -640,15 +671,15 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
         return isUserInactive ? 300000 : 120000; // 活跃时2分钟，不活跃时5分钟（从30秒改为2分钟）
       }
     };
-    
+
     // 检测文件状态是否有变化
     const detectFileChanges = () => {
       const currentStates = new Map<string, string>();
-      files.forEach(file => {
+      filesRef.current.forEach(file => {
         const key = getFileUniqueId(file);
         currentStates.set(key, `${file.status}:${file.isImporting}:${file.size}`);
       });
-      
+
       // 比较状态变化
       let hasChanges = false;
       if (currentStates.size !== lastFileStates.size) {
@@ -661,7 +692,7 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
           }
         }
       }
-      
+
       if (hasChanges) {
         consecutiveNoChanges = 0;
         console.log('[FilesList] 检测到文件状态变化，重置连续无变化计数');
@@ -669,31 +700,31 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
         consecutiveNoChanges++;
         console.log(`[FilesList] 连续${consecutiveNoChanges}次无变化`);
       }
-      
+
       lastFileStates = currentStates;
       return hasChanges;
     };
-    
+
     // 增强的loadFiles函数，包含变化检测
     const smartLoadFiles = async () => {
       // 🔧 修复：避免在组件卸载后执行
       if (!document.body.contains(document.querySelector('[data-file-list]'))) {
         return;
       }
-      
+
       await loadFiles();
-      
+
       // 检测变化
       detectFileChanges();
-      
+
       // 如果有变化，立即调整刷新间隔
       adjustInterval();
     };
-    
+
     // 设置初始间隔
     let intervalTime = updateInterval();
     let intervalId = setInterval(smartLoadFiles, intervalTime);
-    
+
     // 当文件列表变化时调整刷新间隔
     const adjustInterval = () => {
       clearInterval(intervalId);
@@ -701,15 +732,15 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
       console.log(`[FilesList] 调整刷新间隔为${intervalTime}ms`);
       intervalId = setInterval(smartLoadFiles, intervalTime);
     };
-    
+
     // 🔧 修复：减少调整频率，避免过度轮询
     const debounceTimer = setTimeout(adjustInterval, 1000);
-    
+
     // 组件卸载时清除定时器和事件监听器
     return () => {
       clearInterval(intervalId);
       clearTimeout(debounceTimer);
-      
+
       // 清除事件监听器
       document.removeEventListener('mousemove', updateUserActivity);
       document.removeEventListener('keydown', updateUserActivity);
@@ -721,9 +752,9 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
   // 选中/取消选中文件
   const handleSelect = (file: FileItem) => {
     const fileId = getFileUniqueId(file);
-    setSelectedFiles(prev => 
-      prev.some(f => getFileUniqueId(f) === fileId) 
-        ? prev.filter(f => getFileUniqueId(f) !== fileId) 
+    setSelectedFiles(prev =>
+      prev.some(f => getFileUniqueId(f) === fileId)
+        ? prev.filter(f => getFileUniqueId(f) !== fileId)
         : [...prev, file]
     );
   };
@@ -743,24 +774,24 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
   // 导入知识库
   const handleImport = async () => {
     if (!projectId) return;
-    
+
     // 防重复提交保护
     if (isImporting) {
       toast.warning('正在导入中，请勿重复操作');
       return;
     }
-    
+
     if (selectedFiles.length === 0) {
       toast.error('请选择要导入知识库的文件');
       return;
     }
-    
+
     // 🔧 新增：检查是否有已在知识库中的文件，防止重复导入
     const alreadyImportedFiles = selectedFiles.filter(file => isFileInRag(file));
     if (alreadyImportedFiles.length > 0) {
       const fileNames = alreadyImportedFiles.map(f => f.displayName || f.originalName).join(', ');
       toast.warning(`以下文件已在知识库中，无需重复导入：${fileNames}`);
-      
+
       // 从选中文件中移除已导入的文件
       const filesToImport = selectedFiles.filter(file => !isFileInRag(file));
       if (filesToImport.length === 0) {
@@ -769,13 +800,13 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
       // 继续处理可导入的文件
       setSelectedFiles(filesToImport);
     }
-    
+
     // 🔧 新增：检查是否有不可导入的文件（未完成处理）
     const unprocessedFiles = selectedFiles.filter(file => !canImportToRag(file));
     if (unprocessedFiles.length > 0) {
       const fileNames = unprocessedFiles.map(f => f.displayName || f.originalName).join(', ');
       toast.warning(`以下文件尚未处理完成，无法导入：${fileNames}`);
-      
+
       // 从选中文件中移除未处理的文件
       const readyFiles = selectedFiles.filter(file => canImportToRag(file));
       if (readyFiles.length === 0) {
@@ -783,19 +814,19 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
       }
       setSelectedFiles(readyFiles);
     }
-    
+
     try {
       // 设置导入状态，防止重复提交
       setIsImporting(true);
-      
+
       // 显示导入中的状态
       const loadingToast = toast.loading('正在导入文件到知识库...');
 
       // 获取所选文件的fileHash或fileId (优先使用fileHash)
       const fileIdentifiers = selectedFiles.map(f => f.fileHash || f.fileId || f.originalName);
-      
+
       console.log('[FilesList] 导入文件到知识库, 文件标识:', fileIdentifiers);
-      
+
       // 🔧 修复：立即更新本地状态，显示处理中的文件
       const processingFiles = selectedFiles.map(file => ({
         ...file,
@@ -805,7 +836,7 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
         isImporting: true,
         importedAt: new Date().toISOString()
       }));
-      
+
       // 🔧 关键修复：立即切换到知识库文件标签页
       if (onTabChange) {
         console.log('[FilesList] 切换到知识库文件标签页');
@@ -813,47 +844,47 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
         // 发送事件通知FileManager切换标签页
         document.dispatchEvent(new CustomEvent('switchToRagTab'));
       }
-      
+
       // 🔧 立即添加处理中的文件到RAG文件列表（无论当前在哪个标签页）
       // 通过自定义事件通知RAG文件列表组件添加这些文件
       const ragListEvent = new CustomEvent('addImportingFiles', {
         detail: { files: processingFiles }
       });
       document.dispatchEvent(ragListEvent);
-      
+
       // 同时更新当前组件的文件列表（如果是RAG类型）
       if (currentFileType === 'rag') {
         setFiles(prev => {
           // 移除重复的文件，添加新的处理中文件
-          const existing = prev.filter(f => !processingFiles.some(pf => 
+          const existing = prev.filter(f => !processingFiles.some(pf =>
             getFileUniqueId(f) === getFileUniqueId(pf)
           ));
           return [...existing, ...processingFiles];
         });
       }
-      
+
       const response: RagBuildResponse = await ragApi.buildRag(projectId, fileIdentifiers);
-      
+
       // 关闭加载提示
       toast.dismiss(loadingToast);
-      
+
       // 检查响应结果
       if (response && response.success) {
         // 成功导入
         const processedCount = response.processed_count || 0;
         const failedFiles = response.failed_files || [];
-        
+
         if (failedFiles.length > 0) {
           // 部分文件导入失败
           toast.warning(
             `已成功导入${processedCount}个文件，${failedFiles.length}个文件导入失败。`
           );
-          
+
           // 🔧 修复：更新失败文件的状态
           if (currentFileType === 'rag') {
             setFiles(prev => prev.map(file => {
-              const failedFile = failedFiles.find(f => 
-                f.file_hash === file.fileHash || 
+              const failedFile = failedFiles.find(f =>
+                f.file_hash === file.fileHash ||
                 f.file_hash === file.fileId ||
                 f.file_hash === file.originalName
               );
@@ -872,7 +903,7 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
           // 全部导入成功
           toast.success(`已成功导入${processedCount}个文件到知识库`);
         }
-        
+
         // 🔧 修复：更新成功文件的状态
         if (currentFileType === 'rag') {
           setFiles(prev => prev.map(file => {
@@ -887,22 +918,22 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
             return file;
           }));
         }
-        
+
         // 清空选中状态
         setSelectedFiles([]);
-        
+
         // 触发自定义事件，通知父组件切换到RAG标签页
-        const event = new CustomEvent('switchToRagTab', { 
+        const event = new CustomEvent('switchToRagTab', {
           bubbles: true,
           detail: { success: true }
         });
         document.dispatchEvent(event);
-        
+
         // 如果父组件提供了onTabChange回调，也调用它
         if (onTabChange) {
           onTabChange('rag');
         }
-        
+
         // 🔧 修复：立即刷新RAG文件列表，确保状态同步
         setTimeout(() => {
           // 触发刷新RAG文件列表的事件
@@ -911,16 +942,16 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
             detail: { projectId }
           });
           document.dispatchEvent(refreshEvent);
-          
+
           // 强制刷新当前文件列表
           refreshFiles();
         }, 500); // 给后端一点时间来更新状态
-        
+
       } else {
         // 导入失败
         const errorMessage = response?.message || '导入失败';
         toast.error(`导入失败: ${errorMessage}`);
-        
+
         // 🔧 修复：更新失败状态
         if (currentFileType === 'rag') {
           setFiles(prev => prev.map(file => {
@@ -936,11 +967,11 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
           }));
         }
       }
-      
+
     } catch (error) {
       console.error('[FilesList] 导入知识库失败:', error);
       toast.error(`导入失败: ${error instanceof Error ? error.message : '未知错误'}`);
-      
+
       // 🔧 修复：错误情况下也要更新状态
       if (currentFileType === 'rag') {
         setFiles(prev => prev.map(file => {
@@ -960,14 +991,14 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
       setIsImporting(false);
     }
   };
-  
+
   // 文件下载处理函数，支持FilePreview或文件对象
   const handleDownloadFile = async (file: { originalName: string, displayName?: string, isProcessed?: boolean, content?: string }) => {
     if (!projectId) return;
-    
+
     // 确定显示名称
     const displayName = file.displayName || file.originalName;
-    
+
     // 检查文件名是否有效
     if (!displayName && !file.originalName) {
       toast.error('文件名信息丢失，无法下载');
@@ -983,32 +1014,32 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
         if (!downloadFilename) {
           throw new Error('文件名信息丢失，无法下载原始文件');
         }
-        
+
         toast.warning(`处理后的内容不可用，将下载原始文件`);
-        
+
         const apiUrl = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8888';
-        const downloadUrl = `${apiUrl}/file/projects/${projectId}/files/download/${encodeURIComponent(downloadFilename)}?download=true&t=${Date.now()}`;
-        
+        const downloadUrl = `${apiUrl}/api/file/projects/${projectId}/files/download/${encodeURIComponent(downloadFilename)}?download=true&t=${Date.now()}`;
+
         // 使用fetch获取文件，确保认证令牌被正确传递
-        const token = localStorage.getItem('stp_token');
+        const token = localStorage.getItem('lumidoc_token');
         const headers: Record<string, string> = {};
-        
+
         if (token) {
           headers['Authorization'] = `Bearer ${token}`;
         }
-        
+
         const response = await fetch(downloadUrl, { headers });
-        
+
         if (response.status === 401) {
           console.warn('认证失败，需要重新登录');
           toast.error('认证已过期，请重新登录后再试');
           throw new Error('认证失败: 登录令牌已过期');
         }
-        
+
         if (!response.ok) {
           throw new Error(`下载失败: ${response.status} ${response.statusText}`);
         }
-        
+
         // 获取文件名
         const contentDisposition = response.headers.get('content-disposition');
         let responseFilename = displayName;
@@ -1018,7 +1049,7 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
             responseFilename = matches[1].replace(/['"]/g, '');
           }
         }
-        
+
         // 创建Blob并下载
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
@@ -1029,7 +1060,7 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
         link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
-        
+
         // 关闭加载提示
         if (loadingToastId) {
           toast.dismiss(loadingToastId);
@@ -1059,10 +1090,10 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
       toast.success(`开始下载OCR处理结果: ${displayName}`);
       return;
     }
-    
+
     // 显示加载提示
     const loadingToastId = toast.loading(`正在准备下载文件: ${displayName}...`);
-    
+
     try {
       // 首先尝试获取OCR处理后的内容
       const apiUrl = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8888';
@@ -1070,20 +1101,20 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
       if (!filename) {
         throw new Error('文件名信息缺失，无法获取内容');
       }
-      const contentUrl = `${apiUrl}/file/projects/${projectId}/files/content/${encodeURIComponent(filename)}`;
-      
+      const contentUrl = `${apiUrl}/api/file/projects/${projectId}/files/content/${encodeURIComponent(filename)}`;
+
       console.log(`尝试获取处理后的内容: ${contentUrl}`);
-      
-      const token = localStorage.getItem('stp_token');
+
+      const token = localStorage.getItem('lumidoc_token');
       const headers: Record<string, string> = {
         'Accept': 'application/json',
         'Cache-Control': 'no-cache, no-store'
       };
-      
+
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }
-      
+
       const response = await fetch(contentUrl, { headers });
       console.log(`内容响应状态: ${response.status}, 内容类型: ${response.headers.get('content-type')}`);
       if (response.status === 401) {
@@ -1094,10 +1125,10 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
       if (!response.ok) {
         throw new Error("获取处理结果失败");
       }
-      
+
       // 检查内容类型
       const contentType = response.headers.get('content-type');
-      
+
       let data;
       // 如果是JSON格式，按JSON处理
       if (contentType && contentType.includes('application/json')) {
@@ -1139,73 +1170,73 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
       await fallbackToOriginalDownload(loadingToastId.toString());
     }
   };
-  
+
   // 预览文件
   const handlePreview = async (file: FileItem) => {
     if (!projectId) return;
-    
+
     if (!isFileActionable(file)) {
       toast.error('此文件处理失败，无法预览');
       return;
     }
-    
+
     // 文件处理中或等待处理时给予提示，但仍允许尝试预览
     if (file.status === FileStatus.PENDING || file.status === FileStatus.PROCESSING) {
       toast.warning('文件正在处理中，预览可能不完整');
     }
-    
+
     setPreviewingFile({
       fileName: file.displayName,
       originalName: file.originalName,
       loading: true
     });
-    
+
     try {
       console.log(`开始预览文件: ${file.displayName}, 原始名称: ${file.originalName}`);
-      
+
       // 尝试两种方式获取文件内容：先尝试处理后的内容，如果失败则尝试原始文件
       const apiUrl = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8888';
-      
+
       // 1. 首先尝试获取处理后的内容
       const previewContentFilename = file.originalName || file.displayName;
       if (!previewContentFilename) {
         throw new Error('文件名信息缺失，无法获取内容进行预览');
       }
-      const contentUrl = `${apiUrl}/file/projects/${projectId}/files/content/${encodeURIComponent(previewContentFilename)}`;
+      const contentUrl = `${apiUrl}/api/file/projects/${projectId}/files/content/${encodeURIComponent(previewContentFilename)}`;
       console.log(`预览请求URL: ${contentUrl}`);
-      
+
       try {
-        const token = localStorage.getItem('stp_token');
+        const token = localStorage.getItem('lumidoc_token');
         const headers: Record<string, string> = {
           'Accept': 'application/json',
           'Cache-Control': 'no-cache, no-store'
         };
-        
+
         if (token) {
           headers['Authorization'] = `Bearer ${token}`;
         }
-        
+
         const contentResponse = await fetch(contentUrl, { headers });
         console.log(`内容响应状态: ${contentResponse.status}, 内容类型: ${contentResponse.headers.get('content-type')}`);
-        
+
         // Handle authentication errors
         if (contentResponse.status === 401) {
           console.warn('认证失败，需要重新登录');
           toast.error('认证已过期，请重新登录后再试');
           throw new Error('认证失败: 登录令牌已过期');
         }
-        
+
         if (contentResponse.ok) {
           // 检查内容类型
           const contentType = contentResponse.headers.get('content-type');
           console.log(`文件内容类型: ${contentType}`);
-          
+
           // 如果是JSON格式，按JSON处理
           if (contentType && contentType.includes('application/json')) {
             console.log('处理JSON格式内容');
             const contentData = await contentResponse.json();
             console.log('JSON内容:', contentData);
-            
+
             if (contentData.success && contentData.content && contentData.content.length > 0) {
               // 使用处理后的Markdown内容
               setPreviewingFile({
@@ -1227,13 +1258,13 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
             console.log('处理文本格式内容');
             const textContent = await contentResponse.text();
             console.log(`获取到文本内容，长度: ${textContent.length}`);
-            
+
             // 检查是否是HTML内容（通常是错误页面）
             if (textContent.trim().startsWith('<!DOCTYPE html>') || textContent.trim().startsWith('<html')) {
               console.warn('收到HTML内容而非预期的文件内容，可能是错误页面');
               throw new Error('服务器返回了HTML页面而非文件内容');
             }
-            
+
             setPreviewingFile({
               fileName: file.displayName,
               originalName: file.originalName,
@@ -1249,7 +1280,7 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
             const blob = await contentResponse.blob();
             const blobUrl = URL.createObjectURL(blob);
             console.log(`创建Blob URL: ${blobUrl}`);
-            
+
             setPreviewingFile({
               fileName: file.displayName,
               originalName: file.originalName,
@@ -1263,13 +1294,13 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
             // 未知内容类型，尝试作为文本处理
             console.warn(`未知内容类型: ${contentType}, 尝试作为文本处理`);
             const textContent = await contentResponse.text();
-            
+
             // 检查是否是HTML内容
             if (textContent.trim().startsWith('<!DOCTYPE html>') || textContent.trim().startsWith('<html')) {
               console.warn('收到HTML内容而非预期的文件内容，可能是错误页面');
               throw new Error('服务器返回了HTML页面而非文件内容');
             }
-            
+
             setPreviewingFile({
               fileName: file.displayName,
               originalName: file.originalName,
@@ -1286,15 +1317,15 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
       } catch (contentErr) {
         console.warn('获取处理后的内容失败，尝试直接预览原始文件:', contentErr);
       }
-      
+
       // 2. 如果处理后的内容无法获取或预览，尝试直接预览原始文件
       const previewFilename = file.originalName || file.displayName;
       if (!previewFilename) {
         throw new Error('文件名信息丢失，无法预览文件');
       }
-      const downloadUrl = `${apiUrl}/file/projects/${projectId}/files/download/${encodeURIComponent(previewFilename)}?preview=true&t=${Date.now()}`;
+      const downloadUrl = `${apiUrl}/api/file/projects/${projectId}/files/download/${encodeURIComponent(previewFilename)}?preview=true&t=${Date.now()}`;
       console.log(`尝试直接预览原始文件: ${downloadUrl}`);
-      
+
       // 对于PDF和图片，直接使用URL预览
       if (file.displayName.match(/\.(pdf|jpg|jpeg|png|gif)$/i)) {
         setPreviewingFile({
@@ -1307,37 +1338,37 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
         console.log('设置直接预览URL');
         return;
       }
-      
+
       // 对于其他类型文件，尝试获取内容
-      const token = localStorage.getItem('stp_token');
+      const token = localStorage.getItem('lumidoc_token');
       const headers: Record<string, string> = {
         'Accept': 'application/json',
         'Cache-Control': 'no-cache, no-store'
       };
-      
+
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }
-      
+
       const fileResponse = await fetch(downloadUrl, { headers });
       console.log(`原始文件响应状态: ${fileResponse.status}, 内容类型: ${fileResponse.headers.get('content-type')}`);
-      
+
       if (!fileResponse.ok) {
         throw new Error("获取文件内容失败");
       }
-      
+
       const fileType = fileResponse.headers.get('content-type');
-      
+
       if (fileType && (fileType.includes('text/') || fileType.includes('application/json'))) {
         // 文本内容
         const textContent = await fileResponse.text();
-        
+
         // 检查是否是HTML内容
         if (textContent.trim().startsWith('<!DOCTYPE html>') || textContent.trim().startsWith('<html')) {
           console.warn('收到HTML内容而非预期的文件内容，可能是错误页面');
           throw new Error('服务器返回了HTML页面而非文件内容');
         }
-        
+
         setPreviewingFile({
           fileName: file.displayName,
           originalName: file.originalName,
@@ -1363,51 +1394,51 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
         fileName: file.displayName,
         originalName: file.originalName,
         loading: false,
-        error: err instanceof Error 
-          ? err.message 
+        error: err instanceof Error
+          ? err.message
           : '预览失败，请稍后再试'
       });
       toast.error(`预览失败: ${err instanceof Error ? err.message : '文件内容不可用'}`);
     }
   };
-  
+
   // 文件下载处理函数
   const handleDownload = (file: FileItem) => {
     if (!projectId) return;
-    
+
     if (!isFileActionable(file)) {
       toast.error('此文件处理失败，无法下载');
       return;
     }
-    
+
     // 文件处理中或等待处理时给予提示，但仍允许尝试下载
     if (file.status === FileStatus.PENDING || file.status === FileStatus.PROCESSING) {
       toast.warning('文件正在处理中，下载内容可能不完整');
     }
-    
+
     handleDownloadFile(file);
   };
 
   // 删除文件处理函数，支持FilePreview或文件对象
   const handleDeleteFile = async (file: { originalName: string, fileName?: string, displayName?: string, fileHash?: string }) => {
     if (!projectId) return;
-    
+
     // 确定显示名称
     const displayName = file.displayName || file.fileName || file.originalName;
-    
+
     if (!confirm(`确定要删除文件 "${displayName}" 吗？此操作不可恢复。`)) {
       return;
     }
-    
+
     try {
       // 优先使用文件哈希进行删除，如果没有哈希则使用原始文件名
       const fileIdentifier = file.fileHash || file.originalName;
       await fileApi.deleteFile(projectId, fileIdentifier);
       toast.success(`文件已删除: ${displayName}`);
-      
+
       // 从选中文件列表中移除被删除的文件
       setSelectedFiles(prev => prev.filter(f => getFileUniqueId(f) !== getFileUniqueId(file)));
-      
+
       // 刷新文件列表
       refreshFiles();
       // 如果正在预览该文件，关闭预览
@@ -1426,24 +1457,24 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
       toast.warning('文件尚未处理完成，无法删除');
       return;
     }
-    
+
     // 根据文件类型显示不同的确认信息
     const actionText = currentFileType === 'rag' ? '从知识库移除' : '删除';
-    const warningText = currentFileType === 'rag' 
-      ? '此操作将从知识库中移除该文件，但不会删除原始文件。' 
+    const warningText = currentFileType === 'rag'
+      ? '此操作将从知识库中移除该文件，但不会删除原始文件。'
       : '此操作不可恢复。';
-    
+
     if (!confirm(`确定要${actionText}文件 "${file.displayName}" 吗？${warningText}`)) {
       return;
     }
-    
+
     try {
       console.log(`${actionText}文件: ${file.displayName}, 文件类型: ${currentFileType}`);
       // 显示加载中提示
       const loadingToastId = toast.loading(`正在${actionText}文件: ${file.displayName}...`);
-      
+
       let result;
-      
+
       if (currentFileType === 'rag') {
         // RAG文件：从知识库移除
         console.log(`从知识库移除文件: ${file.originalName}`);
@@ -1455,32 +1486,34 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
         console.log(`物理删除文件: ${fileIdentifier}`);
         result = await fileApi.deleteFile(projectId, fileIdentifier);
       }
-      
+
       console.log("删除结果:", result);
-      
+
       // 关闭加载提示
       toast.dismiss(loadingToastId);
-      
+
       if (result && result.success) {
         // 显示成功消息和详细信息
         if (currentFileType === 'rag' && 'deleted_relations' in result) {
           // 类型保护：确保这是RAG删除响应
-          const ragResult = result as any; // RagDeleteResponse
+          const ragResult = result as { deleted_relations?: number; cleaned_entities?: number };
+          const deletedRelations = ragResult.deleted_relations ?? 0;
+          const cleanedEntities = ragResult.cleaned_entities ?? 0;
           toast.success(
             `文件已从知识库移除: ${file.displayName}` +
-            (ragResult.deleted_relations > 0 ? `\n删除了 ${ragResult.deleted_relations} 个关系` : '') +
-            (ragResult.cleaned_entities > 0 ? `\n清理了 ${ragResult.cleaned_entities} 个实体` : '')
+            (deletedRelations > 0 ? `\n删除了 ${deletedRelations} 个关系` : '') +
+            (cleanedEntities > 0 ? `\n清理了 ${cleanedEntities} 个实体` : '')
           );
         } else {
           toast.success(`文件已${actionText}: ${file.displayName}`);
         }
-        
+
         // 从选中文件列表中移除被删除的文件
         setSelectedFiles(prev => prev.filter(f => getFileUniqueId(f) !== getFileUniqueId(file)));
-        
+
         // 刷新文件列表
         await refreshFiles();
-        
+
         // 如果正在预览该文件，关闭预览
         if (previewingFile?.originalName === file.originalName) {
           setPreviewingFile(null);
@@ -1494,12 +1527,12 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
       console.error(`${actionText}文件失败:`, err);
       const errorMessage = err instanceof Error ? err.message : '未知错误';
       console.error('错误详情:', errorMessage);
-      
+
       // 显示错误消息
       toast.error(`${actionText}文件失败: ${errorMessage}`);
     }
   };
-  
+
   // 关闭文件预览
   const closePreview = () => {
     setPreviewingFile(null);
@@ -1511,24 +1544,24 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
       toast.error('无法处理文件：缺少项目ID或文件ID');
       return;
     }
-    
+
     try {
       setLoading(true);
       toast.loading(`正在提交文件处理请求: ${file.displayName}`);
-      
+
       // 调用处理API
       const response = await fileApi.processFile(projectId, file.fileId);
-      
+
       if (response && response.success) {
         toast.success(`文件处理请求已提交: ${file.displayName}`);
-        
+
         // 更新本地文件状态
-        setFiles(prev => prev.map(f => 
+        setFiles(prev => prev.map(f =>
           f.fileId === file.fileId
             ? { ...f, status: FileStatus.PROCESSING }
             : f
         ));
-        
+
         // 立即刷新文件列表
         await refreshFiles();
       } else {
@@ -1558,7 +1591,7 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
         <p>{error}</p>
         {currentFileType === 'rag' && !ragServiceAvailable && (
           <div className="mt-4">
-            <button 
+            <button
               className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
               onClick={() => {
                 setRagServiceAvailable(true);
@@ -1593,7 +1626,7 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
     <div className="overflow-auto h-full flex" data-file-list>
       {/* 文件列表区域 */}
       <div className={`${previewingFile ? 'w-1/2 pr-4' : 'w-full'} overflow-auto`}>
-        
+
         {/* RAG文件类型的导入功能区域 */}
         {currentFileType === 'rag' && (
           <div className={`mb-6 rounded-lg p-4 ${
@@ -1606,8 +1639,8 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
               <button
                 onClick={refreshFiles}
                 className={`px-3 py-1.5 rounded text-sm flex items-center transition-colors ${
-                  isDarkMode 
-                    ? 'bg-gray-600 text-white hover:bg-gray-700' 
+                  isDarkMode
+                    ? 'bg-gray-600 text-white hover:bg-gray-700'
                     : 'bg-gray-200 text-gray-900 hover:bg-gray-300'
                 }`}
               >
@@ -1644,19 +1677,19 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
                     const deleteFiles = async () => {
                       // 显示批量删除进行中的提示
                       const loadingToastId = toast.loading(`正在删除 ${selectedFiles.length} 个文件...`);
-                      
+
                       try {
                         // 提取所有选中文件的哈希值并确保非空
                         const fileHashes: string[] = selectedFiles
                           .map(file => getFileUniqueId(file))
                           .filter((hash): hash is string => !!hash); // 类型保护确保所有值都是非空字符串
-                        
+
                         if (fileHashes.length === 0) {
                           // 如果没有有效的文件哈希，回退到逐个删除
                           toast.warning('无法使用批量删除，将逐个处理文件');
                           let successCount = 0;
                           let errorCount = 0;
-                          
+
                           for (const file of selectedFiles) {
                             try {
                               const result = await fileApi.deleteFile(projectId!, file.originalName);
@@ -1670,32 +1703,32 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
                               errorCount++;
                             }
                           }
-                          
+
                           // 关闭加载提示
                           toast.dismiss(loadingToastId);
-                          
+
                           if (successCount > 0) {
                             toast.success(`成功删除 ${successCount} 个文件`);
                           }
-                          
+
                           if (errorCount > 0) {
                             toast.error(`${errorCount} 个文件删除失败`);
                           }
                         } else {
                           // 使用批量删除API
                           const result = await fileApi.batchDeleteFiles(projectId!, fileHashes);
-                          
+
                           // 关闭加载提示
                           toast.dismiss(loadingToastId);
-                          
+
                           if (result && result.success) {
                             const deletedCount = result.data?.deleted?.length || 0;
                             const failedCount = result.data?.failed?.length || 0;
-                            
+
                             if (deletedCount > 0) {
                               toast.success(`成功删除 ${deletedCount} 个文件`);
                             }
-                            
+
                             if (failedCount > 0) {
                               toast.error(`${failedCount} 个文件删除失败`);
                             }
@@ -1709,7 +1742,7 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
                         console.error('批量删除文件失败:', err);
                         toast.error(`批量删除失败: ${err instanceof Error ? err.message : '未知错误'}`);
                       }
-                      
+
                       // 刷新文件列表
                       await refreshFiles();
                       // 清空选择
@@ -1719,7 +1752,7 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
                         setPreviewingFile(null);
                       }
                     };
-                    
+
                     deleteFiles();
                   }
                 }}
@@ -1738,20 +1771,20 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
                     const deleteFiles = async () => {
                       // 显示批量移除进行中的提示
                       const loadingToastId = toast.loading(`正在从知识库移除 ${selectedFiles.length} 个文件...`);
-                      
+
                       try {
                         let successCount = 0;
                         let errorCount = 0;
                         let totalRelations = 0;
                         let totalEntities = 0;
-                        
+
                         for (const file of selectedFiles) {
                           try {
                             const result = await ragApi.deleteRagFile(projectId!, file.originalName);
                             if (result && result.success) {
                               successCount++;
                               if ('deleted_relations' in result) {
-                                const ragResult = result as any;
+                                const ragResult = result as { deleted_relations?: number; cleaned_entities?: number };
                                 totalRelations += ragResult.deleted_relations || 0;
                                 totalEntities += ragResult.cleaned_entities || 0;
                               }
@@ -1763,10 +1796,10 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
                             errorCount++;
                           }
                         }
-                        
+
                         // 关闭加载提示
                         toast.dismiss(loadingToastId);
-                        
+
                         if (successCount > 0) {
                           toast.success(
                             `成功从知识库移除 ${successCount} 个文件` +
@@ -1774,7 +1807,7 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
                             (totalEntities > 0 ? `\n清理了 ${totalEntities} 个实体` : '')
                           );
                         }
-                        
+
                         if (errorCount > 0) {
                           toast.error(`${errorCount} 个文件移除失败`);
                         }
@@ -1784,7 +1817,7 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
                         console.error('批量移除文件失败:', err);
                         toast.error(`批量移除失败: ${err instanceof Error ? err.message : '未知错误'}`);
                       }
-                      
+
                       // 刷新文件列表
                       await refreshFiles();
                       // 清空选择
@@ -1794,7 +1827,7 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
                         setPreviewingFile(null);
                       }
                     };
-                    
+
                     deleteFiles();
                   }
                 }}
@@ -1809,7 +1842,7 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
               <button
                 className={`px-3 py-1.5 text-sm rounded ${
                   isImporting || selectedFiles.length === 0
-                    ? 'bg-gray-600 text-gray-400 cursor-not-allowed' 
+                    ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
                     : 'bg-green-600 text-white hover:bg-green-700'
                 }`}
                 onClick={handleImport}
@@ -1822,14 +1855,14 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
         )}
 
         <table className={`min-w-full border text-sm rounded-lg overflow-hidden shadow ${
-          isDarkMode 
-            ? 'border-gray-700 bg-gray-900 text-white' 
+          isDarkMode
+            ? 'border-gray-700 bg-gray-900 text-white'
             : 'border-gray-300 bg-white text-gray-900'
         }`}>
           <thead>
             <tr className={`border-b ${
-              isDarkMode 
-                ? 'bg-gray-800 text-white border-gray-700' 
+              isDarkMode
+                ? 'bg-gray-800 text-white border-gray-700'
                 : 'bg-gray-50 text-gray-900 border-gray-300'
             }`}>
               {canEdit && (
@@ -1859,32 +1892,32 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
           </thead>
           <tbody className={isDarkMode ? 'bg-gray-900' : 'bg-white'}>
             {files.map((file, index) => (
-              <tr 
-                key={`${getFileUniqueId(file)}-${index}`} 
+              <tr
+                key={`${getFileUniqueId(file)}-${index}`}
                 className={`border-b ${
                   isDarkMode ? 'border-gray-700' : 'border-gray-300'
                 } ${
-                  isFileSelected(file) 
-                    ? isDarkMode ? 'bg-blue-900/30' : 'bg-blue-100' 
+                  isFileSelected(file)
+                    ? isDarkMode ? 'bg-blue-900/30' : 'bg-blue-100'
                     : isDarkMode ? 'hover:bg-gray-800' : 'hover:bg-gray-50'
                 }`}
               >
                 {/* 选择框 - 改进版：防止重复导入 */}
                 {canEdit && (
                   <td className="py-3 text-center">
-                    <input 
-                      type="checkbox" 
-                      checked={isFileSelected(file)} 
+                    <input
+                      type="checkbox"
+                      checked={isFileSelected(file)}
                       onChange={() => handleSelect(file)}
-                      disabled={currentFileType === 'regular' && isFileInRag(file)} 
+                      disabled={currentFileType === 'regular' && isFileInRag(file)}
                       className={`rounded border-gray-500 bg-gray-700 text-blue-600 focus:ring-blue-500 ${
-                        currentFileType === 'regular' && isFileInRag(file) 
-                          ? 'opacity-50 cursor-not-allowed' 
+                        currentFileType === 'regular' && isFileInRag(file)
+                          ? 'opacity-50 cursor-not-allowed'
                           : ''
                       }`}
                       title={
-                        currentFileType === 'regular' && isFileInRag(file) 
-                          ? '该文件已在知识库中' 
+                        currentFileType === 'regular' && isFileInRag(file)
+                          ? '该文件已在知识库中'
                           : '选择此文件'
                       }
                     />
@@ -1893,7 +1926,7 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
                     )}
                   </td>
                 )}
-                
+
                 {/* 文件名 */}
                 <td className="px-3 py-3 truncate">
                   <div className="flex items-center">
@@ -1934,7 +1967,7 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
                     )}
                   </td>
                 )}
-                
+
                 {/* 操作按钮 */}
                 <td className="px-3 py-3 text-center whitespace-nowrap">
                   <div className="flex space-x-3 justify-center">
@@ -1947,7 +1980,7 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
                     >
                       <Eye size={18} />
                     </button>
-                    
+
                     {/* 下载按钮 */}
                     <button
                       onClick={() => handleDownload(file)}
@@ -1957,7 +1990,7 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
                     >
                       <Download size={18} />
                     </button>
-                    
+
                     {/* 普通文件的处理按钮 */}
                     {currentFileType === 'regular' && (file.status === FileStatus.PENDING || file.status === FileStatus.UPLOADED || file.status === FileStatus.FAILED) && (
                       <button
@@ -1968,7 +2001,7 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
                         <RefreshCw size={18} />
                       </button>
                     )}
-                    
+
                     {/* 删除按钮 - 根据文件类型显示不同文本 */}
                     <button
                       onClick={() => handleDelete(file)}
@@ -1984,14 +2017,14 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
           </tbody>
         </table>
       </div>
-      
+
       {/* 文件预览区域保持不变 */}
       {previewingFile && (
         <div className="w-1/2 pl-4 border-l border-gray-700 overflow-auto h-full max-h-[90vh]">
           <div className="bg-gray-800 rounded-lg p-4 h-full flex flex-col">
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-semibold text-lg">{previewingFile.fileName}</h3>
-              <button 
+              <button
                 className="text-gray-400 hover:text-white"
                 onClick={closePreview}
               >
@@ -2000,7 +2033,7 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
                 </svg>
               </button>
             </div>
-            
+
             <div className="flex-grow overflow-auto bg-gray-900 rounded p-3 max-h-[70vh]">
               {previewingFile.loading ? (
                 <div className="flex items-center justify-center h-full">
@@ -2013,9 +2046,9 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
                 </div>
               ) : previewingFile.url ? (
                 previewingFile.fileName.match(/\.(jpg|jpeg|png|gif)$/i) ? (
-                  <img 
-                    src={previewingFile.url} 
-                    alt={previewingFile.fileName} 
+                  <img
+                    src={previewingFile.url}
+                    alt={previewingFile.fileName}
                     className="max-w-full max-h-[70vh] mx-auto"
                   />
                 ) : (
@@ -2023,7 +2056,7 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
                     <div className="relative w-full h-[60vh] overflow-hidden border border-gray-700 rounded">
                       {/* 使用iframe嵌入PDF，通过查询参数传递认证令牌 */}
                       <iframe
-                        src={`${previewingFile.url}&v=${new Date().getTime()}&token=${localStorage.getItem('stp_token') || ''}`}
+                        src={`${previewingFile.url}&v=${new Date().getTime()}&token=${localStorage.getItem('lumidoc_token') || ''}`}
                         className="absolute inset-0 w-full h-full max-w-full max-h-[70vh]"
                         style={{ border: 'none' }}
                         title={previewingFile.fileName}
@@ -2058,7 +2091,7 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
                 </div>
               )}
             </div>
-            
+
             <div className="mt-4 flex justify-end">
               <button
                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 mr-2"
@@ -2082,4 +2115,4 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
   );
 };
 
-export default FilesList; 
+export default FilesList;

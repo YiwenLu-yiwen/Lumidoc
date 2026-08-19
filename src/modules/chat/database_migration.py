@@ -4,10 +4,9 @@
 
 import logging
 from sqlalchemy import create_engine, inspect
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from src.modules.chat.config.config import settings
-from src.modules.chat.models.chat_history import Base, ChatHistory
+from src.modules.chat.models.chat_history import Base
 
 logger = logging.getLogger(__name__)
 

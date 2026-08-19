@@ -10,7 +10,7 @@ export interface ServiceInstance {
   service_id: string;
   host: string;
   port: number;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
   endpoints: Record<string, string>;
   websocket_endpoints: Record<string, string>;
   health_status: string;
@@ -157,7 +157,7 @@ export async function getFileProcessWebSocketUrl(projectId: string): Promise<str
   try {
     const url = await getServiceWebSocketUrl('fileproc', WS_ENDPOINTS.fileproc.progress, { project_id: projectId });
     return url || fallbackUrl;
-  } catch (error) {
+  } catch {
     console.warn('[Service Discovery] 使用回退URL for FileProc WebSocket:', fallbackUrl);
     return fallbackUrl;
   }
@@ -172,7 +172,7 @@ export async function getGraphWebSocketUrl(projectId: string): Promise<string | 
   try {
     const url = await getServiceWebSocketUrl('graph', WS_ENDPOINTS.graph.graph, { project_id: projectId });
     return url || fallbackUrl;
-  } catch (error) {
+  } catch {
     console.warn('[Service Discovery] 使用回退URL for Graph WebSocket:', fallbackUrl);
     return fallbackUrl;
   }
@@ -188,7 +188,7 @@ export async function getMonitoringWebSocketUrl(type: 'admin' | 'project', proje
     try {
       const url = await getServiceWebSocketUrl('monitoring', WS_ENDPOINTS.monitoring.admin);
       return url || fallbackUrl;
-    } catch (error) {
+    } catch {
       console.warn('[Service Discovery] 使用回退URL for Monitoring Admin WebSocket:', fallbackUrl);
       return fallbackUrl;
     }
@@ -202,7 +202,7 @@ export async function getMonitoringWebSocketUrl(type: 'admin' | 'project', proje
     try {
       const url = await getServiceWebSocketUrl('monitoring', WS_ENDPOINTS.monitoring.project, { project_id: projectId });
       return url || fallbackUrl;
-    } catch (error) {
+    } catch {
       console.warn('[Service Discovery] 使用回退URL for Monitoring Project WebSocket:', fallbackUrl);
       return fallbackUrl;
     }

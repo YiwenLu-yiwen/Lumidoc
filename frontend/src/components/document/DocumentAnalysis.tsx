@@ -61,6 +61,22 @@ interface AnalysisStats {
   documentTypes: { [key: string]: number };
 }
 
+const DOCUMENT_TYPES = new Set<DocumentFile['type']>([
+  'pdf',
+  'docx',
+  'txt',
+  'image',
+  'xlsx',
+  'pptx'
+]);
+
+function getDocumentType(filename: string): DocumentFile['type'] {
+  const extension = filename.split('.').pop()?.toLowerCase();
+  return extension && DOCUMENT_TYPES.has(extension as DocumentFile['type'])
+    ? extension as DocumentFile['type']
+    : 'txt';
+}
+
 export function DocumentAnalysis() {
   // 获取当前主题和语言
   const { isDarkMode } = useTheme();
@@ -250,7 +266,7 @@ export function DocumentAnalysis() {
       const newDoc: DocumentFile = {
         id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
         name: file.name,
-        type: file.name.split('.').pop()?.toLowerCase() as any || 'txt',
+        type: getDocumentType(file.name),
         size: file.size,
         uploadTime: new Date(),
         status: 'uploading',

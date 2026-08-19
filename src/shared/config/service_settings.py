@@ -3,12 +3,12 @@
 基于共享配置工具提供标准化的微服务配置模型
 """
 
-from typing import Dict, List, Optional, Any, Union, ClassVar
-from pydantic import Field, validator
-import os
+from typing import List, Optional, ClassVar
+from pydantic import Field
 from pathlib import Path
+from urllib.parse import quote
 
-from .settings import SettingsBase, ServiceSettings, DatabaseSettings, LoggingSettings
+from .settings import SettingsBase, ServiceSettings
 from .config_loader import get_env
 
 # 项目根目录
@@ -26,23 +26,16 @@ class AuthServiceSettings(ServiceSettings):
     port: int = Field(default_factory=lambda: get_env("AUTH_SERVICE_PORT", 8007, env_type=int))
     
     # JWT配置
-    secret_key: str = Field(default_factory=lambda: get_env("SECRET_KEY", "your-secret-key-here"))
-    jwt_algorithm: str = Field(default_factory=lambda: get_env("JWT_ALGORITHM", "RS256"))
+    secret_key: str = Field(default_factory=lambda: get_env("SECRET_KEY", ""))
+    jwt_algorithm: str = Field(default_factory=lambda: get_env("JWT_ALGORITHM", "HS256"))
     access_token_expire_minutes: int = Field(default_factory=lambda: get_env("ACCESS_TOKEN_EXPIRE_MINUTES", 1440, env_type=int))
-    skip_token_verification: bool = Field(default_factory=lambda: get_env("SKIP_TOKEN_VERIFICATION", False, env_type=bool))
     
-    # 默认JWT密钥路径
+    # RS256 key paths must point to deployment-mounted secrets.
     jwt_private_key_path: str = Field(
-        default_factory=lambda: get_env(
-            "JWT_PRIVATE_KEY_PATH", 
-            str(ROOT_DIR / "src" / "modules" / "auth" / "key" / "jwt_private_key.pem")
-        )
+        default_factory=lambda: get_env("JWT_PRIVATE_KEY_PATH", "")
     )
     jwt_public_key_path: str = Field(
-        default_factory=lambda: get_env(
-            "JWT_PUBLIC_KEY_PATH", 
-            str(ROOT_DIR / "src" / "modules" / "auth" / "key" / "jwt_public_key.pem")
-        )
+        default_factory=lambda: get_env("JWT_PUBLIC_KEY_PATH", "")
     )
     
     # 存储配置
@@ -77,8 +70,8 @@ class FileServiceSettings(ServiceSettings):
     
     # S3配置
     s3_endpoint: str = Field(default_factory=lambda: get_env("S3_ENDPOINT", "http://localhost:9000"))
-    s3_access_key: str = Field(default_factory=lambda: get_env("S3_ACCESS_KEY", "minioadmin"))
-    s3_secret_key: str = Field(default_factory=lambda: get_env("S3_SECRET_KEY", "minioadmin"))
+    s3_access_key: str = Field(default_factory=lambda: get_env("S3_ACCESS_KEY", ""))
+    s3_secret_key: str = Field(default_factory=lambda: get_env("S3_SECRET_KEY", ""))
     s3_bucket: str = Field(default_factory=lambda: get_env("S3_BUCKET", "data"))
     s3_region: str = Field(default_factory=lambda: get_env("S3_REGION", "us-east-1"))
     
@@ -127,6 +120,29 @@ class FileProcServiceSettings(ServiceSettings):
     upload_dir: str = Field(default_factory=lambda: get_env("UPLOAD_DIR", "./uploads"))
     temp_dir: str = Field(default_factory=lambda: get_env("TEMP_DIR", "./temp"))
     max_file_size: int = Field(default_factory=lambda: get_env("MAX_FILE_SIZE", 10485760, env_type=int))
+    minio_endpoint: str = Field(
+        default_factory=lambda: get_env("MINIO_ENDPOINT", "minio:9000")
+    )
+    minio_access_key: str = Field(
+        default_factory=lambda: get_env("MINIO_ACCESS_KEY", "")
+    )
+    minio_secret_key: str = Field(
+        default_factory=lambda: get_env("MINIO_SECRET_KEY", "")
+    )
+
+    # Redis queue configuration
+    redis_host: str = Field(
+        default_factory=lambda: get_env("REDIS_HOST", "redis")
+    )
+    redis_port: int = Field(
+        default_factory=lambda: get_env("REDIS_PORT", 6379, env_type=int)
+    )
+    redis_db: int = Field(
+        default_factory=lambda: get_env("REDIS_DB", 0, env_type=int)
+    )
+    redis_password: str = Field(
+        default_factory=lambda: get_env("REDIS_PASSWORD", "")
+    )
     
     # 文件处理配置
     instance_id: str = Field(default_factory=lambda: get_env("INSTANCE_ID", "file_service_1"))
@@ -166,6 +182,16 @@ class FileProcServiceSettings(ServiceSettings):
         if path.is_absolute():
             return path
         return ROOT_DIR / self.temp_dir
+
+    def get_redis_url(self) -> str:
+        """Build the Redis URL used by the processing queue."""
+        if self.redis_password:
+            password = quote(self.redis_password, safe="")
+            return (
+                f"redis://:{password}@{self.redis_host}:"
+                f"{self.redis_port}/{self.redis_db}"
+            )
+        return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
     
     model_config = {
         "env_prefix": "FILEPROC_"
@@ -463,4 +489,4 @@ monitoring_settings = ServiceSettings(service_name="monitoring", port=8008)
 project_settings = ProjectServiceSettings()
 question_settings = QuestionServiceSettings()
 chat_settings = ChatServiceSettings()
-llm_settings = LLMServiceSettings() 
+llm_settings = LLMServiceSettings()

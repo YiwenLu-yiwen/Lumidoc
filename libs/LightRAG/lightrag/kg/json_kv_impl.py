@@ -18,6 +18,7 @@ from .shared_storage import (
     set_all_update_flags,
     clear_all_update_flags,
     try_initialize_namespace,
+    workspace_namespace,
 )
 
 
@@ -41,15 +42,16 @@ class JsonKVStorage(BaseKVStorage):
         self._data = None
         self._storage_lock = None
         self.storage_updated = None
+        self._shared_namespace = workspace_namespace(self.namespace, self.workspace)
 
     async def initialize(self):
         """Initialize storage data"""
         self._storage_lock = get_storage_lock()
-        self.storage_updated = await get_update_flag(self.namespace)
+        self.storage_updated = await get_update_flag(self._shared_namespace)
         async with get_data_init_lock():
             # check need_init must before get_namespace_data
-            need_init = await try_initialize_namespace(self.namespace)
-            self._data = await get_namespace_data(self.namespace)
+            need_init = await try_initialize_namespace(self._shared_namespace)
+            self._data = await get_namespace_data(self._shared_namespace)
             if need_init:
                 loaded_data = load_json(self._file_name) or {}
                 async with self._storage_lock:
@@ -80,7 +82,7 @@ class JsonKVStorage(BaseKVStorage):
                     f"Process {os.getpid()} KV writting {data_count} records to {self.namespace}"
                 )
                 write_json(data_dict, self._file_name)
-                await clear_all_update_flags(self.namespace)
+                await clear_all_update_flags(self._shared_namespace)
 
     async def get_all(self) -> dict[str, Any]:
         """Get all data from storage
@@ -169,7 +171,7 @@ class JsonKVStorage(BaseKVStorage):
                 v["_id"] = k
 
             self._data.update(data)
-            await set_all_update_flags(self.namespace)
+            await set_all_update_flags(self._shared_namespace)
 
     async def delete(self, ids: list[str]) -> None:
         """Delete specific records from storage by their IDs
@@ -192,7 +194,7 @@ class JsonKVStorage(BaseKVStorage):
                     any_deleted = True
 
             if any_deleted:
-                await set_all_update_flags(self.namespace)
+                await set_all_update_flags(self._shared_namespace)
 
     async def drop_cache_by_modes(self, modes: list[str] | None = None) -> bool:
         """Delete specific records from storage by cache mode
@@ -227,7 +229,7 @@ class JsonKVStorage(BaseKVStorage):
                     self._data.pop(key, None)
 
                 if keys_to_delete:
-                    await set_all_update_flags(self.namespace)
+                    await set_all_update_flags(self._shared_namespace)
                     logger.info(
                         f"Dropped {len(keys_to_delete)} cache entries for modes: {modes}"
                     )
@@ -301,7 +303,7 @@ class JsonKVStorage(BaseKVStorage):
         try:
             async with self._storage_lock:
                 self._data.clear()
-                await set_all_update_flags(self.namespace)
+                await set_all_update_flags(self._shared_namespace)
 
             await self.index_done_callback()
             logger.info(f"Process {os.getpid()} drop {self.namespace}")

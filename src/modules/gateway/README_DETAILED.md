@@ -2,7 +2,7 @@
 
 ## 概述
 
-API网关服务是STP平台的统一入口，负责请求路由、认证授权、限流控制、负载均衡和服务发现。作为微服务架构的核心组件，网关提供统一的API管理和安全防护。
+API网关服务是Lumidoc平台的统一入口，负责请求路由、认证授权、限流控制、负载均衡和服务发现。作为微服务架构的核心组件，网关提供统一的API管理和安全防护。
 
 ## 服务信息
 
@@ -434,7 +434,7 @@ REDIS_DB=0
 
 # 认证服务配置  
 AUTH_SERVICE_URL=http://localhost:8007
-JWT_PUBLIC_KEY_PATH=key/jwt_public_key.pem
+JWT_PUBLIC_KEY_PATH=/run/secrets/jwt_public_key.pem
 
 # 代理配置
 PROXY_TIMEOUT=30

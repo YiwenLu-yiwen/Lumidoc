@@ -1,7 +1,8 @@
-import React, { ReactNode, useState, useEffect, useRef } from 'react';
+import React, { ReactNode, useState, useEffect, useRef, useCallback } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { useAuth, ProjectAccessLevel } from './AuthContext';
-import { customToast } from '@/App';
+import { useAuth } from './AuthContext';
+import { ProjectAccessLevel } from './authTypes';
+import { customToast } from '@/utils/toast';
 import { projectApi } from '@/api/project';
 
 // 全局错误状态管理，避免多个组件重复处理同一错误
@@ -32,33 +33,33 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const errorMessageShown = useRef(false);
   const processCompleted = useRef(false);
-  
+
   // 从路径中提取项目ID (如果有)
-  const getProjectIdFromPath = (): string | null => {
+  const getProjectIdFromPath = useCallback((): string | null => {
     // 检查会话存储中是否已有导航状态，优先使用
     const navigatingToProject = sessionStorage.getItem('navigating_to_project');
     if (navigatingToProject) {
       console.log(`[AuthGuard] 使用导航状态中的项目ID: ${navigatingToProject}`);
       return navigatingToProject;
     }
-    
+
     // 否则从URL中提取
     const matches = location.pathname.match(/\/project\/([^/]+)/);
     const projectId = matches ? matches[1] : null;
-    
+
     if (projectId) {
       console.log(`[AuthGuard] 从URL提取项目ID: ${projectId}`);
     }
-    
+
     return projectId;
-  };
+  }, [location.pathname]);
 
   // 显示错误消息并重定向到首页
-  const showErrorAndRedirect = (message: string) => {
+  const showErrorAndRedirect = useCallback((message: string) => {
     if (!errorMessageShown.current && !globalErrorState.redirected) {
       errorMessageShown.current = true;
       globalErrorState.redirected = true;
-      
+
       // 记录当前路径和错误计数
       if (location.pathname === globalErrorState.lastErrorPath) {
         globalErrorState.errorCount++;
@@ -66,7 +67,7 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({
         globalErrorState.lastErrorPath = location.pathname;
         globalErrorState.errorCount = 1;
       }
-      
+
       // 检查是否正在导航中，如果是则不进行重定向
       const isNavigating = sessionStorage.getItem('navigating_to_project');
       if (isNavigating) {
@@ -78,39 +79,39 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({
         }, 3000);
         return;
       }
-      
+
       // 如果错误计数超过最大重试次数，考虑是否重置权限缓存
       if (globalErrorState.errorCount >= globalErrorState.maxRetries) {
         console.error(`[AuthGuard] 页面 ${location.pathname} 重试次数过多`);
-        
+
         // 先检查用户是否登录，以及是否存在项目权限缓存
-        const storedPermissions = localStorage.getItem('stp_project_permissions');
+        const storedPermissions = localStorage.getItem('lumidoc_project_permissions');
         const hasPermissions = storedPermissions && Object.keys(JSON.parse(storedPermissions || '{}')).length > 0;
-        
+
         // 仅在用户已登录但没有权限缓存时才重置
         if (isAuthenticated && !hasPermissions) {
           console.log('[AuthGuard] 用户已登录但无权限缓存，进行重置');
           try {
             // 清空所有权限相关缓存
-            localStorage.removeItem('stp_project_permissions');
-            
+            localStorage.removeItem('lumidoc_project_permissions');
+
             // 清空所有访问记录
             Object.keys(sessionStorage).forEach(key => {
               if (key.startsWith('visited_project_') || key === 'navigating_to_project') {
                 sessionStorage.removeItem(key);
               }
             });
-            
+
             // 显示错误并重定向
             customToast.error('无法验证项目权限，请重新登录');
-            
+
             // 重定向后重置错误计数
             setTimeout(() => {
               globalErrorState.errorCount = 0;
               globalErrorState.redirected = false;
               errorMessageShown.current = false;
             }, 3000);
-            
+
             navigate('/', { replace: true });
           } catch (e) {
             console.error('[AuthGuard] 清空缓存失败:', e);
@@ -118,40 +119,40 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({
         } else {
           // 用户未登录或有权限缓存，显示友好提示，避免完全重置
           customToast.error(message);
-          
+
           // 延迟重置重定向状态
           setTimeout(() => {
             globalErrorState.redirected = false;
             errorMessageShown.current = false;
           }, 3000);
-          
+
           navigate('/', { replace: true });
         }
       } else {
         // 错误次数少于最大重试次数，只显示错误消息
         customToast.error(message);
-        
+
         // 延迟重置重定向状态
         setTimeout(() => {
           globalErrorState.redirected = false;
           errorMessageShown.current = false;
         }, 3000);
-        
+
         navigate('/', { replace: true });
       }
     }
-  };
-  
+  }, [isAuthenticated, location.pathname, navigate]);
+
   // 清理潜在的权限冲突
-  const cleanupPermissionConflicts = (projectId: string) => {
+  const cleanupPermissionConflicts = useCallback((projectId: string) => {
     try {
       console.log(`[AuthGuard] 检查并清理项目(${projectId})的权限冲突...`);
-      
+
       // 读取权限缓存
-      const storedPermissions = localStorage.getItem('stp_project_permissions');
+      const storedPermissions = localStorage.getItem('lumidoc_project_permissions');
       if (storedPermissions) {
         const permissions = JSON.parse(storedPermissions);
-        
+
         // 确保权限一致
         if (permissions[projectId]) {
           // 项目权限存在，确保用户对象中也有同样的权限
@@ -163,19 +164,19 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({
           // 用户对象中有权限，但缓存中没有，更新缓存
           console.log(`[AuthGuard] 修复权限不一致：缓存中缺少项目(${projectId})的权限`);
           permissions[projectId] = user.projects[projectId];
-          localStorage.setItem('stp_project_permissions', JSON.stringify(permissions));
+          localStorage.setItem('lumidoc_project_permissions', JSON.stringify(permissions));
         }
       }
     } catch (e) {
       console.error('[AuthGuard] 清理权限冲突失败:', e);
     }
-  };
+  }, [updateUserProjectAccess, user]);
 
   useEffect(() => {
     // 重置错误状态和处理状态
     errorMessageShown.current = false;
     processCompleted.current = false;
-    
+
     // 如果不需要项目权限验证，直接通过
     if (!projectAccess) {
       setVerified(true);
@@ -183,7 +184,7 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({
       processCompleted.current = true;
       return;
     }
-    
+
     // 如果需要项目权限但用户未登录，重定向到登录页
     if (projectAccess && !isAuthenticated) {
       setVerified(false);
@@ -193,7 +194,7 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({
     }
 
     const projectId = getProjectIdFromPath();
-    
+
     // 如果URL中没有项目ID，无法验证权限
     if (!projectId) {
       setVerified(false);
@@ -210,7 +211,7 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({
       processCompleted.current = true;
       return;
     }
-    
+
     console.log(`[AuthGuard] 开始验证项目(${projectId})的访问权限...`);
 
     // 清理潜在的权限冲突
@@ -219,12 +220,12 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({
     // 检查用户是否已有此项目权限
     if (hasProjectAccess(projectId, requiredLevel)) {
       console.log(`[AuthGuard] 用户已有项目权限: ${projectId}`);
-      
+
       // 验证项目存在但不阻塞UI
       setVerified(true);
       setIsLoading(false);
       processCompleted.current = true;
-      
+
       // 后台验证项目存在性
       projectApi.getProject(projectId)
         .catch((error) => {
@@ -232,10 +233,10 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({
         });
       return;
     }
-    
+
     // 优先验证：如果看起来是用户自己的项目，直接授权
-    if (user && (user.id === projectId || 
-        (user.id && projectId.includes(user.id)) || 
+    if (user && (user.id === projectId ||
+        (user.id && projectId.includes(user.id)) ||
         (user.username && projectId.includes(user.username)))) {
       console.log(`[AuthGuard] 检测到用户关联的项目: ${projectId}，自动授予所有者权限`);
       updateUserProjectAccess(projectId, ProjectAccessLevel.OWNER);
@@ -244,7 +245,7 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({
       processCompleted.current = true;
       return;
     }
-    
+
     // 简化权限验证流程
     const verifyAccess = async () => {
       try {
@@ -253,7 +254,7 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({
         console.log(`[AuthGuard] 项目(${projectId})存在，设置基本查看权限`);
         updateUserProjectAccess(projectId, ProjectAccessLevel.VIEWER);
         setVerified(true);
-        
+
         // 记录项目已访问
         sessionStorage.setItem(`visited_project_${projectId}`, 'true');
       } catch (error) {
@@ -274,13 +275,13 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({
         processCompleted.current = true;
       }
     };
-    
+
     // 执行验证
     verifyAccess();
-    
+
     // 超时处理
     const timeoutId = setTimeout(() => {
-      if (isLoading && !processCompleted.current) {
+      if (!processCompleted.current) {
         console.warn('[AuthGuard] 权限验证超时');
         setIsLoading(false);
         // 设置默认权限，避免用户等待
@@ -289,9 +290,9 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({
         processCompleted.current = true;
       }
     }, 3000); // 减少超时时间
-    
+
     return () => clearTimeout(timeoutId);
-  }, [projectAccess, isAuthenticated, location.pathname, user, requiredLevel, hasProjectAccess, updateUserProjectAccess, navigate]);
+  }, [cleanupPermissionConflicts, getProjectIdFromPath, projectAccess, isAuthenticated, location.pathname, user, requiredLevel, hasProjectAccess, updateUserProjectAccess, showErrorAndRedirect]);
 
   // 如果路由需要认证但用户未登录
   if (requireAuth && !isAuthenticated) {
@@ -316,4 +317,4 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({
   return verified ? <>{children}</> : null;
 };
 
-export default AuthGuard; 
+export default AuthGuard;

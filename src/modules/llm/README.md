@@ -1,10 +1,10 @@
 # 统一LLM服务
 
-统一LLM服务是STP项目的核心模块，提供各种LLM处理能力，包括文本生成、聊天、摘要、问答等功能。该服务替代了原有的llm_summary和llm_chat服务，实现了功能整合与代码优化。
+统一LLM服务是Lumidoc项目的核心模块，提供各种LLM处理能力，包括文本生成、聊天、摘要、问答等功能。该服务替代了原有的llm_summary和llm_chat服务，实现了功能整合与代码优化。
 
 ## 架构设计
 
-本服务遵循STP项目微服务架构原则，采用了以下设计：
+本服务遵循Lumidoc项目微服务架构原则，采用了以下设计：
 
 1. **分层架构**
    - API层：处理HTTP请求和响应
@@ -128,7 +128,7 @@ src/
 │       ├── __init__.py         # 模块初始化
 │       └── main.py             # 服务入口
 └── shared/
-    ├── config/                 # 共享配置 
+    ├── config/                 # 共享配置
     │   └── service_settings.py # 包含LLM统一配置
     └── llm/                    # LLM共享库
         ├── adapters/           # 模型适配器
@@ -153,10 +153,10 @@ src/
 
 ```bash
 # 构建镜像
-docker build -t stp/llm-service -f src/modules/llm/Dockerfile .
+docker build -t lumidoc/llm-service -f src/modules/llm/Dockerfile .
 
 # 运行容器
-docker run -p 8080:8080 -e LLM_API_KEY=your_api_key stp/llm-service
+docker run -p 8080:8080 -e LLM_API_KEY=your_api_key lumidoc/llm-service
 ```
 
 ### 本地运行
@@ -179,4 +179,4 @@ python -m src.modules.llm.main
 
 ## 许可证
 
-STP项目内部使用 
+Lumidoc项目内部使用

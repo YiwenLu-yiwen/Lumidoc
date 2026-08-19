@@ -5,7 +5,7 @@ export interface GraphEntity {
   id: string;
   label: string;
   type: string;
-  properties: Record<string, any>;
+  properties: Record<string, unknown>;
   // 可视化相关属性
   x?: number;
   y?: number;
@@ -26,7 +26,7 @@ export interface GraphRelationship {
   target: string;
   label: string;
   type: string;
-  properties: Record<string, any>;
+  properties: Record<string, unknown>;
   // 可视化相关属性
   width?: number;
   color?: string;
@@ -58,7 +58,7 @@ export interface GraphQuery {
   project_id: string;
   query_type: 'cypher' | 'neighbors' | 'path' | 'subgraph';
   query: string;
-  parameters?: Record<string, any>;
+  parameters?: Record<string, unknown>;
   limit?: number;
   offset?: number;
 }
@@ -76,7 +76,7 @@ export interface GraphQueryResult {
 export interface EntityCreateRequest {
   label: string;
   type: string;
-  properties?: Record<string, any>;
+  properties?: Record<string, unknown>;
   project_id: string;
   source_document?: string;
   confidence?: number;
@@ -85,7 +85,7 @@ export interface EntityCreateRequest {
 export interface EntityUpdateRequest {
   label?: string;
   type?: string;
-  properties?: Record<string, any>;
+  properties?: Record<string, unknown>;
   confidence?: number;
 }
 
@@ -94,7 +94,7 @@ export interface RelationshipCreateRequest {
   target: string;
   label: string;
   type: string;
-  properties?: Record<string, any>;
+  properties?: Record<string, unknown>;
   project_id: string;
   source_document?: string;
   confidence?: number;
@@ -105,7 +105,7 @@ export interface RelationshipUpdateRequest {
   target?: string;
   label?: string;
   type?: string;
-  properties?: Record<string, any>;
+  properties?: Record<string, unknown>;
   confidence?: number;
 }
 
@@ -113,12 +113,12 @@ export interface RelationshipUpdateRequest {
 export interface GraphAnalysisRequest {
   project_id: string;
   analysis_type: 'centrality' | 'clustering' | 'path_analysis' | 'subgraph_extraction';
-  parameters?: Record<string, any>;
+  parameters?: Record<string, unknown>;
 }
 
 export interface GraphAnalysisResult {
   analysis_type: string;
-  results: Record<string, any>;
+  results: Record<string, unknown>;
   visualization_data?: GraphData;
   insights: string[];
 }
@@ -165,7 +165,7 @@ export interface GraphStatistics {
 export interface GraphImportRequest {
   project_id: string;
   source_type: 'neo4j' | 'lightrag' | 'csv' | 'json';
-  data: any;
+  data: unknown;
   merge_strategy: 'replace' | 'merge' | 'append';
 }
 

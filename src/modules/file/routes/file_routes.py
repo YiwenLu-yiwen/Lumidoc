@@ -1,8 +1,7 @@
-from fastapi import APIRouter, File, UploadFile, Form, Depends, HTTPException, BackgroundTasks, Query, Header
+from fastapi import APIRouter, File, UploadFile, Form, Depends, HTTPException, Query, Header, Request
 from fastapi.responses import StreamingResponse
 from typing import List, Optional, Dict, Any, Union
 import os
-from pathlib import Path
 import logging
 import urllib.parse
 import traceback
@@ -13,11 +12,16 @@ import httpx
 
 from ..file_processor_service import FileProcessorService as FileService  # 重命名导入以避免冲突
 from ..config.database import FileServiceDatabase
-from src.shared.file.schemas import FileUploadResponse, FileProcessingStatusEnum
-from src.shared.types.file import FileInfo, FileProcessingStatus
+from src.shared.file.schemas import FileUploadResponse
+from src.shared.types.file import FileInfo
 from src.shared.types.response import ApiResponse
 from src.shared.service_discovery import call_service
-from src.shared.auth import get_current_user, User
+from src.shared.auth import User
+from src.shared.project_access import (
+    require_project_access,
+    require_project_access_dependency,
+    require_service_access,
+)
 
 # 初始化日志
 logger = logging.getLogger(__name__)
@@ -282,7 +286,11 @@ class AddToRagResponse(BaseModel):
     status: str
 
 # 修改项目相关路由，确保使用/api/projects前缀
-@router.post("/upload/{project_id}", response_model=FileUploadResponse)
+@router.post(
+    "/upload/{project_id}",
+    response_model=FileUploadResponse,
+    dependencies=[Depends(require_project_access_dependency)],
+)
 async def upload_file(
     project_id: str,
     file: UploadFile = File(...),
@@ -398,7 +406,11 @@ async def submit_file_processing(
         logger.error(f"提交文件处理请求失败: {str(e)}")
         raise HTTPException(status_code=500, detail=f"提交处理任务失败: {str(e)}")
 
-@router.get("/list/{project_id}", response_model=List[FileInfo])
+@router.get(
+    "/list/{project_id}",
+    response_model=List[FileInfo],
+    dependencies=[Depends(require_project_access_dependency)],
+)
 async def list_project_files(project_id: str):
     """
     获取项目文件列表
@@ -432,7 +444,11 @@ async def list_project_files(project_id: str):
         raise HTTPException(status_code=500, detail=f"获取项目文件列表失败: {str(e)}")
 
 # 添加兼容路由，支持前端使用的路径格式
-@router.get("/api/projects/{project_id}/files", response_model=List[FileInfo])
+@router.get(
+    "/api/projects/{project_id}/files",
+    response_model=List[FileInfo],
+    dependencies=[Depends(require_project_access_dependency)],
+)
 async def list_project_files_compat(project_id: str):
     """
     获取项目文件列表（兼容前端路径格式）
@@ -448,7 +464,11 @@ async def list_project_files_compat(project_id: str):
 # Gateway转发路径现在在main.py中直接注册，避免路径冲突
 
 
-@router.get("/content/{project_id}/{file_hash}", response_model=Dict[str, Any])
+@router.get(
+    "/content/{project_id}/{file_hash}",
+    response_model=Dict[str, Any],
+    dependencies=[Depends(require_project_access_dependency)],
+)
 async def get_document_content(project_id: str, file_hash: str):
     """
     获取文档内容
@@ -465,7 +485,10 @@ async def get_document_content(project_id: str, file_hash: str):
         raise HTTPException(status_code=404, detail=result.get("message", "文档未找到"))
     return result
 
-@router.get("/preview/{project_id}/{file_hash}")
+@router.get(
+    "/preview/{project_id}/{file_hash}",
+    dependencies=[Depends(require_project_access_dependency)],
+)
 async def preview_markdown_content(project_id: str, file_hash: str):
     """
     预览处理后的Markdown文件内容
@@ -506,7 +529,10 @@ async def preview_markdown_content(project_id: str, file_hash: str):
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"预览Markdown文件失败: {str(e)}")
 
-@router.get("/download/markdown/{project_id}/{file_hash}")
+@router.get(
+    "/download/markdown/{project_id}/{file_hash}",
+    dependencies=[Depends(require_project_access_dependency)],
+)
 async def download_markdown_content(project_id: str, file_hash: str):
     """
     下载处理后的文本文件
@@ -551,7 +577,11 @@ async def download_markdown_content(project_id: str, file_hash: str):
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"下载文件失败: {str(e)}")
 
-@router.get("/summary/{project_id}/{file_hash}", response_model=Dict[str, Any])
+@router.get(
+    "/summary/{project_id}/{file_hash}",
+    response_model=Dict[str, Any],
+    dependencies=[Depends(require_project_access_dependency)],
+)
 async def get_document_summary(project_id: str, file_hash: str, regenerate: bool = False):
     """
     获取文档摘要
@@ -581,7 +611,11 @@ async def get_document_summary(project_id: str, file_hash: str, regenerate: bool
         logger.error(f"获取文档摘要失败: {str(e)}")
         raise HTTPException(status_code=500, detail=f"获取摘要失败: {str(e)}")
 
-@router.delete("/{project_id}/{file_hash}", response_model=ApiResponse)
+@router.delete(
+    "/{project_id}/{file_hash}",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_project_access_dependency)],
+)
 async def delete_file(project_id: str, file_hash: str):
     """
     删除文件
@@ -618,7 +652,11 @@ async def delete_file(project_id: str, file_hash: str):
         )
 
 # 添加以项目文件路径格式直接删除文件的路由
-@router.delete("/projects/{project_id}/files/{file_path:path}", response_model=ApiResponse)
+@router.delete(
+    "/projects/{project_id}/files/{file_path:path}",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_project_access_dependency)],
+)
 async def delete_project_file_by_path(project_id: str, file_path: str):
     """
     根据文件路径删除项目文件（支持WebUI调用格式）
@@ -716,7 +754,11 @@ async def delete_project_file_by_path(project_id: str, file_path: str):
         logger.error(error_msg)
         raise HTTPException(status_code=500, detail=error_msg)
 
-@router.get("/info/{project_id}/{file_id}", response_model=Dict[str, Any])
+@router.get(
+    "/info/{project_id}/{file_id}",
+    response_model=Dict[str, Any],
+    dependencies=[Depends(require_project_access_dependency)],
+)
 async def get_file_info(
     project_id: str,
     file_id: str,
@@ -745,7 +787,8 @@ async def get_file_info(
 
 @router.post("/batch-delete", response_model=ApiResponse)
 async def batch_delete_files(
-    data: BatchDeleteModel
+    data: BatchDeleteModel,
+    request: Request,
 ):
     """
     批量删除文件
@@ -756,6 +799,7 @@ async def batch_delete_files(
     Returns:
         ApiResponse: 删除结果
     """
+    await require_project_access(request, data.project_id)
     logger.info(f"接收到批量删除请求，项目ID: {data.project_id}, 文件数量: {len(data.file_hashes)}")
     
     try:
@@ -781,7 +825,11 @@ async def batch_delete_files(
             error=str(e)
         )
 
-@router.post("/register/content", response_model=ApiResponse)
+@router.post(
+    "/register/content",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_service_access)],
+)
 async def register_file_content(
     content: ContentRegisterModel,
     current_user: User = Depends(get_current_user_or_service)
@@ -819,7 +867,11 @@ async def register_file_content(
             message=f"文件内容注册失败: {str(e)}"
         )
 
-@router.post("/update/status", response_model=ApiResponse)
+@router.post(
+    "/update/status",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_service_access)],
+)
 async def update_file_status(
     status_update: FileStatusUpdateModel,
     current_user: User = Depends(get_current_user_or_service)
@@ -855,7 +907,11 @@ async def update_file_status(
             message=f"文件状态更新失败: {str(e)}"
         )
 
-@router.post("/create_record", response_model=ApiResponse)
+@router.post(
+    "/create_record",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_service_access)],
+)
 async def create_file_record(
     record: FileRecordCreateModel,
     current_user: User = Depends(get_current_user_or_service)
@@ -924,7 +980,11 @@ async def create_file_record(
             message=f"创建文件记录失败: {str(e)}"
         )
 
-@router.get("/list/pending", response_model=Dict[str, Any])
+@router.get(
+    "/list/pending",
+    response_model=Dict[str, Any],
+    dependencies=[Depends(require_service_access)],
+)
 async def list_pending_files(
     current_user: User = Depends(get_current_user_or_service),
     file_service: FileService = Depends(get_file_service)
@@ -946,7 +1006,11 @@ async def list_pending_files(
         logger.error(f"获取待处理文件列表失败: {str(e)}")
         raise HTTPException(status_code=500, detail=f"获取待处理文件列表失败: {str(e)}")
 
-@router.get("/content/global/{content_hash}", response_model=Dict[str, Any])
+@router.get(
+    "/content/global/{content_hash}",
+    response_model=Dict[str, Any],
+    dependencies=[Depends(require_service_access)],
+)
 async def get_content_by_hash(content_hash: str):
     """
     通过哈希值获取文件内容
@@ -982,7 +1046,8 @@ async def get_content_by_hash(content_hash: str):
 @router.post("/add-to-rag", response_model=AddToRagResponse)
 async def add_file_to_rag(
     data: AddToRagModel,
-    current_user: User = Depends(get_current_user_or_service)
+    request: Request,
+    current_user: User = Depends(get_current_user_or_service),
 ):
     """
     将文件添加到RAG知识库
@@ -994,6 +1059,7 @@ async def add_file_to_rag(
         ApiResponse: 添加结果
     """
     try:
+        await require_project_access(request, data.project_id)
         logger.info(f"添加文件到RAG: project_id={data.project_id}, file_hash={data.file_hash}")
         
         # 获取文件信息
@@ -1079,7 +1145,7 @@ async def add_file_to_rag(
             rag_response = {"success": False, "error": f"LightRAG服务调用失败: {str(rag_err)}"}
             # 尝试通过build_rag端点构建，这是一个备选方案
             try:
-                logger.info(f"尝试通过build_rag端点构建RAG索引")
+                logger.info("尝试通过build_rag端点构建RAG索引")
                 rag_response = await call_service(
                     service_name="lightraglocal",
                     endpoint=f"rag/build/{data.project_id}",
@@ -1259,8 +1325,14 @@ async def add_file_to_rag(
         raise HTTPException(status_code=500, detail=f"添加文件到RAG失败: {str(e)}")
 
 # 处理无文件名的下载请求（返回错误）
-@router.get("/projects/{project_id}/files/download/")
-@router.head("/projects/{project_id}/files/download/")
+@router.get(
+    "/projects/{project_id}/files/download/",
+    dependencies=[Depends(require_project_access_dependency)],
+)
+@router.head(
+    "/projects/{project_id}/files/download/",
+    dependencies=[Depends(require_project_access_dependency)],
+)
 async def download_no_filename(
     project_id: str,
     download: bool = Query(False), 
@@ -1286,8 +1358,14 @@ async def download_no_filename(
     )
 
 # 新增: 项目文件下载API
-@router.get("/projects/{project_id}/files/download/{file_name:path}")
-@router.head("/projects/{project_id}/files/download/{file_name:path}")
+@router.get(
+    "/projects/{project_id}/files/download/{file_name:path}",
+    dependencies=[Depends(require_project_access_dependency)],
+)
+@router.head(
+    "/projects/{project_id}/files/download/{file_name:path}",
+    dependencies=[Depends(require_project_access_dependency)],
+)
 async def download_file(
     project_id: str, 
     file_name: str, 
@@ -1451,7 +1529,10 @@ async def download_file(
         raise HTTPException(status_code=500, detail=f"下载文件失败: {str(e)}")
 
 # 处理无文件名的内容请求（返回错误）
-@router.get("/projects/{project_id}/files/content/")
+@router.get(
+    "/projects/{project_id}/files/content/",
+    dependencies=[Depends(require_project_access_dependency)],
+)
 async def get_content_no_filename(
     project_id: str,
     token: Optional[str] = Query(None),
@@ -1473,7 +1554,10 @@ async def get_content_no_filename(
     )
 
 # 新增: 项目文件内容获取API
-@router.get("/projects/{project_id}/files/content/{file_name:path}")
+@router.get(
+    "/projects/{project_id}/files/content/{file_name:path}",
+    dependencies=[Depends(require_project_access_dependency)],
+)
 async def get_file_content(
     project_id: str, 
     file_name: str,
@@ -1633,7 +1717,10 @@ async def get_file_content(
         raise HTTPException(status_code=500, detail=f"获取文件内容失败: {str(e)}")
 
 # 兼容路由：支持前端 /api/projects/{project_id}/files/content/{file_name} 格式
-@router.get("/api/projects/{project_id}/files/content/{file_name:path}")
+@router.get(
+    "/api/projects/{project_id}/files/content/{file_name:path}",
+    dependencies=[Depends(require_project_access_dependency)],
+)
 async def get_file_content_compat(
     project_id: str, 
     file_name: str,
@@ -1653,8 +1740,14 @@ async def get_file_content_compat(
     return await get_file_content(project_id, file_name, token, current_user)
 
 # 兼容路由：支持前端 /api/projects/{project_id}/files/download/{file_name} 格式
-@router.get("/api/projects/{project_id}/files/download/{file_name:path}")
-@router.head("/api/projects/{project_id}/files/download/{file_name:path}")
+@router.get(
+    "/api/projects/{project_id}/files/download/{file_name:path}",
+    dependencies=[Depends(require_project_access_dependency)],
+)
+@router.head(
+    "/api/projects/{project_id}/files/download/{file_name:path}",
+    dependencies=[Depends(require_project_access_dependency)],
+)
 async def download_file_compat(
     project_id: str, 
     file_name: str, 

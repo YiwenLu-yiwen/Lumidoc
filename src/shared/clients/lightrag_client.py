@@ -8,14 +8,12 @@ import asyncio
 import logging
 import uuid
 import time
-from typing import Optional, List, Dict, Any, AsyncGenerator
+from typing import Optional, List, Dict, Any
 import httpx
 from fastapi import HTTPException
 from pathlib import Path
 from dotenv import load_dotenv
 import functools
-import contextlib
-from concurrent.futures import TimeoutError as ConcurrentTimeoutError
 from src.shared.config_utils import get_service_url
 from src.shared.service_client import ServiceClientBase
 from src.modules.lightraglocal.config.config import config

@@ -5,27 +5,20 @@
 
 import os
 import logging
-import asyncio
 import time
 import json
 import socket
 import uuid
-from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, List, Callable, Set, Tuple
+from datetime import datetime
+from typing import Dict, Any, Tuple
 import psutil
 import httpx
-import redis.asyncio as aioredis
 from fastapi import FastAPI, Request, Response, APIRouter
 import sys
-from pathlib import Path
-from pydantic import BaseModel, Field
 from fastapi import status
 import inspect
-import traceback
 
-from src.shared.service_discovery import ServiceHealth, get_service_client
-from src.database import get_connection_status
-from src.shared.models.health_models import HealthResponse, ServiceHealthCheck
+from src.shared.service_discovery import get_service_client
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -303,11 +296,11 @@ def register_health_routes(app: FastAPI, checker: HealthChecker):
         # 如果超过限制，返回True表示应该限流
         return request_counts[client_ip] > max_requests_per_minute
     
-    # 只保留 Kubernetes 标准的 /healthz 端点
+    # 容器统一使用 /healthz 端点
     @router.get("/healthz")
-    async def kubernetes_health_check(request: Request, response: Response):
+    async def container_health_check(request: Request, response: Response):
         """
-        Kubernetes健康检查端点 (/healthz)
+        容器健康检查端点 (/healthz)
         返回服务健康状态
         """
         client_ip = request.client.host
@@ -356,7 +349,7 @@ async def register_health_service(app: FastAPI, service_name: str, service_id: s
             service_id=service_id,
             host=host,
             port=port,
-            health_check_endpoint="/healthz",  # 使用标准Kubernetes健康检查路径
+            health_check_endpoint="/healthz",
             metadata={
                 "version": os.getenv("SERVICE_VERSION", "unknown"),
                 "start_time": checker.startup_time.isoformat()
@@ -540,12 +533,12 @@ def create_health_middleware():
     
     return health_middleware 
 
-# 创建默认的健康检查路由器 - 只保留 Kubernetes 标准端点
+# 创建默认的容器健康检查路由器
 health_check_router = APIRouter()
 
 @health_check_router.get("/healthz")
-async def kubernetes_health_check():
-    """Kubernetes健康检查端点"""
+async def container_health_check():
+    """容器健康检查端点"""
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
 @health_check_router.get("/ready")
@@ -556,4 +549,4 @@ async def readiness_check():
 @health_check_router.get("/live")
 async def liveness_check():
     """存活检查端点"""
-    return {"status": "alive", "timestamp": datetime.now().isoformat()} 
+    return {"status": "alive", "timestamp": datetime.now().isoformat()}

@@ -3,13 +3,11 @@ Gateway认证中间件
 """
 
 import logging
-import time
 import os
 from typing import Dict, List, Optional, Any, Callable
-from fastapi import Request, Response, HTTPException
+from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response as StarletteResponse
 import httpx
 from src.modules.gateway.config.config import settings
 
@@ -93,9 +91,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
             # 🔧 修复：支持服务间认证 - 处理Service格式的认证
             if auth_header.startswith("Service "):
                 service_token = auth_header.replace("Service ", "")
-                expected_token = os.environ.get("SERVICE_AUTH_TOKEN", "service-token-for-internal-use")
+                expected_token = os.environ.get("SERVICE_AUTH_TOKEN")
                 
-                if service_token == expected_token:
+                if expected_token and service_token == expected_token:
                     logger.info("服务间认证成功")
                     return {
                         "success": True,
@@ -109,7 +107,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                         "message": "服务间认证成功"
                     }
                 else:
-                    logger.warning(f"服务间认证失败: 令牌不匹配")
+                    logger.warning("服务间认证失败: 令牌不匹配")
                     return {
                         "success": False,
                         "message": "服务间认证令牌无效"
@@ -168,4 +166,4 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return {
                 "success": False,
                 "message": "认证过程出错"
-            } 
+            }

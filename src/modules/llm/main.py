@@ -12,9 +12,6 @@ import uvicorn
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
-from datetime import datetime
-import traceback
-import socket
 from contextlib import asynccontextmanager
 
 from .config.config import settings
@@ -35,7 +32,9 @@ class ServiceAuthMiddleware(BaseHTTPMiddleware):
     
     def __init__(self, app):
         super().__init__(app)
-        self.expected_token = os.environ.get("SERVICE_AUTH_TOKEN", "service-token-for-internal-use")
+        self.expected_token = os.environ.get("SERVICE_AUTH_TOKEN")
+        if not self.expected_token:
+            raise RuntimeError("SERVICE_AUTH_TOKEN is required")
     
     async def dispatch(self, request: Request, call_next):
         """处理请求认证"""
@@ -152,15 +151,16 @@ register_health_routes(app, health_checker)
 
 # 启动服务
 if __name__ == "__main__":
-    import uvicorn
-    
-    # 获取端口
-    port = int(os.environ.get("PORT", 8080))
-    
-    # 启动服务
+    import argparse
+
+    parser = argparse.ArgumentParser(description="统一LLM服务")
+    parser.add_argument("--host", default=os.environ.get("HOST", settings.host), help="服务监听地址")
+    parser.add_argument("--port", type=int, default=settings.port, help="服务监听端口")
+    args = parser.parse_args()
+
     uvicorn.run(
         "src.modules.llm.main:app",
-        host="0.0.0.0",
-        port=port,
+        host=args.host,
+        port=args.port,
         reload=os.environ.get("ENV") == "development"
-    ) 
+    )

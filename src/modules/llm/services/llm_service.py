@@ -39,6 +39,14 @@ class LLMService:
             api_key=settings.llm_api_key,
             base_url=settings.llm_base_url
         )
+
+        # 嵌入模型与生成模型用途不同，不能复用聊天模型名称。
+        self.embedding_adapter = create_llm_adapter(
+            model_type=settings.llm_model_type,
+            model_name=settings.embedding_model_name,
+            api_key=settings.llm_api_key,
+            base_url=settings.llm_base_url,
+        )
         
         LLMService._initialized = True
         
@@ -116,8 +124,17 @@ class LLMService:
             List[List[float]]: 嵌入向量列表
         """
         try:
-            # 调用适配器创建嵌入
-            embeddings = await self.adapter.create_embedding(texts)
+            selected_model = kwargs.get("model") or settings.embedding_model_name
+            adapter = self.embedding_adapter
+            if selected_model != settings.embedding_model_name:
+                adapter = create_llm_adapter(
+                    model_type=settings.llm_model_type,
+                    model_name=selected_model,
+                    api_key=settings.llm_api_key,
+                    base_url=settings.llm_base_url,
+                )
+
+            embeddings = await adapter.create_embedding(texts)
             return embeddings
         except Exception as e:
             logger.error(f"嵌入向量创建失败: {str(e)}")
@@ -336,4 +353,4 @@ class LLMService:
             
         except Exception as e:
             logger.error(f"提取三元组失败: {str(e)}")
-            return [] 
+            return []

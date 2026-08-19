@@ -1,5 +1,5 @@
 import { apiClient } from './client';
-import { ChatRequest, ChatResponse, ChatSession, ApiResponse, GraphAnalysisRequest } from '../types/api';
+import { ChatRequest, ChatResponse, ChatSession, ApiResponse, GraphAnalysisRequest, KnowledgeFrameworkResponse } from '../types/api';
 
 export const chatApi = {
   // 发送消息
@@ -43,10 +43,10 @@ export const chatApi = {
     const response = await apiClient.delete<ApiResponse>(`/chat/history/${projectId}`);
     return response.data;
   },
-  
+
   // 知识框架分析
-  analyzeKnowledgeFramework: async (request: GraphAnalysisRequest): Promise<any> => {
-    const response = await apiClient.post('/chat/knowledge_framework', request);
+  analyzeKnowledgeFramework: async (request: GraphAnalysisRequest): Promise<KnowledgeFrameworkResponse> => {
+    const response = await apiClient.post<KnowledgeFrameworkResponse>('/chat/knowledge_framework', request);
     return response.data;
   }
-}; 
+};

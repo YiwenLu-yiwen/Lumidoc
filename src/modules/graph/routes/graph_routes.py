@@ -1,13 +1,14 @@
 from src.shared.auth import get_current_user
-from fastapi import APIRouter, HTTPException, Depends, Body, FastAPI
+from fastapi import APIRouter, HTTPException, Depends, FastAPI
 import httpx
 from src.modules.config import settings
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any
 from contextlib import asynccontextmanager
 from src.shared.types.graph import GraphData, GraphAnalysisRequest
 from src.shared.types.response import ApiResponse
 from src.shared.service_client import ServiceClient
+from src.shared.health_check import create_health_checker, register_health_routes
 
 # 定义lifespan事件管理器
 @asynccontextmanager
@@ -17,31 +18,31 @@ async def lifespan(app: FastAPI):
     try:
         await health_checker.start()
         logger.info("Graph服务启动成功")
-        
+
         # 注册到服务发现
         from src.shared.service_discovery import register_service
         await register_service("graph", port=8003, health_check_endpoint="/healthz")
-        
+
     except Exception as e:
         logger.error(f"Graph服务启动失败: {str(e)}")
-        
+
     yield
-    
+
     # 关闭事件
     try:
         await health_checker.stop()
         logger.info("Graph服务关闭")
-        
+
         # 从服务发现注销
         from src.shared.service_discovery import unregister_service
         await unregister_service("graph")
-        
+
     except Exception as e:
         logger.error(f"Graph服务关闭失败: {str(e)}")
 
 # 创建FastAPI应用
 app = FastAPI(
-    title="Graph Service", 
+    title="Graph Service",
     description="知识图谱服务",
     lifespan=lifespan
 )
@@ -56,7 +57,7 @@ async def check_graph_service():
     try:
         # 检查基本功能而不是调用自身的健康检查
         # 简单检查：验证可以创建ServiceClient
-        service_client = ServiceClient()
+        ServiceClient()
         # 不实际调用，只验证创建成功
         return True
     except Exception as e:
@@ -68,7 +69,7 @@ async def check_neo4j_connection():
     """检查Neo4j数据库连接"""
     try:
         from src.modules.graph.services.graph_service import GraphService
-        graph_service = GraphService()
+        GraphService()
         # 简单的连接测试
         return True  # 如果GraphService能正常初始化，认为连接正常
     except Exception as e:
@@ -76,7 +77,6 @@ async def check_neo4j_connection():
         return False
 
 # 创建健康检查器
-from src.shared.health_check import create_health_checker, register_health_routes
 health_checker = create_health_checker("graph", "graph_service_1")
 
 # 配置健康检查项
@@ -181,7 +181,7 @@ async def clear_project_graph(
 async def extract_triples(request: dict):
     """
     从文件提取三元组并存入Neo4j图谱
-    
+
     步骤：
     1. 接收前端请求
     2. 调用LightRAG服务提取三元组
@@ -189,17 +189,17 @@ async def extract_triples(request: dict):
     """
     file_id = request.get("file_id")
     project_id = request.get("project_id")
-    
+
     if not file_id or not project_id:
         return {
             "success": False,
             "message": "缺少必要参数：file_id 或 project_id"
         }
-    
+
     try:
         # 通过ServiceClient调用lightraglocal服务提取三元组
         client = await ServiceClient.get_instance()
-        
+
         response = await client.call_api(
             service_name="lightrag",
             path="api/rag/extract-triples",
@@ -209,7 +209,7 @@ async def extract_triples(request: dict):
                 "project_id": project_id
             }
         )
-        
+
         # 返回处理结果
         return response
     except Exception as e:
@@ -222,4 +222,4 @@ async def extract_triples(request: dict):
 # 注册路由
 app.include_router(router)
 
- 
+

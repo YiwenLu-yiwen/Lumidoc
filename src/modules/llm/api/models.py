@@ -33,6 +33,13 @@ class ChatGenerationRequest(BaseModel):
     max_tokens: Optional[int] = Field(None, description="最大生成令牌数")
     stop_sequences: Optional[List[str]] = Field(None, description="停止生成的序列")
     stream: Optional[bool] = Field(False, description="是否启用流式生成")
+    model: Optional[str] = Field(
+        None,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9_.:/-]+$",
+        description="本次请求使用的模型ID",
+    )
 
 class ChatGenerationResponse(BaseModel):
     """聊天生成响应"""
@@ -91,4 +98,4 @@ class TripleExtractionRequest(BaseModel):
 class TripleExtractionResponse(BaseModel):
     """三元组提取响应"""
     triples: List[Triple] = Field(..., description="提取的三元组列表")
-    usage: Optional[Dict[str, int]] = Field(None, description="token使用情况") 
+    usage: Optional[Dict[str, int]] = Field(None, description="token使用情况")

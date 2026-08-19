@@ -5,16 +5,12 @@
 
 import asyncio
 import logging
-import time
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List
 import os
-from datetime import datetime, timedelta
-import json
+from datetime import datetime
 import signal
-import sys
 
-from src.shared.task_manager import TaskManager, TaskStatus, get_task_manager
-from src.shared.service_discovery import get_service_client
+from src.shared.task_manager import TaskStatus, get_task_manager
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -279,7 +275,7 @@ class TaskMonitor:
                         await self._task_manager.update_task_status(
                             task_id,
                             TaskStatus.PENDING,
-                            error=f"任务执行卡住，已重置为待处理状态"
+                            error="任务执行卡住，已重置为待处理状态"
                         )
                         logger.info(f"已重置卡住的任务 {task_id}")
                     fixed_count += 1

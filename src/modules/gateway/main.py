@@ -2,14 +2,13 @@
 # -*- coding: utf-8 -*-
 
 """
-STP系统统一API网关
+Lumidoc系统统一API网关
 负责统一管理所有微服务的请求转发、负载均衡、认证、限流等功能
 """
 
+# ruff: noqa: E402 -- direct execution adjusts sys.path before package imports.
+
 import sys
-import os
-import asyncio
-import logging
 import uvicorn
 from pathlib import Path
 from datetime import datetime
@@ -58,15 +57,15 @@ def create_app() -> FastAPI:
         
         # 从命令行参数中获取端口
         try:
-            parser = argparse.ArgumentParser(description="STP Gateway API")
+            parser = argparse.ArgumentParser(description="Lumidoc Gateway API")
             parser.add_argument("--port", type=int, default=settings.port, help="监听端口")
             args, _ = parser.parse_known_args()
             actual_port = args.port
-        except:
+        except Exception:
             # 如果无法解析命令行参数，使用默认端口
             actual_port = settings.port
         
-        logger.info(f"启动STP Gateway API v{settings.service_version}，实际端口: {actual_port}")
+        logger.info(f"启动Lumidoc Gateway API v{settings.service_version}，实际端口: {actual_port}")
         
         try:
             # 创建服务代理路由
@@ -91,14 +90,14 @@ def create_app() -> FastAPI:
                     await register_service(
                         service_name="gateway", 
                         port=actual_port,
-                        health_check_endpoint="/healthz"  # 使用Kubernetes标准健康检查端点
+                        health_check_endpoint="/healthz"
                     )
                     logger.info("已注册到服务发现")
                 except Exception as e:
                     logger.warning(f"注册到服务发现失败: {e}")
             
             # 显示配置信息
-            logger.info(f"Gateway配置:")
+            logger.info("Gateway配置:")
             logger.info(f"  - 监听地址: {settings.host}:{actual_port}")
             logger.info(f"  - 调试模式: {settings.debug}")
             logger.info(f"  - 认证: {'启用' if settings.auth_enabled else '禁用'}")
@@ -145,8 +144,8 @@ def create_app() -> FastAPI:
     
     # 创建FastAPI实例
     app = FastAPI(
-        title="STP Gateway API",
-        description="STP系统统一API网关",
+        title="Lumidoc Gateway API",
+        description="Lumidoc系统统一API网关",
         version=settings.service_version,
         debug=settings.debug,
         lifespan=lifespan,
@@ -177,9 +176,9 @@ def create_app() -> FastAPI:
     # 注册路由
     app.include_router(proxy_router)
     
-    # Kubernetes标准健康检查端点
+    # 容器健康检查端点
     @app.get("/healthz")
-    async def kubernetes_health_check():
+    async def container_health_check():
         """Gateway健康检查端点"""
         try:
             # 检查服务发现是否正常
@@ -218,8 +217,6 @@ def create_app() -> FastAPI:
             }
     
     # 显式注册项目服务路由，确保POST /api/projects/能够正确处理
-    from src.modules.gateway.services.proxy import get_request_proxy
-    
     @app.api_route("/api/projects/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
     async def project_proxy_with_path(request: Request, path: str):
         """项目服务代理 - 带路径"""
@@ -244,9 +241,9 @@ def create_app() -> FastAPI:
             return app.openapi_schema
         
         openapi_schema = get_openapi(
-            title="STP Gateway API",
+            title="Lumidoc Gateway API",
             version=settings.service_version,
-            description="STP系统统一API网关，负责路由转发、负载均衡、认证、限流等功能",
+            description="Lumidoc系统统一API网关，负责路由转发、负载均衡、认证、限流等功能",
             routes=app.routes,
         )
         
@@ -273,7 +270,7 @@ async def not_found_handler(request: Request, exc: HTTPException):
         content={
             "error": "Not Found",
             "message": f"路径 {request.url.path} 未找到",
-            "gateway": "STP-Gateway",
+            "gateway": "Lumidoc-Gateway",
             "available_services": settings.get_all_services()
         }
     )
@@ -287,7 +284,7 @@ async def internal_error_handler(request: Request, exc: HTTPException):
         content={
             "error": "Internal Server Error",
             "message": "网关内部错误",
-            "gateway": "STP-Gateway"
+            "gateway": "Lumidoc-Gateway"
         }
     )
 
@@ -300,7 +297,7 @@ async def bad_gateway_handler(request: Request, exc: HTTPException):
         content={
             "error": "Bad Gateway",
             "message": "目标服务不可用",
-            "gateway": "STP-Gateway"
+            "gateway": "Lumidoc-Gateway"
         }
     )
 
@@ -313,7 +310,7 @@ async def service_unavailable_handler(request: Request, exc: HTTPException):
         content={
             "error": "Service Unavailable",
             "message": "服务暂时不可用",
-            "gateway": "STP-Gateway"
+            "gateway": "Lumidoc-Gateway"
         }
     )
 
@@ -326,7 +323,7 @@ async def gateway_timeout_handler(request: Request, exc: HTTPException):
         content={
             "error": "Gateway Timeout",
             "message": "请求超时",
-            "gateway": "STP-Gateway"
+            "gateway": "Lumidoc-Gateway"
         }
     )
 
@@ -335,7 +332,7 @@ def main():
     # 解析命令行参数
     import argparse
     
-    parser = argparse.ArgumentParser(description="STP Gateway API")
+    parser = argparse.ArgumentParser(description="Lumidoc Gateway API")
     parser.add_argument("--host", default=settings.host, help="监听主机")
     parser.add_argument("--port", type=int, default=settings.port, help="监听端口")
     parser.add_argument("--workers", type=int, default=1, help="工作进程数")
@@ -361,4 +358,4 @@ def main():
     )
 
 if __name__ == "__main__":
-    main() 
+    main()

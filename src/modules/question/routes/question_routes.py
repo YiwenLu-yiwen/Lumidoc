@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, Body, FastAPI, Request
-from fastapi.responses import StreamingResponse, JSONResponse, Response
+from fastapi.responses import JSONResponse, Response
 from src.shared.auth import get_current_user
 import httpx
 from src.modules.config import settings
@@ -7,8 +7,8 @@ import logging
 from typing import Dict, Any, List, Optional
 from contextlib import asynccontextmanager
 from src.shared.types.response import ApiResponse
+from src.shared.health_check import create_health_checker, register_health_routes
 # 健康检查已在main.py中统一注册
-import asyncio
 import json
 
 # 定义lifespan事件管理器
@@ -19,31 +19,31 @@ async def lifespan(app: FastAPI):
     try:
         await health_checker.start()
         logger.info("Question服务启动成功")
-        
+
         # 注册到服务发现
         from src.shared.service_discovery import register_service
         await register_service("question", port=8002, health_check_endpoint="/healthz")
-        
+
     except Exception as e:
         logger.error(f"Question服务启动失败: {str(e)}")
-        
+
     yield
-    
+
     # 关闭事件
     try:
         await health_checker.stop()
         logger.info("Question服务关闭")
-        
+
         # 从服务发现注销
         from src.shared.service_discovery import unregister_service
         await unregister_service("question")
-        
+
     except Exception as e:
         logger.error(f"Question服务关闭失败: {str(e)}")
 
 # 创建FastAPI应用
 app = FastAPI(
-    title="Question Service", 
+    title="Question Service",
     description="问题服务",
     lifespan=lifespan
 )
@@ -73,7 +73,7 @@ async def check_question_service():
     try:
         # 检查基本功能而不是调用自身的健康检查
         # 简单检查：验证可以创建httpx客户端
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient():
             # 不实际发送请求，只验证客户端创建
             pass
         return True
@@ -82,7 +82,6 @@ async def check_question_service():
         return False
 
 # 创建健康检查器
-from src.shared.health_check import create_health_checker, register_health_routes
 health_checker = create_health_checker("question", "question_service_1")
 
 # 配置健康检查项
@@ -105,18 +104,18 @@ async def mock_chat_stream(request: Request):
         content = data.get("content", "")
         project_id = data.get("project_id", "")
         user_id = data.get("user_id", "")
-        
+
         # 记录请求信息
         print(f"接收到聊天流请求: project_id={project_id}, user_id={user_id}, content={content[:30]}...")
         logging.info(f"接收到聊天流请求: project_id={project_id}, user_id={user_id}, content={content[:30]}...")
-        
+
         # 返回JSON字符串格式的响应，而不是Python字典
         response_json = json.dumps({
             "success": True,
             "response": f"这是对'{content}'的回复，来自项目{project_id}，用户{user_id}",
             "message_id": "mock-msg-123456"
         })
-        
+
         # 使用Response而不是返回dict，确保Content-Type正确
         return Response(
             content=response_json,
@@ -151,10 +150,10 @@ async def mock_update_chat_history(request: Request):
         data = await request.json()
         project_id = data.get("project_id", "")
         messages = data.get("messages", [])
-        
+
         print(f"接收到更新聊天历史请求: project_id={project_id}, messages_count={len(messages)}")
         logging.info(f"接收到更新聊天历史请求: project_id={project_id}, messages_count={len(messages)}")
-        
+
         return {
             "success": True,
             "message": "Chat history updated successfully"
@@ -225,7 +224,7 @@ async def get_question_history(
         params = {}
         if limit:
             params["limit"] = limit
-            
+
         response = await client.get(
             f"{settings.question_service_url}/history/{project_id}",
             params=params
@@ -275,4 +274,4 @@ async def submit_feedback(
 # 注册路由
 app.include_router(router)
 
- 
+

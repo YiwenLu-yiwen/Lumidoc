@@ -102,12 +102,13 @@ async def hf_model_if_cache(
                     + ">\n"
                 )
 
+    model_device = next(hf_model.parameters()).device
     input_ids = hf_tokenizer(
         input_prompt, return_tensors="pt", padding=True, truncation=True
-    ).to("cuda")
-    inputs = {k: v.to(hf_model.device) for k, v in input_ids.items()}
+    ).to(model_device)
+    inputs = {key: value.to(model_device) for key, value in input_ids.items()}
     output = hf_model.generate(
-        **input_ids, max_new_tokens=512, num_return_sequences=1, early_stopping=True
+        **inputs, max_new_tokens=512, num_return_sequences=1, early_stopping=True
     )
     response_text = hf_tokenizer.decode(
         output[0][len(inputs["input_ids"][0]) :], skip_special_tokens=True
@@ -134,16 +135,8 @@ async def hf_model_complete(
 
 
 async def hf_embed(texts: list[str], tokenizer, embed_model) -> np.ndarray:
-    # Detect the appropriate device
-    if torch.cuda.is_available():
-        device = next(embed_model.parameters()).device  # Use CUDA if available
-    elif torch.backends.mps.is_available():
-        device = torch.device("mps")  # Use MPS for Apple Silicon
-    else:
-        device = torch.device("cpu")  # Fallback to CPU
-
-    # Move the model to the detected device
-    embed_model = embed_model.to(device)
+    # Respect the device selected by the container runtime/model loader.
+    device = next(embed_model.parameters()).device
 
     # Tokenize the input texts and move them to the same device
     encoded_texts = tokenizer(

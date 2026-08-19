@@ -3,7 +3,7 @@
 定义系统中所有可能的错误类型
 """
 
-from enum import Enum, auto
+from enum import Enum
 
 class ErrorCode(Enum):
     """标准化错误代码枚举"""

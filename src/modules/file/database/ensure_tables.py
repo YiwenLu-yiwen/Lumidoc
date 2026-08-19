@@ -3,8 +3,6 @@
 """
 
 import logging
-import asyncio
-import os
 from ..config.database import FileServiceDatabase
 
 logger = logging.getLogger(__name__)
@@ -163,10 +161,10 @@ CREATE TABLE IF NOT EXISTS project_rag_files (
 
 # 单独添加外键约束
 ADD_PROJECT_RAG_FILES_FK = """
-ALTER TABLE project_rag_files 
-ADD CONSTRAINT fk_project_rag_files_project_file 
-FOREIGN KEY (project_id, file_hash) 
-REFERENCES project_files(project_id, file_hash) 
+ALTER TABLE project_rag_files
+ADD CONSTRAINT fk_project_rag_files_project_file
+FOREIGN KEY (project_id, file_hash)
+REFERENCES project_files(project_id, file_hash)
 ON DELETE CASCADE
 """
 
@@ -204,12 +202,12 @@ async def ensure_file_contents_table():
             exists = await conn.fetchval(
                 """
                 SELECT EXISTS (
-                    SELECT FROM information_schema.tables 
+                    SELECT FROM information_schema.tables
                     WHERE table_name = 'file_contents'
                 )
                 """
             )
-            
+
             if not exists:
                 logger.info("file_contents表不存在，正在创建...")
                 # 创建表
@@ -225,7 +223,7 @@ async def ensure_file_contents_table():
                         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                     );
-                    
+
                     CREATE INDEX idx_file_contents_hash ON file_contents(file_hash);
                     """
                 )
@@ -240,25 +238,25 @@ async def ensure_file_contents_table():
                     """
                 )
                 column_names = [row['column_name'] for row in columns]
-                
+
                 # 检查并添加必要的字段
                 if 'summary' not in column_names:
                     logger.info("添加summary字段到file_contents表")
                     await conn.execute(
                         "ALTER TABLE file_contents ADD COLUMN summary TEXT"
                     )
-                
+
                 if 'metadata' not in column_names:
                     logger.info("添加metadata字段到file_contents表")
                     await conn.execute(
                         "ALTER TABLE file_contents ADD COLUMN metadata JSONB DEFAULT '{}'"
                     )
-                
+
                 logger.info("file_contents表结构已验证")
-            
+
             # 确保project_files表结构完整
             await ensure_project_files_table_structure(conn)
-            
+
             logger.info("所有数据库表结构验证完成")
     except Exception as e:
         logger.error(f"验证数据库表结构时出错: {str(e)}")
@@ -273,18 +271,18 @@ async def ensure_project_files_table_structure(conn):
         project_files_exists = await conn.fetchval(
             """
             SELECT EXISTS (
-                SELECT FROM information_schema.tables 
+                SELECT FROM information_schema.tables
                 WHERE table_name = 'project_files'
             )
             """
         )
-        
+
         if not project_files_exists:
             logger.info("project_files表不存在，正在创建完整表结构...")
             await conn.execute(CREATE_PROJECT_FILES_TABLE)
             logger.info("project_files表创建完成")
             return
-            
+
         # 表存在，检查所有必要的列
         columns = await conn.fetch(
             """
@@ -295,15 +293,15 @@ async def ensure_project_files_table_structure(conn):
             """
         )
         column_names = [row['column_name'] for row in columns]
-        
+
         logger.info(f"当前project_files表列: {', '.join(column_names)}")
-        
+
         # 定义必要的列及其类型 - 更新为UUID项目ID
         required_columns = {
             'id': 'SERIAL PRIMARY KEY',
             'project_id': 'UUID NOT NULL',
             'name': 'TEXT NOT NULL',
-            'path': 'TEXT NOT NULL', 
+            'path': 'TEXT NOT NULL',
             'size': 'BIGINT NOT NULL',
             'type': 'TEXT NOT NULL',
             'file_hash': 'TEXT NOT NULL',
@@ -319,7 +317,7 @@ async def ensure_project_files_table_structure(conn):
             'rag_error_message': 'VARCHAR(500)',
             'is_in_rag': 'BOOLEAN DEFAULT FALSE'
         }
-        
+
         # 检查并添加缺失的列
         added_columns = []
         for col_name, col_definition in required_columns.items():
@@ -331,7 +329,7 @@ async def ensure_project_files_table_structure(conn):
                         await conn.execute(f"ALTER TABLE project_files ADD COLUMN {col_name} TEXT")
                         # 为现有数据生成临时的file_hash值
                         await conn.execute("""
-                            UPDATE project_files 
+                            UPDATE project_files
                             SET file_hash = 'legacy_' || id::text || '_' || extract(epoch from created_at)::text
                             WHERE file_hash IS NULL OR file_hash = ''
                         """)
@@ -349,14 +347,35 @@ async def ensure_project_files_table_structure(conn):
                             await conn.execute(f"ALTER TABLE project_files ADD COLUMN {col_name} TIMESTAMP WITH TIME ZONE DEFAULT NOW()")
                         elif col_name == 'updated_at':
                             await conn.execute(f"ALTER TABLE project_files ADD COLUMN {col_name} TIMESTAMP WITH TIME ZONE DEFAULT NOW()")
+                        elif col_name == 'name':
+                            # 历史表结构中使用filename/display_name，先补列再回填
+                            await conn.execute("ALTER TABLE project_files ADD COLUMN name TEXT")
+                            await conn.execute("""
+                                UPDATE project_files
+                                SET name = COALESCE(name, filename, display_name, file_hash, 'unknown_file')
+                                WHERE name IS NULL OR name = ''
+                            """)
+                            await conn.execute("ALTER TABLE project_files ALTER COLUMN name SET NOT NULL")
+                        elif col_name == 'path':
+                            # 兼容旧数据：优先复用filename，其次file_hash
+                            await conn.execute("ALTER TABLE project_files ADD COLUMN path TEXT")
+                            await conn.execute("""
+                                UPDATE project_files
+                                SET path = COALESCE(path, filename, file_hash, 'unknown_path')
+                                WHERE path IS NULL OR path = ''
+                            """)
+                            await conn.execute("ALTER TABLE project_files ALTER COLUMN path SET NOT NULL")
+                        elif col_name == 'type':
+                            # 历史表结构中使用content_type，回填后保证非空
+                            await conn.execute("ALTER TABLE project_files ADD COLUMN type TEXT")
+                            await conn.execute("""
+                                UPDATE project_files
+                                SET type = COALESCE(type, content_type, 'application/octet-stream')
+                                WHERE type IS NULL OR type = ''
+                            """)
+                            await conn.execute("ALTER TABLE project_files ALTER COLUMN type SET NOT NULL")
                         else:
-                            # 对于其他列，提取列定义
-                            col_def_parts = col_definition.split(' ', 1)
-                            if len(col_def_parts) > 1:
-                                col_type_and_constraints = col_def_parts[1]
-                            else:
-                                col_type_and_constraints = 'TEXT'  # 默认类型
-                            await conn.execute(f"ALTER TABLE project_files ADD COLUMN {col_name} {col_type_and_constraints}")
+                            await conn.execute(f"ALTER TABLE project_files ADD COLUMN {col_name} {col_definition}")
                     added_columns.append(col_name)
                 except Exception as e:
                     logger.error(f"添加列 {col_name} 失败: {str(e)}")
@@ -365,18 +384,18 @@ async def ensure_project_files_table_structure(conn):
                         logger.warning("file_hash列添加失败，需要重新创建project_files表")
                         await recreate_project_files_table(conn)
                         return
-        
+
         if added_columns:
             logger.info(f"已添加列: {', '.join(added_columns)}")
-        
+
         # 确保必要的索引存在
         await ensure_project_files_indices(conn)
-        
+
         # 确保唯一约束存在
         await ensure_project_files_constraints(conn)
-        
+
         logger.info("project_files表结构验证和修复完成")
-        
+
     except Exception as e:
         logger.error(f"确保project_files表结构时出错: {str(e)}")
         raise
@@ -387,17 +406,17 @@ async def recreate_project_files_table(conn):
     """
     try:
         logger.warning("正在重新创建project_files表...")
-        
+
         # 备份现有数据
         backup_data = await conn.fetch("SELECT * FROM project_files")
         logger.info(f"备份了 {len(backup_data)} 条记录")
-        
+
         # 删除旧表
         await conn.execute("DROP TABLE IF EXISTS project_files CASCADE")
-        
+
         # 创建新表
         await conn.execute(CREATE_PROJECT_FILES_TABLE)
-        
+
         # 恢复数据，为缺失的file_hash生成值
         for row in backup_data:
             row_dict = dict(row)
@@ -406,19 +425,19 @@ async def recreate_project_files_table(conn):
                 import hashlib
                 hash_source = f"{row_dict.get('id', '')}_{row_dict.get('name', '')}_{row_dict.get('created_at', '')}"
                 row_dict['file_hash'] = hashlib.md5(hash_source.encode()).hexdigest()
-            
+
             # 插入数据
             columns = list(row_dict.keys())
             values = list(row_dict.values())
             placeholders = ', '.join(['$' + str(i+1) for i in range(len(values))])
-            
+
             await conn.execute(
                 f"INSERT INTO project_files ({', '.join(columns)}) VALUES ({placeholders})",
                 *values
             )
-        
+
         logger.info("project_files表重新创建完成，数据已恢复")
-        
+
     except Exception as e:
         logger.error(f"重新创建project_files表失败: {str(e)}")
         raise
@@ -440,7 +459,7 @@ async def ensure_project_files_indices(conn):
         "CREATE INDEX IF NOT EXISTS idx_project_files_is_in_rag ON project_files(is_in_rag)",
         "CREATE INDEX IF NOT EXISTS idx_project_files_project_rag ON project_files(project_id, rag_status)"
     ]
-    
+
     for index_sql in indices:
         try:
             await conn.execute(index_sql)
@@ -455,13 +474,13 @@ async def ensure_project_files_constraints(conn):
         # 检查UNIQUE约束是否存在
         constraint_exists = await conn.fetchval("""
             SELECT EXISTS (
-                SELECT 1 FROM information_schema.table_constraints 
-                WHERE table_name = 'project_files' 
+                SELECT 1 FROM information_schema.table_constraints
+                WHERE table_name = 'project_files'
                 AND constraint_type = 'UNIQUE'
                 AND constraint_name LIKE '%project_id%file_hash%'
             )
         """)
-        
+
         if not constraint_exists:
             logger.info("添加project_files表的UNIQUE约束...")
             try:
@@ -472,9 +491,9 @@ async def ensure_project_files_constraints(conn):
                 logger.warning(f"添加UNIQUE约束失败: {str(e)}")
                 # 可能存在重复数据，先清理重复数据
                 await conn.execute("""
-                    DELETE FROM project_files 
+                    DELETE FROM project_files
                     WHERE id NOT IN (
-                        SELECT MIN(id) FROM project_files 
+                        SELECT MIN(id) FROM project_files
                         GROUP BY project_id, file_hash
                     )
                 """)
@@ -483,7 +502,7 @@ async def ensure_project_files_constraints(conn):
                     "ALTER TABLE project_files ADD CONSTRAINT uk_project_files_project_id_file_hash UNIQUE (project_id, file_hash)"
                 )
                 logger.info("清理重复数据后，UNIQUE约束添加成功")
-                
+
     except Exception as e:
         logger.warning(f"确保约束时出错: {str(e)}")
 
@@ -498,12 +517,12 @@ async def ensure_projects_table():
             exists = await conn.fetchval(
                 """
                 SELECT EXISTS (
-                    SELECT FROM information_schema.tables 
+                    SELECT FROM information_schema.tables
                     WHERE table_name = 'projects'
                 )
                 """
             )
-            
+
             if not exists:
                 logger.info("projects表不存在，正在创建...")
                 await conn.execute(CREATE_PROJECTS_TABLE)
@@ -518,23 +537,23 @@ async def ensure_projects_table():
                     """
                 )
                 column_names = [row['column_name'] for row in columns]
-                
+
                 # 检查并添加user_id列
                 if 'user_id' not in column_names:
                     logger.info("添加user_id字段到projects表")
                     await conn.execute(
                         "ALTER TABLE projects ADD COLUMN user_id INTEGER"
                     )
-                
+
                 # 检查并添加status列
                 if 'status' not in column_names:
                     logger.info("添加status字段到projects表")
                     await conn.execute(
                         "ALTER TABLE projects ADD COLUMN status TEXT DEFAULT 'active'"
                     )
-                
+
                 logger.info("projects表结构已验证和修复")
-            
+
             logger.info("projects表结构验证完成")
     except Exception as e:
         logger.error(f"验证projects表结构时出错: {str(e)}")
@@ -543,81 +562,81 @@ async def ensure_projects_table():
 async def ensure_all_tables() -> bool:
     """
     确保所有必要的表都存在
-    
+
     Returns:
         bool: 是否成功初始化表
     """
     try:
         logger.info("开始初始化数据库表")
-        
+
         # 首先确保projects表结构正确
         await ensure_projects_table()
-        
+
         # 使用类方法获取连接池
         pool = await FileServiceDatabase.get_pool()
-        
+
         # 使用连接池执行SQL
         async with pool.acquire() as conn:
             # 创建项目表
             await conn.execute(CREATE_PROJECTS_TABLE)
-            
+
             # 创建项目合作者表
             await conn.execute(CREATE_PROJECT_COLLABORATORS_TABLE)
-            
+
             # 创建问题集表
             await conn.execute(CREATE_QUESTION_SETS_TABLE)
-            
+
             # 创建问题表
             await conn.execute(CREATE_QUESTIONS_TABLE)
-            
+
             # 创建聊天记录表
             await conn.execute(CREATE_CHAT_MESSAGES_TABLE)
-            
+
             # 🔧 关键修复：先创建基础表并确保结构完整
             logger.info("创建项目文件表...")
             await conn.execute(CREATE_PROJECT_FILES_TABLE)
-            
+
             # 🔧 立即验证和修复project_files表结构
             logger.info("验证project_files表结构...")
             await ensure_project_files_table_structure(conn)
-            
+
             # 创建文件内容表
             await conn.execute(CREATE_FILE_CONTENTS_TABLE)
-            
+
             # 创建LLM摘要文档表
             await conn.execute(CREATE_LLM_SUMMARY_DOCUMENTS_TABLE)
-            
+
             # 创建任务表
             await conn.execute(CREATE_TASKS_TABLE)
-            
+
             # 🔧 在创建外键约束表之前，再次确认file_hash列存在
             logger.info("验证外键引用列是否存在...")
             file_hash_exists = await conn.fetchval("""
                 SELECT EXISTS (
-                    SELECT 1 FROM information_schema.columns 
+                    SELECT 1 FROM information_schema.columns
                     WHERE table_name = 'project_files' AND column_name = 'file_hash'
                 )
             """)
-            
+
             if not file_hash_exists:
                 logger.error("project_files表中file_hash列不存在，无法创建外键约束")
                 raise Exception("file_hash列不存在，无法创建project_rag_files表")
-            
+
             # 现在安全创建项目RAG文件关联表
             logger.info("创建项目RAG文件关联表...")
             try:
                 await conn.execute(CREATE_PROJECT_RAG_FILES_TABLE)
                 logger.info("project_rag_files表创建成功")
-                
+
                 # 检查外键约束是否已存在
                 fk_exists = await conn.fetchval("""
                     SELECT EXISTS (
-                        SELECT 1 FROM information_schema.table_constraints 
+                        SELECT 1 FROM information_schema.table_constraints
                         WHERE constraint_name = 'fk_project_rag_files_project_file'
                         AND table_name = 'project_rag_files'
                     )
                 """)
-                
+
                 if not fk_exists:
                     logger.info("添加project_rag_files表外键约束...")
                     try:
@@ -627,17 +646,17 @@ async def ensure_all_tables() -> bool:
                         logger.warning(f"添加外键约束失败: {str(fk_e)}")
                 else:
                     logger.info("外键约束已存在，跳过")
-                    
+
             except Exception as e:
                 logger.error(f"创建project_rag_files表失败: {str(e)}")
                 # 继续执行，但不创建相关索引
-            
+
             try:
                 # 创建问题索引
                 await conn.execute(CREATE_QUESTIONS_INDEX)
             except Exception as e:
                 logger.warning(f"创建索引失败: {CREATE_QUESTIONS_INDEX}, 错误: {str(e)}")
-                
+
             # 创建所有其他索引，但先检查表是否存在
             for index_sql in INDICES:
                 try:
@@ -646,29 +665,29 @@ async def ensure_all_tables() -> bool:
                         # 检查project_rag_files表是否存在
                         table_exists = await conn.fetchval("""
                             SELECT EXISTS (
-                                SELECT FROM information_schema.tables 
+                                SELECT FROM information_schema.tables
                                 WHERE table_name = 'project_rag_files'
                             )
                         """)
                         if not table_exists:
                             logger.warning(f"跳过索引创建（表不存在）: {index_sql}")
                             continue
-                    
+
                     await conn.execute(index_sql)
                     logger.debug(f"索引创建成功: {index_sql}")
                 except Exception as e:
                     logger.warning(f"创建索引失败: {index_sql}, 错误: {str(e)}")
-            
+
             # 打印表列表
             tables = await conn.fetch("SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public'")
             table_names = [table['tablename'] for table in tables]
             logger.info(f"数据库中的表: {', '.join(table_names)}")
-        
+
         # 🔧 最后确保所有表结构完整性
         logger.info("最终验证表结构...")
         await ensure_file_contents_table()
         logger.info("表结构验证和修复完成")
-            
+
         logger.info("数据库表初始化完成")
         return True
     except Exception as e:
@@ -677,4 +696,4 @@ async def ensure_all_tables() -> bool:
 
 async def init_database():
     """初始化数据库表结构"""
-    return await ensure_all_tables() 
+    return await ensure_all_tables()

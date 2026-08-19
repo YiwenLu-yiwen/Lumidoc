@@ -1,0 +1,23 @@
+.git
+.env
+.env.*
+!.env.example
+.DS_Store
+**/*.key
+**/*.pem
+
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.ruff_cache
+
+frontend/node_modules
+frontend/dist
+logs
+rag_cache
+uploads
+temp
+
+# RapidOCR assets are only needed by the file-processing image. That Dockerfile
+# has its own ignore file so these models do not leak into every service image.
+src/models

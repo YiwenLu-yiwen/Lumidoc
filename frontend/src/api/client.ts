@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { mocked } from './mocks';
-import { ProjectAccessLevel } from '@/context/AuthContext';
+import { ProjectAccessLevel } from '@/context/authTypes';
 
 // 统一使用Gateway URL访问所有后端服务
 const gatewayURL = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8888';
@@ -8,6 +8,11 @@ const baseURL = gatewayURL;
 
 // 从环境变量获取API前缀
 const apiPrefix = import.meta.env.VITE_API_PREFIX || '/api';
+
+interface CachedProject {
+  id?: string;
+  creator_id?: string;
+}
 
 // 打印所有环境变量，便于调试
 console.log('[API Client] 环境变量:',{
@@ -31,14 +36,14 @@ const addMockHandlers = () => {
   // 拦截获取项目权限的请求
   mocked.onGet(`${apiPrefix}/user_permissions/projects`).reply(() => {
     console.log('[模拟API] 拦截项目权限请求');
-    
+
     // 获取存储在localStorage中的用户信息
-    const userJson = localStorage.getItem('stp_user');
+    const userJson = localStorage.getItem('lumidoc_user');
     if (!userJson) {
       console.log('[模拟API] 用户未登录，无法获取项目权限');
       return [401, { detail: '用户未登录' }];
     }
-    
+
     let user;
     try {
       user = JSON.parse(userJson);
@@ -46,10 +51,10 @@ const addMockHandlers = () => {
       console.error('[模拟API] 解析用户数据失败:', e);
       return [500, { detail: '用户数据无效' }];
     }
-    
+
     // 从实际存储的项目列表中构建权限数据
-    const projectsJson = localStorage.getItem('stp_projects');
-    let projects = [];
+    const projectsJson = localStorage.getItem('lumidoc_projects');
+    let projects: CachedProject[] = [];
     try {
       if (projectsJson) {
         projects = JSON.parse(projectsJson);
@@ -57,18 +62,18 @@ const addMockHandlers = () => {
     } catch (e) {
       console.error('[模拟API] 解析项目数据失败:', e);
     }
-    
+
     // 为每个项目构建一个权限记录，假设创建者是拥有者
     const userProjects = projects
-      .filter((project: any) => project && project.id)
-      .map((project: any) => ({
+      .filter((project): project is CachedProject & { id: string } => Boolean(project?.id))
+      .map((project) => ({
         project_id: project.id,
         // 假设所有已知项目用户都有查看权限，但只有自己创建的项目才有拥有者权限
         // 这里使用一个简单规则：ID包含用户ID的视为用户创建
-        access_level: project.creator_id === user.id ? 
+        access_level: project.creator_id === user.id ?
           ProjectAccessLevel.OWNER : ProjectAccessLevel.VIEWER
       }));
-    
+
     console.log('[模拟API] 返回模拟的项目权限:', userProjects);
     return [200, userProjects];
   });
@@ -120,14 +125,14 @@ export const apiClient = axios.create({
     function(data) {
       // 打印原始响应数据类型，帮助调试
       console.log('[API Client] 响应数据类型:', typeof data);
-      
+
       // 如果响应是字符串且以<!DOCTYPE开头，说明是HTML而非JSON
       if(typeof data === 'string' && data.trim().startsWith('<!DOCTYPE')) {
         console.error('[API Client] 接收到HTML响应而非JSON, 可能是跨域问题或后端错误');
         // 返回一个错误对象作为响应数据
         return { error: true, message: 'Received HTML instead of JSON', htmlResponse: true };
       }
-      
+
       // 尝试解析字符串响应
       if(typeof data === 'string' && data.trim().length > 0) {
         try {
@@ -138,7 +143,7 @@ export const apiClient = axios.create({
           // 返回原始数据，让axios继续处理
         }
       }
-      
+
       return data;
     }
   ]
@@ -147,23 +152,23 @@ export const apiClient = axios.create({
 // 请求拦截器：统一通过Gateway访问所有服务
 apiClient.interceptors.request.use((config) => {
   console.log(`[API Client] 通过Gateway发送请求: ${config.method?.toUpperCase()} ${config.url}`);
-  
+
   // RAG服务路径处理：/rag/* -> /lightrag/*（匹配Gateway配置）
   // 修复：避免对已经包含lightrag的URL再次替换
   if (config.url?.includes('/rag/') && !config.url?.includes('/lightrag/')) {
     config.url = config.url.replace('/rag/', '/lightrag/');
     console.log(`[API Client] RAG请求路径已调整为Gateway路径: ${config.url}`);
   }
-  
+
   // 如果URL不是以/api/开头，不是完整的http URL，不是LightRAG请求，也不是以/file/开头的文件服务请求，则添加API前缀
   if (config.url && !config.url.startsWith('/api/') && !config.url.startsWith('http') && !config.url.startsWith('/lightrag/') && !config.url.startsWith('/file/')) {
     config.url = `${apiPrefix}${config.url.startsWith('/') ? '' : '/'}${config.url}`;
     console.log(`[API Client] 添加API前缀: ${config.url}`);
   }
-  
+
   // 请求URL字符串
   const url = config.url || '';
-  
+
   // 为不同类型的请求设置不同的超时时间
   if (url.includes('/user_permissions/projects')) {
     // 项目权限请求 - 缩短超时时间，避免用户等待过长
@@ -181,7 +186,7 @@ apiClient.interceptors.request.use((config) => {
     // 其他请求使用默认超时
     config.timeout = 15000;
   }
-  
+
   return config;
 });
 
@@ -193,9 +198,9 @@ const invalidRequestPaths = new Set<string>();
 const shouldIgnore401 = (url: string | undefined): boolean => {
   // 如果URL未定义，不忽略
   if (!url) return false;
-  
+
   // 忽略清空聊天历史和一些不重要的API
-  return url.includes('/chat/history/') || 
+  return url.includes('/chat/history/') ||
          url.includes('/auth/') ||
          url.includes('/health') ||
          url.includes('/user_permissions/projects') || // 添加权限检查API，避免循环重定向
@@ -206,36 +211,30 @@ const shouldIgnore401 = (url: string | undefined): boolean => {
 // 验证token是否为合法JWT格式
 const isValidJWT = (token: string): boolean => {
   if (!token) return false;
-  
+
   // 去除Bearer前缀
   if (token.startsWith('Bearer ')) {
     token = token.substring(7);
   }
-  
+
   // JWT由三部分组成，用.分隔
   const parts = token.split('.');
   if (parts.length !== 3) {
     return false;
   }
-  
+
   // 每部分应该是Base64URL编码
-  try {
-    // 不实际解码，只检查格式
-    return parts.every(part => {
-      return /^[A-Za-z0-9_-]+$/g.test(part);
-    });
-  } catch (e) {
-    return false;
-  }
+  // 不实际解码，只检查格式
+  return parts.every(part => /^[A-Za-z0-9_-]+$/.test(part));
 };
 
 // 检查并清理无效的token
 const checkAndCleanToken = () => {
-  const token = localStorage.getItem('stp_token');
+  const token = localStorage.getItem('lumidoc_token');
   if (token && !isValidJWT(token)) {
     console.warn('[API Client] 检测到无效的令牌格式，将清除本地存储');
-    localStorage.removeItem('stp_token');
-    localStorage.removeItem('stp_user');
+    localStorage.removeItem('lumidoc_token');
+    localStorage.removeItem('lumidoc_user');
     return null;
   }
   return token;
@@ -246,42 +245,42 @@ apiClient.interceptors.request.use((config) => {
   try {
     // 记录请求信息
     console.log(`[API Client] 发送请求: ${config.method?.toUpperCase()} ${config.url}`);
-    
+
     // 首先检查并清理无效token
     let token = checkAndCleanToken();
-    
+
     // 确保令牌格式正确 - 检查是否为RS256格式（应该包含两个点）
     if (token) {
       // 检查令牌是否已包含Bearer前缀，如果有则去除
       if (token.startsWith('Bearer ')) {
         token = token.substring(7);
       }
-      
+
       // 检查令牌格式 - RS256令牌应该有两个点分隔的段
       if (!token.includes('.') || token.split('.').length < 3) {
         console.error('[API Client] 令牌格式不正确，可能不是有效的JWT');
       }
-      
+
       // 截取token部分显示以避免整个token暴露在日志中
       const tokenPreview = token.substring(0, 10) + '...';
       console.log(`[API Client] 添加Authorization头到 ${config.url}: Bearer ${tokenPreview}`);
-      
+
       // 确保headers对象存在
       config.headers = config.headers || {};
-      
+
       // 设置Authorization头，确保格式正确 - 总是添加Bearer前缀
       config.headers['Authorization'] = `Bearer ${token}`;
-      
+
       // 添加防缓存头，确保请求不被缓存
       if (config.method?.toLowerCase() === 'get') {
         config.headers['Cache-Control'] = 'no-cache, no-store';
         config.headers['Pragma'] = 'no-cache';
       }
-      
+
       // 检查和记录所有请求头
-      const headersLog = Object.keys(config.headers).map(key => 
-        `${key}: ${key.toLowerCase() === 'authorization' 
-          ? 'Bearer ' + tokenPreview 
+      const headersLog = Object.keys(config.headers).map(key =>
+        `${key}: ${key.toLowerCase() === 'authorization'
+          ? 'Bearer ' + tokenPreview
           : String(config.headers[key])}`
       );
       console.log(`[API Client] 请求头: ${headersLog.join(', ')}`);
@@ -291,7 +290,7 @@ apiClient.interceptors.request.use((config) => {
         console.warn(`[API Client] 请求 ${config.url} 没有找到token`);
       }
     }
-    
+
     return config;
   } catch (error) {
     console.error('[API Client] 添加token时出错:', error);
@@ -323,7 +322,7 @@ apiClient.interceptors.response.use(
     if (!response.config.url?.includes('/health')) {
       console.log(`[API Client] 请求成功: ${response.config.method?.toUpperCase()} ${response.config.url} - 状态码: ${response.status}`);
     }
-    
+
     // 检查cookie中是否有新的token（服务器刷新的）
     const newToken = getTokenFromCookie();
     if (newToken) {
@@ -331,15 +330,15 @@ apiClient.interceptors.response.use(
       if (isValidJWT(newToken)) {
         // 从cookie中删除token，防止泄露
         document.cookie = 'access_token=; Max-Age=0; path=/; sameSite=lax;';
-        
+
         // 更新localStorage中的token
-        localStorage.setItem('stp_token', newToken);
+        localStorage.setItem('lumidoc_token', newToken);
         console.log('[API Client] 检测到token更新，已更新本地存储');
       } else {
         console.error('[API Client] 从cookie获取的token无效，忽略');
       }
     }
-    
+
     return response;
   },
   (error) => {
@@ -348,45 +347,45 @@ apiClient.interceptors.response.use(
       console.log('[API Client] 请求被取消');
       return Promise.reject(error);
     }
-    
-    const requestInfo = error.config ? 
-      `${error.config.method?.toUpperCase()} ${error.config.url}` : 
+
+    const requestInfo = error.config ?
+      `${error.config.method?.toUpperCase()} ${error.config.url}` :
       '未知请求';
-    
+
     // 如果是超时错误，简化错误处理
     if (error.code === 'ECONNABORTED') {
       console.warn(`[API Client] 请求超时: ${requestInfo}`);
       return Promise.reject(error);
     }
-    
+
     console.error(`[API Client] 请求失败: ${requestInfo}`);
-    
+
     // 处理401未授权错误
-    if (error.response?.status === 401) { 
+    if (error.response?.status === 401) {
       console.error('[API Client] 接收到401未授权错误, URL:', error.config?.url);
-      
+
       // 如果这个请求路径应该被忽略，不触发登出
       if (shouldIgnore401(error.config?.url)) {
         console.warn(`[API Client] 忽略此路径的401错误: ${error.config?.url}`);
         // 直接返回错误，不触发任何重定向
         return Promise.reject(error);
       }
-      
+
       // 记录此无效请求路径
       if (error.config?.url) {
         invalidRequestPaths.add(error.config.url);
       }
-      
+
       // 检查令牌是否有效
-      const token = localStorage.getItem('stp_token');
+      const token = localStorage.getItem('lumidoc_token');
       const isTokenValid = token && isValidJWT(token);
-      
+
       // 如果令牌无效或不存在，直接清除
       if (!isTokenValid) {
         console.warn('[API Client] 检测到无效令牌或令牌不存在，执行清理');
-        localStorage.removeItem('stp_token');
-        localStorage.removeItem('stp_user');
-        
+        localStorage.removeItem('lumidoc_token');
+        localStorage.removeItem('lumidoc_user');
+
         // 直接跳转到首页，不显示确认对话框
         if (window.location.pathname !== '/' && window.location.pathname !== '/login') {
           console.log('[API Client] 跳转到首页');
@@ -404,7 +403,7 @@ apiClient.interceptors.response.use(
         message: error.message
       });
     }
-    
+
     return Promise.reject(error);
   }
 );
@@ -413,4 +412,4 @@ apiClient.interceptors.response.use(
 if (useMockApi) {
   console.log('[API Client] 已启用模拟API');
   addMockHandlers();
-} 
+}

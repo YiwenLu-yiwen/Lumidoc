@@ -1,37 +1,53 @@
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom'
-import ProjectSelect from './features/project/ProjectSelect'
-import { ChatGPTHomePage } from './components/home/ChatGPTHomePage'
-import { AuthPage } from './pages/AuthPage'
-import { ErrorPage } from './pages/ErrorPage'
 import { AuthProvider } from './context/AuthContext'
 import { ProjectProvider } from './context/ProjectContext'
 import { ThemeProvider } from './context/ThemeContext'
 import { AuthGuard } from './context/AuthGuard'
-import { ProjectAccessLevel } from './context/AuthContext'
-import { MainApp } from './pages/MainApp'
-import { ModernDashboard } from './components/dashboard/ModernDashboard'
-import { DocumentAnalysis } from './components/document/DocumentAnalysis'
-import ChatLayout from './features/chat/ChatLayout'
-import RagManager from './features/rag/RagManager'
-import { SettingsPage } from './features/settings/SettingsPage'
+import { ProjectAccessLevel } from './context/authTypes'
 import { BackendStatusWrapper } from './components/error/BackendStatusWrapper'
 import { BackendOfflineError } from './components/error/BackendOfflineError'
 import './index.css' // 确保全局样式生效
-import { Toaster, toast } from 'react-hot-toast'
-import { useEffect, useState } from 'react'
+import { Toaster } from 'react-hot-toast'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 
-// 防止重复显示相同的错误消息
-const toastShown = new Set<string>();
-export const customToast = {
-  error: (message: string) => {
-    const key = `error-${message}`;
-    if (!toastShown.has(key)) {
-      toastShown.add(key);
-      setTimeout(() => toastShown.delete(key), 3000);
-      return toast.error(message);
-    }
-  }
-};
+const ProjectSelect = lazy(() => import('./features/project/ProjectSelect'))
+const ChatGPTHomePage = lazy(() =>
+  import('./components/home/ChatGPTHomePage').then((module) => ({
+    default: module.ChatGPTHomePage,
+  })),
+)
+const AuthPage = lazy(() =>
+  import('./pages/AuthPage').then((module) => ({ default: module.AuthPage })),
+)
+const ErrorPage = lazy(() =>
+  import('./pages/ErrorPage').then((module) => ({ default: module.ErrorPage })),
+)
+const MainApp = lazy(() =>
+  import('./pages/MainApp').then((module) => ({ default: module.MainApp })),
+)
+const ModernDashboard = lazy(() =>
+  import('./components/dashboard/ModernDashboard').then((module) => ({
+    default: module.ModernDashboard,
+  })),
+)
+const DocumentAnalysis = lazy(() =>
+  import('./components/document/DocumentAnalysis').then((module) => ({
+    default: module.DocumentAnalysis,
+  })),
+)
+const ChatLayout = lazy(() => import('./features/chat/ChatLayout'))
+const RagManager = lazy(() => import('./features/rag/RagManager'))
+const SettingsPage = lazy(() =>
+  import('./features/settings/SettingsPage').then((module) => ({
+    default: module.SettingsPage,
+  })),
+)
+const RouteFallback = () => (
+  <div className="flex min-h-screen items-center justify-center bg-background text-foreground">
+    <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+    <span className="sr-only">正在加载页面</span>
+  </div>
+)
 
 // 全局token检查组件
 const TokenChecker: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -39,7 +55,7 @@ const TokenChecker: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   
   // 在组件加载时检查token
   useEffect(() => {
-    const token = localStorage.getItem('stp_token');
+    const token = localStorage.getItem('lumidoc_token');
     
     if (token) {
       console.log('[TokenChecker] 发现已保存的token，长度:', token.length);
@@ -196,15 +212,16 @@ const router = createBrowserRouter([
 // 创建一个内部应用组件，在AuthProvider内部使用useAuth
 const AppContent = () => {
   // 性能优化：添加防止循环导航的保护
-  const navigationState = {
+  const navigationStateRef = useRef({
     lastPathname: '',
     redirectCount: 0,
     MAX_REDIRECTS: 3,
     timestamp: 0
-  };
+  });
   
   // 启动时清除导航状态
   useEffect(() => {
+    const navigationState = navigationStateRef.current;
     // 清除任何可能导致循环的导航状态
     sessionStorage.removeItem('navigating_to_project');
     Object.keys(sessionStorage).forEach(key => {
@@ -227,7 +244,7 @@ const AppContent = () => {
           console.error(`[App] 检测到导航循环，尝试终止`);
           window.removeEventListener('popstate', handleNavigation);
           sessionStorage.clear();
-          localStorage.removeItem('stp_project_permissions');
+          localStorage.removeItem('lumidoc_project_permissions');
           window.location.href = '/';
           return;
         }
@@ -263,7 +280,9 @@ const AppContent = () => {
                   duration: 3000,
                 }}
               />
-              <RouterProvider router={router} />
+              <Suspense fallback={<RouteFallback />}>
+                <RouterProvider router={router} />
+              </Suspense>
             </div>
           </BackendStatusWrapper>
         </TokenChecker>

@@ -1,16 +1,47 @@
-version: '3.8'
-
 # 添加全局环境变量文件
 x-env-file: &env-file
   env_file:
     - ./.env
 
 services:
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - lumidoc_network
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    restart: unless-stopped
+
+  ollama_models:
+    image: ollama/ollama:latest
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        ollama pull "$$OLLAMA_CHAT_MODEL"
+        ollama pull "$$OLLAMA_EMBEDDING_MODEL"
+        ollama list
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_CHAT_MODEL=${OLLAMA_CHAT_MODEL:-qwen3:1.7b}
+      - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
+    networks:
+      - lumidoc_network
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
   db:
     image: ankane/pgvector:latest
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       - POSTGRES_DB=${POSTGRES_DB:-lumidoc}
     volumes:
       - db_data:/var/lib/postgresql/data
@@ -33,6 +64,13 @@ services:
       - UPLOAD_DIR=/app/uploads
       - TEMP_DIR=/app/temp
       - REDIS_HOST=redis
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-lumidoc}
+      - S3_ENDPOINT=http://minio:9000
+      - AUTH_SERVICE_URL=http://auth_service:8007
+      - PROJECT_SERVICE_URL=http://project_service:8020
+      - FILEPROC_SERVICE_URL=http://fileproc_service:8005
     <<: *env-file
     networks:
       - lumidoc_network
@@ -40,8 +78,9 @@ services:
       - db
       - redis
       - minio
+      - project_service
     deploy:
-      replicas: 2
+      replicas: 1
       resources:
         limits:
           cpus: '0.5'
@@ -52,7 +91,7 @@ services:
   rag_service:
     build:
       context: .
-      dockerfile: src/modules/rag/Dockerfile
+      dockerfile: src/modules/lightraglocal/Dockerfile
     ports:
       - "${RAG_SERVICE_PORT:-8006}:8006"
     volumes:
@@ -62,13 +101,34 @@ services:
       - RAG_DIR=/app/data/rag
       - RAG_INDEX_NAME=main_index
       - DEFAULT_TOP_K=5
+      - REDIS_HOST=redis
+      - POSTGRES_HOST=db
+      - POSTGRES_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-lumidoc}
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=${NEO4J_USER:-neo4j}
+      - NEO4J_USERNAME=${NEO4J_USER:-neo4j}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:?NEO4J_PASSWORD is required}
+      - S3_ENDPOINT=http://minio:9000
+      - AUTH_SERVICE_URL=http://auth_service:8007
+      - FILE_SERVICE_URL=http://file_service:8004
+      - PROJECT_SERVICE_URL=http://project_service:8020
+      - GATEWAY_URL=http://gateway_service:8888
+      - OLLAMA_API_URL=http://ollama:11434
+      - OLLAMA_EMBEDDING_URL=http://ollama:11434
+      - LLM_MODEL_NAME=${OLLAMA_CHAT_MODEL:-qwen3:1.7b}
+      - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
+      - DEFAULT_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
+      - EMBEDDING_DIM=${OLLAMA_EMBEDDING_DIM:-768}
     <<: *env-file
     networks:
       - lumidoc_network
     depends_on:
+      - db
       - redis
+      - neo4j
+      - minio
     deploy:
-      replicas: 2
+      replicas: 1
       resources:
         limits:
           cpus: '1.0'
@@ -86,7 +146,8 @@ services:
       - PYTHONPATH=/app
       - GRAPH_DB_URI=neo4j://neo4j:7687
       - GRAPH_DB_USER=neo4j
-      - GRAPH_DB_PASSWORD=password
+      - GRAPH_DB_PASSWORD=${NEO4J_PASSWORD:?NEO4J_PASSWORD is required}
+      - NEO4J_URI=bolt://neo4j:7687
     volumes:
       - ./data:/app/data/graph
     <<: *env-file
@@ -95,6 +156,7 @@ services:
     depends_on:
       - db
       - redis
+      - neo4j
 
   auth_service:
     build:
@@ -108,9 +170,35 @@ services:
       - DB_PORT=5432
       - DB_NAME=lumidoc
       - DB_USER=postgres
-      - DB_PASSWORD=postgres
+      - DB_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-lumidoc}
       - REDIS_HOST=redis
     <<: *env-file
+    networks:
+      - lumidoc_network
+    depends_on:
+      - db
+      - redis
+
+  project_service:
+    build:
+      context: .
+      dockerfile: src/modules/project/Dockerfile
+    ports:
+      - "${PROJECT_SERVICE_PORT:-8020}:8020"
+    <<: *env-file
+    environment:
+      - PYTHONPATH=/app
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-lumidoc}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      - POSTGRES_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-lumidoc}
+      - REDIS_HOST=redis
+      - AUTH_SERVICE_URL=http://auth_service:8007
     networks:
       - lumidoc_network
     depends_on:
@@ -129,6 +217,10 @@ services:
       - PYTHONPATH=/app
       - RAG_DIR=/app/data/rag
       - REDIS_HOST=redis
+      - RAG_SERVICE_URL=http://rag_service:8006
+      - LLM_SERVICE_URL=http://llm_service:8080
+      - GRAPH_SERVICE_URL=http://graph_service:8003
+      - POSTGRES_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-lumidoc}
     <<: *env-file
     networks:
       - lumidoc_network
@@ -136,7 +228,7 @@ services:
       - rag_service
       - redis
     deploy:
-      replicas: 2
+      replicas: 1
       resources:
         limits:
           cpus: '0.75'
@@ -156,6 +248,9 @@ services:
       - PYTHONPATH=/app
       - RAG_DIR=/app/data/rag
       - REDIS_HOST=redis
+      - RAG_SERVICE_URL=http://rag_service:8006
+      - LLM_SERVICE_URL=http://llm_service:8080
+      - POSTGRES_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-lumidoc}
     <<: *env-file
     networks:
       - lumidoc_network
@@ -171,25 +266,39 @@ services:
       - "${MONITORING_SERVICE_PORT:-8008}:8008"
     environment:
       - PYTHONPATH=/app
+      - REDIS_HOST=redis
+      - POSTGRES_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-lumidoc}
     <<: *env-file
-    networks:
-      - lumidoc_network
-
-  # 前端和API网关
-  webui_backend:
-    build:
-      context: ./Lumidoc_webui/backend
-      dockerfile: Dockerfile
-    ports:
-      - "${BACKEND_PORT:-8000}:8000"
-    environment:
-      - PYTHONPATH=/app
-    <<: *env-file
-    volumes:
-      - ./Lumidoc_webui/backend:/app
     networks:
       - lumidoc_network
     depends_on:
+      - redis
+
+  gateway_service:
+    build:
+      context: .
+      dockerfile: src/modules/gateway/Dockerfile
+    ports:
+      - "${GATEWAY_PORT:-8888}:8888"
+    environment:
+      - PYTHONPATH=/app
+      - GATEWAY_PORT=8888
+      - REDIS_HOST=redis
+      - AUTH_SERVICE_URL=http://auth_service:8007
+      - CHAT_SERVICE_URL=http://chat_service:8001
+      - FILE_SERVICE_URL=http://file_service:8004
+      - FILEPROC_SERVICE_URL=http://fileproc_service:8005
+      - GRAPH_SERVICE_URL=http://graph_service:8003
+      - RAG_SERVICE_URL=http://rag_service:8006
+      - LLM_SERVICE_URL=http://llm_service:8080
+      - MONITORING_SERVICE_URL=http://monitoring_service:8008
+      - PROJECT_SERVICE_URL=http://project_service:8020
+      - QUESTION_SERVICE_URL=http://question_service:8002
+    <<: *env-file
+    networks:
+      - lumidoc_network
+    depends_on:
+      - project_service
       - file_service
       - rag_service
       - chat_service
@@ -198,7 +307,7 @@ services:
       - question_service
       - monitoring_service
     deploy:
-      replicas: 2
+      replicas: 1
       resources:
         limits:
           cpus: '0.5'
@@ -206,21 +315,20 @@ services:
       restart_policy:
         condition: on-failure
 
-  webui_frontend:
+  frontend:
     build:
-      context: ./Lumidoc_webui/frontend
+      context: ./frontend
       dockerfile: Dockerfile
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
-    volumes:
-      - ./Lumidoc_webui/frontend:/app
     <<: *env-file
     environment:
-      - VITE_API_URL=http://localhost:8000
+      - API_GATEWAY_URL=http://localhost:${GATEWAY_PORT:-8888}
+      - FRONTEND_URL=http://localhost:${FRONTEND_PORT:-3000}
     networks:
       - lumidoc_network
     depends_on:
-      - webui_backend
+      - gateway_service
 
   fileproc_service:
     build:
@@ -237,6 +345,12 @@ services:
       - TEMP_DIR=/app/temp
       - FILE_PROCESSING_QUEUE=file_processing
       - REDIS_HOST=redis
+      - S3_ENDPOINT=http://minio:9000
+      - MINIO_ENDPOINT=minio:9000
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-lumidoc}
+      - FILE_SERVICE_URL=http://file_service:8004
     <<: *env-file
     networks:
       - lumidoc_network
@@ -244,7 +358,7 @@ services:
       - redis
       - minio
     deploy:
-      replicas: 3
+      replicas: 1
       resources:
         limits:
           cpus: '0.5'
@@ -258,14 +372,14 @@ services:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
-    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-123456789}"]
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
     networks:
       - lumidoc_network
 
   neo4j:
     image: neo4j:5
     environment:
-      - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-123456789}
+      - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:?NEO4J_PASSWORD is required}
     ports:
       - "7474:7474"
       - "7687:7687"
@@ -282,8 +396,8 @@ services:
       - "9000:9000"
       - "9001:9001"
     environment:
-      - MINIO_ROOT_USER=${S3_ACCESS_KEY:-minioadmin}
-      - MINIO_ROOT_PASSWORD=${S3_SECRET_KEY:-minioadmin}
+      - MINIO_ROOT_USER=${S3_ACCESS_KEY:?S3_ACCESS_KEY is required}
+      - MINIO_ROOT_PASSWORD=${S3_SECRET_KEY:?S3_SECRET_KEY is required}
     volumes:
       - minio_data:/data
     networks:
@@ -299,15 +413,26 @@ services:
       context: .
       dockerfile: src/modules/llm/Dockerfile
     ports:
-      - "${LLM_SERVICE_PORT:-8010}:8010"
+      - "${LLM_SERVICE_PORT:-8080}:8080"
     environment:
       - PYTHONPATH=/app
       - REDIS_HOST=redis
+      - LLM_SERVICE_PORT=${LLM_SERVICE_PORT:-8080}
+      - LLM_MODEL_TYPE=ollama
+      - LLM_MODEL_NAME=${OLLAMA_CHAT_MODEL:-qwen3:1.7b}
+      - OLLAMA_API_URL=http://ollama:11434
+      - OLLAMA_URL=http://ollama:11434
+      - OLLAMA_EMBEDDING_URL=http://ollama:11434
+      - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
+      - DEFAULT_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
     <<: *env-file
     networks:
       - lumidoc_network
     depends_on:
-      - redis
+      redis:
+        condition: service_started
+      ollama_models:
+        condition: service_completed_successfully
     deploy:
       replicas: 1
       resources:
@@ -325,4 +450,5 @@ volumes:
   db_data:
   redis_data:
   neo4j_data:
-  minio_data: 
+  minio_data:
+  ollama_data:

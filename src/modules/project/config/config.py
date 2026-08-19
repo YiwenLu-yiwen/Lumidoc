@@ -3,9 +3,6 @@
 使用统一配置系统
 """
 
-import os
-from pathlib import Path
-from typing import Dict, Any, List
 from src.shared.config import ProjectServiceSettings, get_env
 
 # 创建全局设置实例
@@ -20,9 +17,9 @@ class ExtendedProjectSettings:
     # 数据库配置
     POSTGRES_HOST: str = get_env('POSTGRES_HOST', 'localhost')
     POSTGRES_PORT: int = get_env('POSTGRES_PORT', 5432, env_type=int)
-    POSTGRES_USER: str = get_env('POSTGRES_USER', 'stpuser')
-    POSTGRES_PASSWORD: str = get_env('POSTGRES_PASSWORD', 'stppassword')
-    POSTGRES_DB: str = get_env('POSTGRES_DB', 'stpdb')
+    POSTGRES_USER: str = get_env('POSTGRES_USER', 'postgres')
+    POSTGRES_PASSWORD: str = get_env('POSTGRES_PASSWORD', '')
+    POSTGRES_DB: str = get_env('POSTGRES_DB', 'lumidoc')
     
     # 项目配置
     PROJECT_STORAGE_PATH: str = get_env('PROJECT_STORAGE_PATH', 'storage/projects')
@@ -44,4 +41,4 @@ class ExtendedProjectSettings:
     service_port: int = settings_base.port
 
 # 创建配置实例
-settings = ExtendedProjectSettings() 
+settings = ExtendedProjectSettings()

@@ -3,8 +3,6 @@
  * 检测各个服务是否启动并可用
  */
 
-import { apiClient } from './client';
-
 export interface ServiceStatus {
   name: string;
   url: string;
@@ -25,21 +23,6 @@ const CORE_SERVICES = [
   { name: 'Gateway', url: 'http://localhost:8888', path: '/healthz' },
   { name: 'Auth', url: 'http://localhost:8007', path: '/healthz' },
   { name: 'LightRAG', url: 'http://localhost:8006', path: '/healthz' }
-];
-
-// 完整服务列表 - 仅用于详细状态显示
-const ALL_SERVICES = [
-  { name: 'Gateway', url: 'http://localhost:8888', path: '/healthz' },
-  { name: 'Auth', url: 'http://localhost:8007', path: '/healthz' },
-  { name: 'File', url: 'http://localhost:8004', path: '/healthz' },
-  { name: 'FileProc', url: 'http://localhost:8005', path: '/healthz' },
-  { name: 'LightRAG', url: 'http://localhost:8006', path: '/healthz' },
-  { name: 'Graph', url: 'http://localhost:8003', path: '/healthz' },
-  { name: 'Chat', url: 'http://localhost:8001', path: '/healthz' },
-  { name: 'Question', url: 'http://localhost:8002', path: '/healthz' },
-  { name: 'Monitoring', url: 'http://localhost:8008', path: '/healthz' },
-  { name: 'Project', url: 'http://localhost:8020', path: '/healthz' },
-  { name: 'LLM', url: 'http://localhost:8080', path: '/healthz' }
 ];
 
 /**
@@ -157,7 +140,7 @@ export async function checkBackendHealth(): Promise<BackendHealthStatus> {
     ];
     
     // 计算整体状态
-    const overall = gatewayStatus.status === 'online' ? 'healthy' : 'offline';
+    const overall: BackendHealthStatus['overall'] = gatewayStatus.status === 'online' ? 'healthy' : 'offline';
     
     const result = {
       gateway: gatewayStatus,

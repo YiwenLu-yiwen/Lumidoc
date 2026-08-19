@@ -1,14 +1,14 @@
-from typing import List, Dict, Any, Optional, AsyncGenerator, Union
+from typing import Dict, Any, Optional, AsyncGenerator
 from src.modules.llm_chat import LLMToolService
-from src.modules.graph.services.graph_service import GraphService
 from src.shared.clients import default_lightrag_client as lightrag_service
-from src.modules.lightraglocal.config.config import config
+from src.shared.clients import GraphServiceClient
+from src.modules.chat.config.config import settings
 import logging
 import os
 import httpx
 import json
 import asyncio
-from src.modules.lightraglocal.prompt import PROMPTS
+import re
 
 # 处理循环导入问题
 logger = logging.getLogger(__name__)
@@ -26,11 +26,37 @@ def ensure_url_protocol(url: str) -> str:
 class ChatEngine:
     def __init__(self, 
                  llm_service: LLMToolService,
-                 graph_service: Optional[GraphService] = None):
+                 graph_service: Optional[GraphServiceClient] = None):
         self.llm_service = llm_service
         self.graph_service = graph_service
-        self.prompts = PROMPTS
         self.language = "中文"
+
+    def _extract_secret_from_context(self, context: str) -> Optional[str]:
+        if not context:
+            return None
+        patterns = [
+            r'(?:secret(?:\s+code)?|密钥(?:代码)?|code)\s*(?:is|:|：)\s*([A-Z0-9][A-Z0-9_\-]{6,})',
+            r'\b([A-Z]{2,}_[A-Z0-9_]{6,})\b'
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, context, flags=re.IGNORECASE)
+            if match:
+                return match.group(1)
+        return None
+
+    def _build_context_direct_answer(self, message: str, context: str) -> Optional[str]:
+        if not context or not context.strip():
+            return None
+
+        lowered = message.lower() if message else ""
+        asks_secret = any(
+            keyword in lowered for keyword in ["secret", "密钥", "code", "密码", "口令"]
+        )
+        if asks_secret:
+            secret = self._extract_secret_from_context(context)
+            if secret:
+                return secret
+        return None
     
     async def process_message(self, 
                           message: str, 
@@ -38,7 +64,9 @@ class ChatEngine:
                           session_id: str,
                           use_stream: bool = False,
                           search_mode: str = None,
-                          use_graph: bool = True) -> str:
+                          use_graph: bool = True,
+                          auth_header: Optional[str] = None,
+                          model: Optional[str] = None) -> str:
         """
         处理聊天消息
         
@@ -65,7 +93,7 @@ class ChatEngine:
                         # 🔧 修复：正确访问GraphData对象的属性
                         logger.info(f"获取到图谱数据: {len(graph_context.nodes)}个节点, {len(graph_context.edges)}个关系")
                     else:
-                        logger.warning(f"未获取到图谱数据，但未报错")
+                        logger.warning("未获取到图谱数据，但未报错")
                 except Exception as e:
                     logger.error(f"获取图谱数据失败: {str(e)}")
             
@@ -86,12 +114,20 @@ class ChatEngine:
                     search_payload = {
                         "query": message,
                         "project_id": project_id,
-                        "mode": search_mode or config.default_query_mode
+                        "mode": search_mode or settings.default_query_mode
                     }
+                    headers = {}
+                    if auth_header:
+                        headers["Authorization"] = auth_header
                     
                     logger.info(f"发送RAG搜索请求到: {search_url}")
                     async with httpx.AsyncClient() as client:
-                        response = await client.post(search_url, json=search_payload, timeout=60.0)
+                        response = await client.post(
+                            search_url,
+                            json=search_payload,
+                            headers=headers if headers else None,
+                            timeout=60.0
+                        )
                         response.raise_for_status()
                         search_result = response.json()
                     
@@ -121,7 +157,7 @@ class ChatEngine:
                     # 严格遵循项目原则：所有服务间调用必须通过Gateway
                     from src.shared.service_discovery import call_service
                     
-                    logger.info(f"通过Gateway调用LightRAG服务查询")
+                    logger.info("通过Gateway调用LightRAG服务查询")
                     
                     # 通过Gateway调用LightRAG服务
                     response = await call_service(
@@ -131,9 +167,10 @@ class ChatEngine:
                         json_data={
                             "query": message,
                             "project_id": project_id,
-                            "mode": search_mode or config.default_query_mode,
+                            "mode": search_mode or settings.default_query_mode,
                             "top_k": 5
                         },
+                        headers={"Authorization": auth_header} if auth_header else None,
                         timeout=60.0
                     )
                     
@@ -209,7 +246,7 @@ class ChatEngine:
                 async def generate_stream():
                     try:
                         # 使用确保正确配置的LLMService
-                        logger.info(f"开始流式生成回复...")
+                        logger.info("开始流式生成回复...")
                         async for chunk in self.llm_service.stream_generate(
                             prompt=prompt
                         ):
@@ -220,7 +257,7 @@ class ChatEngine:
                 return generate_stream()
             else:
                 # 非流式处理，直接使用LLM服务处理
-                response = await self.llm_service.process_general(prompt)
+                response = await self.llm_service.process_general(prompt, model=model)
                 return response
         except Exception as e:
             logger.error(f"Error processing message: {str(e)}")
@@ -241,7 +278,9 @@ class ChatEngine:
     async def chat_stream(self, 
                         message: str, 
                         project_id: Optional[str] = None,
-                        user_id: Optional[str] = None) -> AsyncGenerator[str, None]:
+                        user_id: Optional[str] = None,
+                        auth_header: Optional[str] = None,
+                        model: Optional[str] = None) -> AsyncGenerator[str, None]:
         """
         流式处理聊天消息 - 真正的LLM流式响应
         
@@ -262,8 +301,6 @@ class ChatEngine:
                 try:
                     # 导入聊天服务来获取历史
                     import redis
-                    from src.modules.chat.data_migration import fetch_chat_history
-                    from src.database import get_db
                     
                     # 从Redis获取最近的聊天历史
                     redis_client = redis.Redis(
@@ -335,14 +372,22 @@ class ChatEngine:
                 search_payload = {
                     "query": message,
                     "project_id": project_id,
-                    "mode": config.default_query_mode
+                    "mode": settings.default_query_mode
                 }
+                headers = {}
+                if auth_header:
+                    headers["Authorization"] = auth_header
                 
                 # 执行RAG搜索
                 
                 # 获取RAG上下文
                 async with httpx.AsyncClient() as client:
-                    response = await client.post(search_url, json=search_payload, timeout=30.0)
+                    response = await client.post(
+                        search_url,
+                        json=search_payload,
+                        headers=headers if headers else None,
+                        timeout=30.0
+                    )
                     response.raise_for_status()
                     search_result = response.json()
                 
@@ -359,6 +404,12 @@ class ChatEngine:
                 context = ""
             
             # 2. 使用官方LightRAG查询响应模版（中文版）
+            direct_answer = self._build_context_direct_answer(message, context)
+            if direct_answer:
+                logger.info(f"使用知识库直答路径，长度: {len(direct_answer)}")
+                yield direct_answer
+                return
+
             if context:
                 # 使用官方LightRAG标准prompt，调整为中文
                 prompt = f"""你是一个专业的智能助手，基于提供的知识图谱和文档块信息回答用户问题。
@@ -402,28 +453,26 @@ class ChatEngine:
 
 请提供准确、诚实的中文回答："""
             
-            # 3. 使用LLM服务进行真正的流式生成
-            logger.info("开始LLM流式生成...")
-            
-            # 增强错误处理，特别针对超时问题
-            chunk_received = False
+            # 3. 稳定模式：使用有超时保护的非流式生成，避免SSE长时间阻塞
+            logger.info("开始LLM生成（稳定模式）...")
+            response_timeout_seconds = float(os.getenv("CHAT_RESPONSE_TIMEOUT", "60"))
             try:
-                async for chunk in self.llm_service.stream_generate(prompt=prompt):
-                    chunk_received = True
-                    yield chunk
-                    
-                # 如果没有收到任何数据块，可能是超时或其他问题
-                if not chunk_received:
-                    logger.warning("LLM流式生成没有返回任何数据")
-                    yield "抱歉，服务暂时繁忙，请稍后重试。如果问题持续，请联系管理员。"
-                    
+                response_text = await asyncio.wait_for(
+                    self.llm_service.process_general(prompt=prompt, model=model),
+                    timeout=response_timeout_seconds
+                )
+                if response_text and response_text.strip():
+                    yield response_text
+                else:
+                    logger.warning("LLM返回空响应")
+                    yield "抱歉，当前未生成有效回复，请稍后重试。"
             except asyncio.TimeoutError:
-                logger.error("LLM流式生成超时")
+                logger.error(f"LLM生成超时: {response_timeout_seconds}秒")
                 yield "⏰ 响应超时，请稍后重试。您可以尝试简化问题或稍后再试。"
             except Exception as llm_error:
-                logger.error(f"LLM流式生成失败: {str(llm_error)}")
+                logger.error(f"LLM生成失败: {str(llm_error)}")
                 if "timeout" in str(llm_error).lower() or "超时" in str(llm_error):
-                    yield "⏰ 服务响应超时，请重新发送您的问题或稍后再试。如果问题持续，请尝试使用右下角的'解除锁定状态'按钮。"
+                    yield "⏰ 服务响应超时，请重新发送您的问题或稍后再试。"
                 else:
                     yield f"💫 生成回答时遇到问题：{str(llm_error)}。请重试或联系支持团队。"
                 
@@ -450,9 +499,9 @@ class ChatEngine:
         docs = await lightrag_service.search(
             query=query,
             project_id=project_id,
-            top_k=config.lightrag.top_k,
-            search_mode=config.lightrag.search_mode,
-            rerank=config.lightrag.use_rerank
+            top_k=settings.rag_top_k,
+            search_mode=settings.rag_search_mode,
+            rerank=settings.rag_use_rerank
         )
         
         # 获取图谱数据
@@ -463,8 +512,8 @@ class ChatEngine:
             try:
                 graph_data = await self.graph_service.get_project_graph(project_id)
                 if graph_data:
-                    graph_node_count = len(graph_data.get('nodes', []))
-                    graph_edge_count = len(graph_data.get('edges', []))
+                    graph_node_count = len(graph_data.nodes)
+                    graph_edge_count = len(graph_data.edges)
             except Exception as e:
                 logger.error(f"Error fetching graph data: {e}")
         
@@ -498,4 +547,4 @@ class ChatEngine:
             "graph_node_count": graph_node_count,
             "graph_edge_count": graph_edge_count,
             "has_graph_data": graph_data is not None
-        } 
+        }

@@ -1,22 +1,20 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { 
-  Plus, 
-  Folder, 
-  Trash2, 
-  Edit2, 
-  Check, 
-  X, 
+import {
+  Folder,
+  Trash2,
+  Edit2,
+  Check,
+  X,
   Search,
   Users,
-  MoreHorizontal,
   FolderOpen,
   Archive,
-  Star,
   Clock
 } from 'lucide-react'
 import { projectApi, Project } from '@/api/project'
-import { useAuth, ProjectAccessLevel } from '@/context/AuthContext'
+import { useAuth } from '@/context/AuthContext'
+import { ProjectAccessLevel } from '@/context/authTypes'
 import AuthModal from '@/components/ui/AuthModal'
 import { useProjects } from '@/context/ProjectContext'
 import {
@@ -39,10 +37,8 @@ export default function ProjectSelect() {
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null)
   const [editingProjectName, setEditingProjectName] = useState('')
   const [error, setError] = useState('')
-  const [showProjects, setShowProjects] = useState(true)
   const [showAuth, setShowAuth] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const navigate = useNavigate()
   const { user, updateUserProjectAccess } = useAuth()
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -51,12 +47,12 @@ export default function ProjectSelect() {
   // 主题和语言检测
   const { isDarkMode } = useTheme()
   const currentLanguage = detectBrowserLanguage()
-  const t = (key: keyof typeof import('@/utils/language').translations['zh-CN']) => 
+  const t = (key: keyof typeof import('@/utils/language').translations['zh-CN']) =>
     getTranslation(currentLanguage, key)
 
   const isProjectNameExists = (name: string, excludeId?: string) => {
-    return projects.some(project => 
-      project.name.toLowerCase() === name.toLowerCase() && 
+    return projects.some(project =>
+      project.name.toLowerCase() === name.toLowerCase() &&
       project.id !== excludeId
     )
   }
@@ -76,33 +72,33 @@ export default function ProjectSelect() {
       console.log('Creating project:', { name: projectName })
       const response = await projectApi.createProject({ name: projectName })
       console.log('Project created successfully:', response)
-      
+
       // 创建项目后，立即更新用户对该项目的权限
       if (response && response.id) {
         console.log(`为用户设置新创建项目(${response.id})的OWNER权限`)
-        
+
         // 设置为OWNER权限
         updateUserProjectAccess(response.id, ProjectAccessLevel.OWNER)
-        
+
         // 更新本地存储的项目权限
         try {
-          const storedPermissions = localStorage.getItem('stp_project_permissions')
+          const storedPermissions = localStorage.getItem('lumidoc_project_permissions')
           const permissions = storedPermissions ? JSON.parse(storedPermissions) : {}
-          
+
           // 添加新项目的权限
           permissions[response.id] = ProjectAccessLevel.OWNER
-          
+
           // 保存回本地存储
-          localStorage.setItem('stp_project_permissions', JSON.stringify(permissions))
+          localStorage.setItem('lumidoc_project_permissions', JSON.stringify(permissions))
           console.log(`已更新本地存储的项目权限，添加项目: ${response.id}`)
-          
+
           // 完全同步本地存储的项目权限到项目详情缓存
           try {
-            const projectsJson = localStorage.getItem('stp_projects') || '[]'
+            const projectsJson = localStorage.getItem('lumidoc_projects') || '[]'
             const projects = JSON.parse(projectsJson)
-            
+
             // 确保新项目添加到缓存
-            const projectExists = projects.some((p: any) => p.id === response.id)
+            const projectExists = projects.some((p: { id?: string }) => p.id === response.id)
             if (!projectExists) {
               projects.push({
                 id: response.id,
@@ -110,22 +106,22 @@ export default function ProjectSelect() {
                 creator_id: user?.id,
                 created_at: new Date().toISOString()
               })
-              localStorage.setItem('stp_projects', JSON.stringify(projects))
+              localStorage.setItem('lumidoc_projects', JSON.stringify(projects))
               console.log(`已更新本地项目缓存，添加项目: ${response.id}`)
             }
-          } catch (e) {
-            console.error('更新本地项目缓存失败:', e)
+          } catch (cacheError) {
+            console.error('更新本地项目缓存失败:', cacheError)
           }
-        } catch (e) {
-          console.error('更新本地项目权限失败:', e)
+        } catch (permissionError) {
+          console.error('更新本地项目权限失败:', permissionError)
         }
-        
+
         // 清空项目名称输入框
         setProjectName('')
-        
+
         // 更新项目列表并等待完成
         await refreshProjects()
-        
+
         // 创建成功提示
         try {
           const toast = document.createElement('div')
@@ -139,8 +135,8 @@ export default function ProjectSelect() {
             console.log(`即将导航到项目页面: ${projectPageUrl}`)
             navigate(projectPageUrl)
           }, 2000)
-        } catch (e) {
-          console.error('显示提示失败:', e)
+        } catch (toastError) {
+          console.error('显示提示失败:', toastError)
           // 延时导航到项目页面，确保权限更新完成
           setTimeout(() => {
             const projectPageUrl = `/project/${response.id}`
@@ -149,9 +145,9 @@ export default function ProjectSelect() {
           }, 2000)
         }
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to create project:', error)
-      const errorMessage = error.response?.data?.detail || error.message || '创建项目失败'
+      const errorMessage = error instanceof Error ? error.message : '创建项目失败'
       console.error('Error details:', errorMessage)
       setError(`创建项目失败: ${errorMessage}`)
     } finally {
@@ -167,31 +163,31 @@ export default function ProjectSelect() {
         console.log(`[ProjectSelect] 正在导航到项目: ${projectId}，避免重复导航`);
         return;
       }
-      
+
       // 设置导航状态
       sessionStorage.setItem('navigating_to_project', projectId);
-      
+
       // 确保此项目有权限记录
-      const storedPermissions = localStorage.getItem('stp_project_permissions');
+      const storedPermissions = localStorage.getItem('lumidoc_project_permissions');
       const permissions = storedPermissions ? JSON.parse(storedPermissions) : {};
-      
+
       // 如果权限缓存中没有此项目，添加基本权限
       if (!permissions[projectId]) {
         console.log(`[ProjectSelect] 为项目(${projectId})添加默认查看权限`);
         permissions[projectId] = ProjectAccessLevel.VIEWER;
-        localStorage.setItem('stp_project_permissions', JSON.stringify(permissions));
-        
+        localStorage.setItem('lumidoc_project_permissions', JSON.stringify(permissions));
+
         // 同时更新用户对象的权限
         updateUserProjectAccess(projectId, ProjectAccessLevel.VIEWER);
       }
-      
+
       // 添加项目访问记录，避免重复验证
       sessionStorage.setItem(`visited_project_${projectId}`, 'true');
-      
+
       // 使用带替换的导航，防止返回循环
       console.log(`[ProjectSelect] 导航到项目: ${projectId}`);
       navigate(`/project/${projectId}`, { replace: false });
-      
+
       // 清除导航状态（延迟执行，确保导航完成）
       setTimeout(() => {
         sessionStorage.removeItem('navigating_to_project');
@@ -229,14 +225,14 @@ export default function ProjectSelect() {
   }
 
   const handleCancelEdit = (e: React.MouseEvent | React.KeyboardEvent) => {
-    e.stopPropagation && e.stopPropagation();
+    e.stopPropagation();
     setEditingProjectId(null)
     setEditingProjectName('')
     setError('')
   }
 
   const handleSaveEdit = async (projectId: string, e: React.MouseEvent | React.KeyboardEvent) => {
-    e.stopPropagation && e.stopPropagation();
+    e.stopPropagation();
     if (!editingProjectName.trim()) {
       setError('项目名称不能为空')
       return
@@ -308,8 +304,8 @@ export default function ProjectSelect() {
 
             {/* 创建新项目区域 */}
             <div className={`p-6 rounded-2xl border-2 border-dashed transition-colors ${
-              isDarkMode 
-                ? 'border-gray-600 bg-gray-800/50 hover:border-blue-500' 
+              isDarkMode
+                ? 'border-gray-600 bg-gray-800/50 hover:border-blue-500'
                 : 'border-gray-300 bg-gray-50 hover:border-blue-400'
             }`}>
               <div className="text-center">
@@ -320,7 +316,7 @@ export default function ProjectSelect() {
                   {currentLanguage === 'zh-CN' ? '创建新项目' : 'Create New Project'}
                 </h3>
                 <p className={`text-sm mb-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                  {currentLanguage === 'zh-CN' 
+                  {currentLanguage === 'zh-CN'
                     ? '开始一个新的智能项目工作空间'
                     : 'Start a new intelligent project workspace'
                   }
@@ -342,7 +338,7 @@ export default function ProjectSelect() {
                     disabled={loading || !projectName.trim()}
                     className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0"
                   >
-                    {loading 
+                    {loading
                       ? (currentLanguage === 'zh-CN' ? '创建中...' : 'Creating...')
                       : (currentLanguage === 'zh-CN' ? '创建项目' : 'Create Project')
                     }
@@ -361,7 +357,7 @@ export default function ProjectSelect() {
                     {currentLanguage === 'zh-CN' ? '我的项目' : 'My Projects'}
                   </h2>
                   <span className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                    {currentLanguage === 'zh-CN' 
+                    {currentLanguage === 'zh-CN'
                       ? `共 ${filteredProjects.length} 个项目`
                       : `${filteredProjects.length} projects total`
                     }
@@ -384,7 +380,7 @@ export default function ProjectSelect() {
                     isDarkMode ? 'bg-red-900/20 border border-red-800' : 'bg-red-50 border border-red-200'
                   } rounded-lg`}>
                     <p className={`mb-4 ${isDarkMode ? 'text-red-300' : 'text-red-700'}`}>
-                      {currentLanguage === 'zh-CN' 
+                      {currentLanguage === 'zh-CN'
                         ? `加载项目失败：${projectsError}`
                         : `Failed to load projects: ${projectsError}`
                       }
@@ -403,13 +399,13 @@ export default function ProjectSelect() {
                       isDarkMode ? 'text-gray-600' : 'text-gray-400'
                     }`} />
                     <h3 className={`text-lg font-semibold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-                      {searchQuery 
+                      {searchQuery
                         ? (currentLanguage === 'zh-CN' ? '未找到匹配的项目' : 'No matching projects found')
                         : (currentLanguage === 'zh-CN' ? '暂无项目' : 'No projects')
                       }
                     </h3>
                     <p className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                      {searchQuery 
+                      {searchQuery
                         ? (currentLanguage === 'zh-CN' ? '尝试调整搜索条件' : 'Try adjusting your search criteria')
                         : (currentLanguage === 'zh-CN' ? '创建您的第一个项目开始使用' : 'Create your first project to get started')
                       }
@@ -485,7 +481,7 @@ export default function ProjectSelect() {
                                   </p>
                                 </div>
                               </div>
-                              
+
                               {/* 操作按钮 */}
                               <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center space-x-1">
                                 <button
@@ -523,12 +519,12 @@ export default function ProjectSelect() {
                                   </span>
                                 </div>
                               </div>
-                              
+
                               <div className={`text-sm p-3 rounded-lg ${
                                 isDarkMode ? 'bg-gray-700' : 'bg-gray-100'
                               }`}>
                                 <p className={isDarkMode ? 'text-gray-300' : 'text-gray-700'}>
-                                  {currentLanguage === 'zh-CN' 
+                                  {currentLanguage === 'zh-CN'
                                     ? '点击进入项目工作空间，开始智能对话和文档处理'
                                     : 'Click to enter project workspace and start intelligent conversations and document processing'
                                   }
@@ -556,7 +552,7 @@ export default function ProjectSelect() {
               {currentLanguage === 'zh-CN' ? '需要登录' : 'Login Required'}
             </h2>
             <p className={`text-lg mb-6 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-              {currentLanguage === 'zh-CN' 
+              {currentLanguage === 'zh-CN'
                 ? '请登录或注册账号后访问项目管理功能'
                 : 'Please login or register to access project management features'
               }
@@ -572,9 +568,9 @@ export default function ProjectSelect() {
       </div>
 
       {/* 认证模态框 */}
-      <AuthModal 
-        open={showAuth} 
-        onClose={() => setShowAuth(false)} 
+      <AuthModal
+        open={showAuth}
+        onClose={() => setShowAuth(false)}
       />
 
       {/* 删除确认对话框 */}
@@ -587,7 +583,7 @@ export default function ProjectSelect() {
               {currentLanguage === 'zh-CN' ? '确认删除项目' : 'Confirm Delete Project'}
             </DialogTitle>
             <DialogDescription className={isDarkMode ? 'text-gray-400' : 'text-gray-600'}>
-              {currentLanguage === 'zh-CN' 
+              {currentLanguage === 'zh-CN'
                 ? '此操作无法撤销，项目及其所有相关资源将被永久删除。'
                 : 'This action cannot be undone. The project and all its related resources will be permanently deleted.'
               }
@@ -595,7 +591,7 @@ export default function ProjectSelect() {
           </DialogHeader>
           <div className="pt-2 pb-4">
             <p className={isDarkMode ? 'text-gray-300' : 'text-gray-700'}>
-              {currentLanguage === 'zh-CN' 
+              {currentLanguage === 'zh-CN'
                 ? '您确定要删除这个项目吗？'
                 : 'Are you sure you want to delete this project?'
               }
@@ -621,4 +617,4 @@ export default function ProjectSelect() {
       </Dialog>
     </div>
   )
-} 
+}

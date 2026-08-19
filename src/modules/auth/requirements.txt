@@ -1,0 +1,2 @@
+# Auth-only validation dependency. Shared HTTP/database/security packages live in service-core.
+email-validator==2.2.0

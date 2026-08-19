@@ -1,7 +1,7 @@
 import json
 import os
 import asyncpg
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 import httpx
 from datetime import datetime
 
@@ -306,39 +306,6 @@ class QuestionService:
             except Exception as e:
                 raise Exception(f"Failed to update question in local: {str(e)}")
 
-    async def delete_question(self, question_id: str, project_id: str = None) -> bool:
-        """删除题目"""
-        if settings.storage_mode == "database":
-            await self._init_db_pool()
-            async with self.pool.acquire() as conn:
-                result = await conn.execute(
-                    "DELETE FROM questions WHERE id = $1",
-                    question_id
-                )
-                return result == "DELETE 1"
-        else:
-            filename = f"questions_{project_id}.json" if project_id else "questions.json"
-            path = os.path.join(settings.local_storage_dir, filename)
-            
-            if not os.path.exists(path):
-                return False
-            
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                
-                questions = data.get("questions", [])
-                initial_count = len(questions)
-                questions = [q for q in questions if q["id"] != question_id]
-                
-                if len(questions) < initial_count:
-                    with open(path, "w", encoding="utf-8") as f:
-                        json.dump({"questions": questions}, f, ensure_ascii=False, indent=2)
-                    return True
-                return False
-            except Exception as e:
-                raise Exception(f"Failed to delete question from local: {str(e)}")
-
     async def get_question(self, question_id: int) -> Optional[Question]:
         """获取题目"""
         await self._init_db_pool()
@@ -420,4 +387,4 @@ class QuestionService:
                             json.dump(data, f, ensure_ascii=False, indent=2)
                         return True
             
-            return False 
+            return False

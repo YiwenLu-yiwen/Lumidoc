@@ -7,10 +7,7 @@
 """
 
 import os
-import sys
 import inspect
-from pathlib import Path
-from typing import Dict, Any
 
 # 从service_settings导入设置，而不是从settings导入
 from .service_settings import (
@@ -52,7 +49,6 @@ def autodetect_module(frame=None):
         frame = inspect.currentframe().f_back
     
     # 获取调用者所在的模块名称和文件路径
-    module_name = frame.f_globals.get('__name__', '')
     module_file = frame.f_globals.get('__file__', '')
 
     if not module_file:
@@ -131,6 +127,7 @@ __all__ = [
     'ChatServiceSettings',
     'LLMServiceSettings',
     'LLMSummaryServiceSettings',
+    'LLMSettings',
     'llm_settings',
     'MODEL_TYPE_OLLAMA',
     'MODEL_TYPE_OPENAI',

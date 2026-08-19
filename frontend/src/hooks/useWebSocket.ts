@@ -11,9 +11,14 @@ import {
   webSocketManager,
   ProgressUpdate,
   GraphUpdate,
+  ProcessingStatus,
+  ServiceStatus,
   SystemAlert,
   SystemMetrics
 } from '../api/websocket';
+import type { GraphStatistics } from '../types/graph';
+
+type GraphSnapshot = NonNullable<GraphUpdate['graph']>;
 
 // 文档处理进度Hook
 export function useFileProcessWebSocket(projectId: string | null) {
@@ -82,9 +87,9 @@ export function useFileProcessWebSocket(projectId: string | null) {
 // 知识图谱WebSocket Hook
 export function useGraphWebSocket(projectId: string | null) {
   const [isConnected, setIsConnected] = useState(false);
-  const [graphData, setGraphData] = useState<any>(null);
-  const [statistics, setStatistics] = useState<any>(null);
-  const [processingStatus, setProcessingStatus] = useState<any>(null);
+  const [graphData, setGraphData] = useState<GraphSnapshot | null>(null);
+  const [statistics, setStatistics] = useState<GraphStatistics | null>(null);
+  const [processingStatus, setProcessingStatus] = useState<ProcessingStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const clientRef = useRef<GraphWebSocketClient | null>(null);
 
@@ -99,34 +104,39 @@ export function useGraphWebSocket(projectId: string | null) {
       // 设置事件监听
       client.onGraphUpdate((data: GraphUpdate) => {
         if (data.update_type === 'full') {
-          setGraphData(data.graph);
+          if (data.graph) {
+            setGraphData(data.graph);
+          }
         } else {
-          setGraphData((prev: any) => {
+          setGraphData((prev) => {
             if (!prev) return { nodes: [], relationships: [] };
-            
-            const newData = { ...prev };
-            
+
             if (data.update_type === 'add_node' && data.node) {
-              const existingNodeIndex = newData.nodes.findIndex((n: any) => n.id === data.node.id);
-              if (existingNodeIndex >= 0) {
-                newData.nodes[existingNodeIndex] = data.node;
-              } else {
-                newData.nodes.push(data.node);
-              }
+              const node = data.node;
+              const hasNode = prev.nodes.some((existingNode) => existingNode.id === node.id);
+              const nodes = hasNode
+                ? prev.nodes.map((existingNode) => existingNode.id === node.id ? node : existingNode)
+                : [...prev.nodes, node];
+              return { ...prev, nodes };
             } else if (data.update_type === 'add_relationship' && data.relationship) {
-              const existingRelIndex = newData.relationships.findIndex((r: any) => 
-                r.source === data.relationship.source && 
-                r.target === data.relationship.target && 
-                r.type === data.relationship.type
-              );
-              if (existingRelIndex >= 0) {
-                newData.relationships[existingRelIndex] = data.relationship;
-              } else {
-                newData.relationships.push(data.relationship);
-              }
+              const relationship = data.relationship;
+              const matchesRelationship = (existingRelationship: typeof relationship) =>
+                existingRelationship.source === relationship.source &&
+                existingRelationship.target === relationship.target &&
+                existingRelationship.type === relationship.type;
+              const hasRelationship = prev.relationships.some(matchesRelationship);
+              const relationships = hasRelationship
+                ? prev.relationships.map((existingRelationship) =>
+                  matchesRelationship(existingRelationship) ? relationship : existingRelationship
+                )
+                : [...prev.relationships, relationship];
+              return {
+                ...prev,
+                relationships
+              };
             }
-            
-            return newData;
+
+            return prev;
           });
         }
       });
@@ -198,7 +208,7 @@ export function useMonitoringWebSocket(type: 'admin' | 'project', projectId?: st
   const [isConnected, setIsConnected] = useState(false);
   const [alerts, setAlerts] = useState<SystemAlert[]>([]);
   const [systemMetrics, setSystemMetrics] = useState<SystemMetrics | null>(null);
-  const [serviceStatus, setServiceStatus] = useState<any>(null);
+  const [serviceStatus, setServiceStatus] = useState<ServiceStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const clientRef = useRef<MonitoringWebSocketClient | null>(null);
 

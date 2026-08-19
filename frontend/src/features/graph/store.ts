@@ -3,21 +3,21 @@ import { DirectedGraph } from 'graphology'
 
 interface GraphState {
   // Graph data
-  rawGraph: any | null
+  rawGraph: unknown
   sigmaGraph: DirectedGraph | null
-  sigmaInstance: any | null
-  
+  sigmaInstance: unknown
+
   // UI state
   selectedNode: string | null
   focusedNode: string | null
   moveToSelectedNode: boolean
   isFetching: boolean
   graphIsEmpty: boolean
-  
+
   // Actions
-  setRawGraph: (rawGraph: any | null) => void
+  setRawGraph: (rawGraph: unknown) => void
   setSigmaGraph: (sigmaGraph: DirectedGraph | null) => void
-  setSigmaInstance: (sigmaInstance: any | null) => void
+  setSigmaInstance: (sigmaInstance: unknown) => void
   setSelectedNode: (nodeId: string | null, moveToNode?: boolean) => void
   setFocusedNode: (nodeId: string | null) => void
   setMoveToSelectedNode: (move: boolean) => void
@@ -41,7 +41,7 @@ const useGraphStore = create<GraphState>((set) => ({
   setRawGraph: (rawGraph) => set({ rawGraph }),
   setSigmaGraph: (sigmaGraph) => set({ sigmaGraph }),
   setSigmaInstance: (sigmaInstance) => set({ sigmaInstance }),
-  setSelectedNode: (nodeId, moveToNode = false) => set({ 
+  setSelectedNode: (nodeId, moveToNode = false) => set({
     selectedNode: nodeId,
     moveToSelectedNode: moveToNode
   }),
@@ -61,4 +61,4 @@ const useGraphStore = create<GraphState>((set) => ({
   })
 }))
 
-export default useGraphStore 
+export default useGraphStore

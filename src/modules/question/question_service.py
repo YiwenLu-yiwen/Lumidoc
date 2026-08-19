@@ -7,13 +7,11 @@ import redis
 import os
 from .question_manager import QuestionManager
 from src.modules.llm_chat import LLMToolService
-from src.shared.clients import default_lightrag_client as lightrag_service
 from src.modules.graph.services.graph_service import GraphService
 from sqlalchemy.orm import Session
 from src.database import get_db
 import json
 from pathlib import Path
-from .models.question import QuestionSet, Question
 from .config.config import settings
 
 app = FastAPI(title="Question Generator Service")

@@ -1,7 +1,5 @@
-import os
-import json
 from pathlib import Path
-from typing import Union, Optional, Tuple
+from typing import Union, Tuple
 
 def get_file_extension(filename: Union[str, Path]) -> str:
     """

@@ -6,21 +6,18 @@
 负责文件的异步处理、转换和内容分析
 """
 
+# ruff: noqa: E402 -- direct execution adjusts sys.path before package imports.
+
 import uvicorn
 import sys
 import os
-import logging
 import traceback
 import asyncio
 import argparse
-from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, Request, Query
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from typing import Optional, Dict, Any
-from datetime import datetime
 from contextlib import asynccontextmanager
 import time
-import socket
 
 # 确保路径正确
 current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -29,8 +26,9 @@ if current_dir not in sys.path:
 
 # 从共享模块导入日志初始化
 from src.shared.logger import initialize_logging, get_logger
-from src.shared.health_check import register_health_routes, HealthChecker, ServiceStatus
+from src.shared.health_check import register_health_routes, HealthChecker
 from src.shared.config import get_settings
+from src.modules.fileproc.route_utils import describe_route
 
 # 配置日志
 log_file = os.getenv("LOG_FILE", "logs/fileproc_service.log")  # 修改为统一的日志文件名
@@ -47,12 +45,11 @@ try:
 
     # 导入服务和配置
     from src.modules.fileproc.services.task_service import TaskService
-    from src.modules.fileproc.services.file_processor import FileProcessor, file_processor
+    from src.modules.fileproc.services.file_processor import file_processor
     from src.modules.fileproc.routes import process_router  # 导入处理路由模块
     from src.modules.fileproc.routes.diagnostic_routes import diagnostics_router  # 导入诊断路由模块
     from src.modules.fileproc.routes.stream_routes import stream_router  # 导入流处理路由模块
     from src.modules.fileproc.routes.websocket_routes import websocket_router  # 导入WebSocket路由模块
-    from src.shared.service_discovery import call_service
 
     # 创建任务服务，使用全局文件处理器实例
     task_service = TaskService()
@@ -61,7 +58,7 @@ try:
     def get_task_service():
         """获取任务服务实例"""
         return task_service
-        
+
     def get_file_processor():
         """获取文件处理器实例"""
         return file_processor
@@ -71,43 +68,43 @@ try:
         """服务生命周期管理"""
         # 启动时的初始化
         service_id = None
-        
+
         try:
             # 初始化文件处理器
             logger.info("初始化文件处理器...")
             await file_processor.initialize()
             logger.info("文件处理器已初始化")
-            
+
             # 初始化任务服务
             logger.info("初始化任务服务...")
             await task_service.initialize()
             logger.info("任务服务已初始化")
-            
+
             # 初始化队列服务
             logger.info("初始化队列服务...")
             from .services.queue_service import file_processing_queue
             await file_processing_queue.initialize()
             logger.info("队列服务已初始化")
-            
+
             # 注册服务 - 移除service_registry依赖
             from src.shared.service_discovery import get_service_registry
-            sr = await get_service_registry() 
+            sr = await get_service_registry()
             if sr:
                 # 向服务发现注册服务
                 import socket
                 service_id = f"fileproc-{socket.gethostname()}-{int(time.time())}"
                 if os.environ.get("SERVICE_ID"):
                     service_id = os.environ.get("SERVICE_ID")
-                    
+
                 # 获取当前端口
                 port = int(settings.port)
-                
+
                 # 定义WebSocket端点
                 websocket_endpoints = {
                     "progress": "/api/ws/progress/{project_id}",
                     "status": "/api/ws/status/{project_id}"
                 }
-                
+
                 # 注册服务
                 service_id = await sr.register_service(
                     service_name="fileproc",
@@ -120,33 +117,33 @@ try:
                 logger.info(f"服务已注册到服务发现，ID: {service_id}")
             else:
                 logger.warning("服务发现注册表未初始化，服务将以独立模式运行")
-            
+
             logger.info("文件处理服务启动完成")
         except Exception as e:
             logger.error(f"启动错误: {str(e)}")
             logger.error(traceback.format_exc())
             raise
-        
+
         yield
-        
+
         # 关闭时的清理
         try:
             logger.info("正在关闭文件处理服务")
-            
+
             # 关闭任务服务
             try:
                 await task_service.shutdown()
                 logger.info("任务服务已关闭")
             except Exception as e:
                 logger.error(f"关闭任务服务失败: {str(e)}")
-            
+
             # 关闭文件处理器
             try:
                 await file_processor.shutdown()
                 logger.info("文件处理器已关闭")
             except Exception as e:
                 logger.error(f"关闭文件处理器失败: {str(e)}")
-            
+
             # 从服务注册表注销
             try:
                 from src.shared.service_discovery import get_service_registry
@@ -158,7 +155,7 @@ try:
                     logger.warning("未找到SERVICE_ID环境变量或服务注册表未初始化，无法注销服务")
             except Exception as e:
                 logger.error(f"服务注销失败: {str(e)}")
-            
+
             logger.info("文件处理服务已关闭")
         except Exception as e:
             logger.error(f"服务关闭过程中发生错误: {str(e)}")
@@ -190,17 +187,15 @@ try:
     app.include_router(stream_router, prefix="/api")  # 保留流处理路由的/api前缀
     app.include_router(websocket_router, prefix="/api")  # 添加WebSocket路由
     logger.info("所有路由已注册")
-    
+
     # 打印所有注册的路由，便于调试
     for route in app.routes:
-        if hasattr(route, 'methods'):
-            logger.info(f"已注册路由: {route.path} [{', '.join(route.methods)}]")
-        else:
-            logger.info(f"已注册路由: {route.path} [WebSocket]")
+        if description := describe_route(route):
+            logger.info("已注册路由: %s", description)
 
     # 注册健康检查路由
     health_checker = HealthChecker(service_name="fileproc")
-    
+
     # 添加Redis检查 - 先确保连接
     if not task_service.queue._redis:
         import asyncio
@@ -211,20 +206,20 @@ try:
             logger.info("启动时建立队列Redis连接")
         except Exception as e:
             logger.error(f"队列Redis连接失败: {e}")
-    
+
     # 添加Redis连接检查
     if task_service.queue._redis:
         health_checker.add_redis_connection("redis_queue", task_service.queue._redis)
         logger.info("队列Redis连接已添加到健康检查")
     else:
         logger.warning("队列Redis连接未建立，跳过健康检查")
-    
+
     # 添加处理器状态检查
     def check_processor_status():
         return file_processor.is_initialized
-    
+
     health_checker.add_check("processor", check_processor_status, critical=True)
-    
+
     # 注册健康检查路由
     register_health_routes(app, health_checker)
 
@@ -241,9 +236,9 @@ try:
         try:
             host = args.host  # 使用命令行参数中的host
             port = settings.port
-            
+
             logger.info(f"启动文件处理服务: {host}:{port}")
-            
+
             if args.production:
                 # 生产模式使用Uvicorn服务器
                 import uvicorn
@@ -267,4 +262,4 @@ try:
 except Exception as e:
     logger.error(f"服务启动失败: {str(e)}")
     logger.error(traceback.format_exc())
-    raise 
+    raise

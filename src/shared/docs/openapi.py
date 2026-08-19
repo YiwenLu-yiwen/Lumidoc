@@ -296,7 +296,7 @@ def setup_openapi(
         # 添加自定义信息
         openapi_schema["info"]["x-api-version"] = api_version
         openapi_schema["info"]["x-service-name"] = api_title.lower().replace(" ", "-")
-        openapi_schema["info"]["x-generated-by"] = "STP Platform"
+        openapi_schema["info"]["x-generated-by"] = "Lumidoc Platform"
         
         # 添加服务器信息
         openapi_schema["servers"] = [

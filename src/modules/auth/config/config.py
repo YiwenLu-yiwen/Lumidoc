@@ -3,18 +3,10 @@
 使用统一配置系统
 """
 
-from pathlib import Path
 from src.shared.config import AuthServiceSettings, get_env
 
 # 创建全局设置实例
 settings = AuthServiceSettings()
-
-# 获取项目根目录
-ROOT_DIR = Path(__file__).parent.parent.parent.parent.parent
-
-# JWT密钥绝对路径
-JWT_PUBLIC_KEY_PATH = ROOT_DIR / "src" / "modules" / "auth" / "key" / "jwt_public_key.pem"
-JWT_PRIVATE_KEY_PATH = ROOT_DIR / "src" / "modules" / "auth" / "key" / "jwt_private_key.pem"
 
 # 为了保持向后兼容性，扩展配置项
 class ExtendedAuthSettings:
@@ -22,15 +14,14 @@ class ExtendedAuthSettings:
     SECRET_KEY = settings.secret_key
     JWT_ALGORITHM = settings.jwt_algorithm
     ACCESS_TOKEN_EXPIRE_MINUTES = settings.access_token_expire_minutes
-    # 重要: 使用绝对路径，与jwt_utils.py保持一致
-    jwt_private_key_path = str(JWT_PRIVATE_KEY_PATH)
-    jwt_public_key_path = str(JWT_PUBLIC_KEY_PATH)
+    jwt_private_key_path = settings.jwt_private_key_path
+    jwt_public_key_path = settings.jwt_public_key_path
     
     # 数据库配置 - 直接使用环境变量，不依赖settings.database对象
-    DATABASE_URL = get_env('POSTGRES_URL', 'postgresql://stpuser:stppassword@localhost:5432/stpdb')
-    POSTGRES_USER = get_env('POSTGRES_USER', 'stpuser')
-    POSTGRES_PASSWORD = get_env('POSTGRES_PASSWORD', 'stppassword')
-    POSTGRES_DB = get_env('POSTGRES_DB', 'stpdb')
+    DATABASE_URL = get_env('POSTGRES_URL', '')
+    POSTGRES_USER = get_env('POSTGRES_USER', 'postgres')
+    POSTGRES_PASSWORD = get_env('POSTGRES_PASSWORD', '')
+    POSTGRES_DB = get_env('POSTGRES_DB', 'lumidoc')
     POSTGRES_HOST = get_env('POSTGRES_HOST', 'localhost')
     POSTGRES_PORT = get_env('POSTGRES_PORT', 5432, env_type=int)
     
@@ -46,7 +37,7 @@ class ExtendedAuthSettings:
     # Neo4j配置
     NEO4J_URI = get_env('NEO4J_URI', 'bolt://localhost:7687')
     NEO4J_USER = get_env('NEO4J_USER', 'neo4j')
-    NEO4J_PASSWORD = get_env('NEO4J_PASSWORD', '123456789')
+    NEO4J_PASSWORD = get_env('NEO4J_PASSWORD', '')
     
     # Redis配置
     REDIS_HOST = get_env('REDIS_HOST', 'localhost')
@@ -79,4 +70,4 @@ class ExtendedAuthSettings:
     db_name = POSTGRES_DB
 
 # 创建兼容性配置实例
-settings = ExtendedAuthSettings() 
+settings = ExtendedAuthSettings()

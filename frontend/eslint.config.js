@@ -21,7 +21,16 @@ export default tseslint.config(
       ...reactHooks.configs.recommended.rules,
       'react-refresh/only-export-components': [
         'warn',
-        { allowConstantExport: true },
+        {
+          allowConstantExport: true,
+          // Stable companion exports intentionally share their provider/component module.
+          allowExportNames: [
+            'buttonVariants',
+            'useAuth',
+            'useProjects',
+            'useTheme',
+          ],
+        },
       ],
     },
   },

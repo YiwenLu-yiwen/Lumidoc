@@ -5,16 +5,17 @@
 LightRAG服务启动入口
 """
 
+# ruff: noqa: E402 -- environment and sys.path setup must precede package imports.
+
 import uvicorn
 import sys
 import os
-import logging
 import time
 import socket
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from src.shared.logger import initialize_logging, get_logger
-from fastapi import Body
+from fastapi import Body, Request
 from typing import List
 
 # 确保加载环境变量
@@ -41,7 +42,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import json
 from .routes.enterprise_rag_routes import router
-from .services.enterprise_lightrag_service import EnterpriseLightRAGService
 from .config.config import config
 
 # 🔧 修复：自定义JSON编码器，确保中文字符正确显示
@@ -75,7 +75,7 @@ async def lifespan(app: FastAPI):
         # 初始化企业级服务
         try:
             from .services.enterprise_lightrag_service import get_enterprise_lightrag_service
-            enterprise_service = await get_enterprise_lightrag_service()
+            await get_enterprise_lightrag_service()
             logger.info("✅ 企业级LightRAG服务初始化完成")
             
             # 项目隔离模式：按需初始化项目
@@ -196,99 +196,103 @@ app.include_router(api_router)
 # 🔧 添加特殊路由处理，支持前端请求（企业级）
 @app.post("/lightrag/rag/build/{project_id}")
 async def lightrag_build_endpoint(
+    request: Request,
     project_id: str,
     selected_files: List[str] = Body(..., embed=True)
 ):
     """特殊路由处理，支持前端请求格式（企业级）"""
     from .routes.enterprise_rag_routes import build_rag
-    return await build_rag(project_id=project_id, selected_files=selected_files)
+    return await build_rag(project_id=project_id, selected_files=selected_files, http_request=request)
 
 # 🔧 添加对/api/lightrag/rag/build/{project_id}的支持
 @app.post("/api/lightrag/rag/build/{project_id}")
 async def api_lightrag_build_endpoint(
+    request: Request,
     project_id: str,
     selected_files: List[str] = Body(..., embed=True)
 ):
     """特殊路由处理，支持前端请求格式（带API前缀）"""
     from .routes.enterprise_rag_routes import build_rag
-    return await build_rag(project_id=project_id, selected_files=selected_files)
+    return await build_rag(project_id=project_id, selected_files=selected_files, http_request=request)
 
 # 🔧 添加对/api/lightrag/lightrag/build/{project_id}的支持（双重前缀）
 @app.post("/api/lightrag/lightrag/build/{project_id}")
 async def double_prefix_build_endpoint(
+    request: Request,
     project_id: str,
     selected_files: List[str] = Body(..., embed=True)
 ):
     """特殊路由处理，支持前端请求格式（双重前缀）"""
     from .routes.enterprise_rag_routes import build_rag
-    return await build_rag(project_id=project_id, selected_files=selected_files)
+    return await build_rag(project_id=project_id, selected_files=selected_files, http_request=request)
 
 # 🔧 添加获取RAG文件列表的特殊路由
 @app.get("/lightrag/rag/files/{project_id}")
-async def lightrag_get_files_endpoint(project_id: str):
+async def lightrag_get_files_endpoint(request: Request, project_id: str):
     """特殊路由处理，支持前端获取文件列表请求"""
     from .routes.enterprise_rag_routes import get_rag_files
-    return await get_rag_files(project_id=project_id)
+    return await get_rag_files(project_id=project_id, http_request=request)
 
 # 🔧 添加获取RAG文件列表的API前缀特殊路由
 @app.get("/api/lightrag/rag/files/{project_id}")
-async def api_lightrag_get_files_endpoint(project_id: str):
+async def api_lightrag_get_files_endpoint(request: Request, project_id: str):
     """特殊路由处理，支持前端获取文件列表请求（带API前缀）"""
     from .routes.enterprise_rag_routes import get_rag_files
-    return await get_rag_files(project_id=project_id)
+    return await get_rag_files(project_id=project_id, http_request=request)
     
 # 🔧 添加获取RAG文件列表的双重前缀特殊路由
 @app.get("/api/lightrag/lightrag/files/{project_id}")
-async def double_prefix_files_endpoint(project_id: str):
+async def double_prefix_files_endpoint(request: Request, project_id: str):
     """特殊路由处理，支持前端获取文件列表请求（双重前缀）"""
     from .routes.enterprise_rag_routes import get_rag_files
-    return await get_rag_files(project_id=project_id)
+    return await get_rag_files(project_id=project_id, http_request=request)
 
 # 🔧 添加获取RAG文件状态的特殊路由
 @app.get("/lightrag/rag/status/{project_id}")
-async def lightrag_get_status_endpoint(project_id: str):
+async def lightrag_get_status_endpoint(request: Request, project_id: str):
     """特殊路由处理，支持前端获取文件状态请求"""
     from .routes.enterprise_rag_routes import get_file_status
-    return await get_file_status(project_id=project_id)
+    return await get_file_status(project_id=project_id, http_request=request)
 
 # 🔧 添加获取RAG文件状态的API前缀特殊路由
 @app.get("/api/lightrag/rag/status/{project_id}")
-async def api_lightrag_get_status_endpoint(project_id: str):
+async def api_lightrag_get_status_endpoint(request: Request, project_id: str):
     """特殊路由处理，支持前端获取文件状态请求（带API前缀）"""
     from .routes.enterprise_rag_routes import get_file_status
-    return await get_file_status(project_id=project_id)
+    return await get_file_status(project_id=project_id, http_request=request)
     
 # 🔧 添加获取RAG文件状态的双重前缀特殊路由
 @app.get("/api/lightrag/lightrag/status/{project_id}")
-async def double_prefix_status_endpoint(project_id: str):
+async def double_prefix_status_endpoint(request: Request, project_id: str):
     """特殊路由处理，支持前端获取文件状态请求（双重前缀）"""
     from .routes.enterprise_rag_routes import get_file_status
-    return await get_file_status(project_id=project_id)
+    return await get_file_status(project_id=project_id, http_request=request)
 
 # 🔧 添加获取知识图谱的特殊路由
 @app.get("/lightrag/projects/{project_id}/knowledge-graph")
-async def lightrag_knowledge_graph_endpoint(project_id: str):
+async def lightrag_knowledge_graph_endpoint(request: Request, project_id: str):
     """特殊路由处理，支持前端获取知识图谱请求"""
     from .routes.enterprise_rag_routes import get_knowledge_graph
-    return await get_knowledge_graph(project_id=project_id)
+    return await get_knowledge_graph(project_id=project_id, http_request=request)
 
 # 🔧 添加获取知识图谱的API前缀特殊路由
 @app.get("/api/lightrag/projects/{project_id}/knowledge-graph")
-async def api_lightrag_knowledge_graph_endpoint(project_id: str):
+async def api_lightrag_knowledge_graph_endpoint(request: Request, project_id: str):
     """特殊路由处理，支持前端获取知识图谱请求（带API前缀）"""
     from .routes.enterprise_rag_routes import get_knowledge_graph
-    return await get_knowledge_graph(project_id=project_id)
+    return await get_knowledge_graph(project_id=project_id, http_request=request)
 
 # 🔧 添加获取知识图谱的双重前缀特殊路由
 @app.get("/api/lightrag/lightrag/projects/{project_id}/knowledge-graph")
-async def double_prefix_knowledge_graph_endpoint(project_id: str):
+async def double_prefix_knowledge_graph_endpoint(request: Request, project_id: str):
     """特殊路由处理，支持前端获取知识图谱请求（双重前缀）"""
     from .routes.enterprise_rag_routes import get_knowledge_graph
-    return await get_knowledge_graph(project_id=project_id)
+    return await get_knowledge_graph(project_id=project_id, http_request=request)
 
 # 添加根级搜索接口 - 方便直接访问，提高兼容性
 @app.post("/search")
 async def root_search(
+    request: Request,
     query: str = Body(...),
     project_id: str = Body(None),
     top_k: int = Body(5),
@@ -301,6 +305,7 @@ async def root_search(
     if mode is None:
         mode = config.default_query_mode
     return await search_rag(
+        http_request=request,
         query=query,
         project_id=project_id,
         top_k=top_k,
@@ -317,7 +322,7 @@ async def root_health_check():
         from .services.enterprise_lightrag_service import get_enterprise_lightrag_service
         
         # 简单健康检查
-        service = await get_enterprise_lightrag_service()
+        await get_enterprise_lightrag_service()
         return {
             "success": True,
             "status": "healthy",

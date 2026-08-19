@@ -4,16 +4,15 @@
 """
 服务配置基类
 为所有微服务提供统一的配置管理
-遵循STP微服务架构原则，支持环境变量和分布式环境
+遵循Lumidoc微服务架构原则，支持环境变量和分布式环境
 """
 
-import os
-import sys
 import logging
-from typing import List, Dict, Any, Optional, Set, Union
+import json
+from typing import Annotated, List, Dict, Any
 from pathlib import Path
-from pydantic import Field, validator
-from pydantic_settings import BaseSettings
+from pydantic import AliasChoices, Field, ValidationInfo, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from dotenv import load_dotenv
 
 # 加载环境变量
@@ -35,43 +34,50 @@ class ServiceBaseSettings(BaseSettings):
     service_version: str = Field(default="1.0.0")
     
     # 服务网络配置
-    host: str = Field(default="0.0.0.0", env="SERVICE_HOST")  # 服务主机
-    port: int = Field(default=0, env="SERVICE_PORT")  # 服务端口（默认为0，要求每个服务明确指定端口）
-    debug: bool = Field(default=True, env="DEBUG")  # 调试模式
-    cors_origins: List[str] = Field(default=["*"], env="CORS_ORIGINS")  # CORS允许的源
+    host: str = Field(
+        default="0.0.0.0",
+        validation_alias=AliasChoices("SERVICE_HOST", "host"),
+    )  # 服务主机
+    port: int = Field(
+        default=0,
+        validation_alias=AliasChoices("SERVICE_PORT", "port"),
+    )  # 服务端口（默认为0，要求每个服务明确指定端口）
+    debug: bool = True  # 调试模式
+    cors_origins: Annotated[List[str], NoDecode] = Field(default_factory=lambda: ["*"])  # CORS允许的源
     
     # Redis配置
-    redis_enabled: bool = Field(default=True, env="REDIS_ENABLED")  # 是否启用Redis
-    redis_host: str = Field(default="localhost", env="REDIS_HOST")  # Redis主机
-    redis_port: int = Field(default=6379, env="REDIS_PORT")  # Redis端口
-    redis_db: int = Field(default=0, env="REDIS_DB")  # Redis数据库
-    redis_password: str = Field(default="", env="REDIS_PASSWORD")  # Redis密码
+    redis_enabled: bool = True  # 是否启用Redis
+    redis_host: str = "localhost"  # Redis主机
+    redis_port: int = 6379  # Redis端口
+    redis_db: int = 0  # Redis数据库
+    redis_password: str = ""  # Redis密码
     
     # 服务发现配置
-    service_discovery_enabled: bool = Field(default=True, env="SERVICE_DISCOVERY_ENABLED")  # 是否启用服务发现
-    service_registry_ttl: int = Field(default=30, env="SERVICE_REGISTRY_TTL")  # 服务注册TTL秒数
+    service_discovery_enabled: bool = True  # 是否启用服务发现
+    service_registry_ttl: int = 30  # 服务注册TTL秒数
     
     # 通用超时配置
-    request_timeout: int = Field(default=30, env="REQUEST_TIMEOUT")  # 请求超时时间（秒）
+    request_timeout: int = 30  # 请求超时时间（秒）
     
     # 日志配置
-    log_level: str = Field(default="INFO", env="LOG_LEVEL")  # 日志级别
-    log_dir: str = Field(default="./logs", env="LOG_DIR")  # 日志目录
-    log_file_prefix: str = Field(default="", env="LOG_FILE_PREFIX")  # 日志文件前缀
+    log_level: str = "INFO"  # 日志级别
+    log_dir: str = "./logs"  # 日志目录
+    log_file_prefix: str = ""  # 日志文件前缀
     
     # 共享目录配置
-    data_dir: str = Field(default="./data", env="DATA_DIR")
-    tmp_dir: str = Field(default="./tmp", env="TMP_DIR")
+    data_dir: str = "./data"
+    tmp_dir: str = "./tmp"
     
     # 环境配置
-    environment: str = Field(default="development", env="ENVIRONMENT")
-    testing: bool = Field(default=False, env="TESTING")
+    environment: str = "development"
+    testing: bool = False
     
-    @validator("log_file_prefix", pre=True, always=True)
-    def set_log_file_prefix(cls, v, values):
+    @field_validator("log_file_prefix", mode="before")
+    @classmethod
+    def set_log_file_prefix(cls, v: str, info: ValidationInfo) -> str:
         """如果未设置日志文件前缀，则使用服务名称"""
-        if not v and "service_name" in values:
-            return values["service_name"]
+        if not v and "service_name" in info.data:
+            return info.data["service_name"]
         return v
     
     def get_log_file_path(self) -> str:
@@ -133,18 +139,21 @@ class ServiceBaseSettings(BaseSettings):
             "port": self.port,
         }
     
-    @validator("cors_origins", pre=True)
-    def parse_cors_origins(cls, v):
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v: Any) -> Any:
         """解析CORS来源"""
         if isinstance(v, str):
             if v == "*":
                 return ["*"]
+            if v.lstrip().startswith("["):
+                return json.loads(v)
             return [origin.strip() for origin in v.split(",")]
         return v
     
-    model_config = {
-        "env_file": ".env",
-        "case_sensitive": False,
-        "validate_assignment": True,
-        "arbitrary_types_allowed": True
-    } 
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+        validate_assignment=True,
+        arbitrary_types_allowed=True,
+    )

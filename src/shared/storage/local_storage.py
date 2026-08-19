@@ -5,7 +5,7 @@
 import os
 import aiofiles
 from pathlib import Path
-from typing import Union, BinaryIO, Optional
+from typing import Union
 import logging
 from .storage_interface import StorageInterface
 

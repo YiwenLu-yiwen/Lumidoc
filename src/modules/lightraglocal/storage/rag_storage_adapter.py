@@ -7,15 +7,17 @@ RAG存储适配器
 """
 
 import os
-import json
 import asyncio
+import json
 import logging
-import tempfile
 import shutil
-from typing import Dict, Any, Optional
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
+
+WORKSPACE_ISOLATION_MARKER = ".workspace_isolation_v2.json"
 
 class RAGStorageAdapter:
     """
@@ -64,8 +66,103 @@ class RAGStorageAdapter:
             
             # 从S3同步现有项目数据到本地临时目录
             await self.sync_from_s3()
-            
+
+        migrated = self._sanitize_legacy_workspace_cache()
+        if migrated and self.storage_type == 's3':
+            await self.sync_to_s3()
+
         logger.info(f"✅ 项目 {self.project_id} RAG存储适配器初始化完成")
+
+    def _project_data_dir(self) -> Path:
+        """Return the directory LightRAG uses after applying its workspace."""
+        return Path(self.working_dir) / f"project_{self.project_id}"
+
+    @staticmethod
+    def _read_json_object(path: Path) -> dict:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            return payload if isinstance(payload, dict) else {}
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            # These files are derived indexes. An unreadable index must never be
+            # allowed to bypass the isolation migration.
+            return {}
+
+    @staticmethod
+    def _write_json_atomic(path: Path, payload: dict) -> None:
+        temp_path = path.with_name(f".{path.name}.tmp")
+        temp_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        os.replace(temp_path, path)
+
+    def _sanitize_legacy_workspace_cache(self) -> bool:
+        """Remove data that predates workspace-scoped shared-memory keys.
+
+        Old LightRAG builds could persist the union of several projects in the
+        JSON KV files. The per-project chunk vector index was already isolated,
+        so it is the authority for which document and chunk IDs may remain.
+        Query caches cannot be attributed safely and are discarded. All files
+        involved are derived from source documents and can be regenerated.
+        """
+        data_dir = self._project_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        marker_path = data_dir / WORKSPACE_ISOLATION_MARKER
+        if marker_path.exists():
+            return False
+
+        chunks_payload = self._read_json_object(data_dir / "vdb_chunks.json")
+        chunk_rows = chunks_payload.get("data", [])
+        if not isinstance(chunk_rows, list):
+            chunk_rows = []
+
+        allowed_chunk_ids = {
+            row.get("__id__")
+            for row in chunk_rows
+            if isinstance(row, dict) and isinstance(row.get("__id__"), str)
+        }
+        allowed_doc_ids = {
+            row.get("full_doc_id")
+            for row in chunk_rows
+            if isinstance(row, dict) and isinstance(row.get("full_doc_id"), str)
+        }
+
+        removed: dict[str, int] = {}
+        scoped_files = {
+            "kv_store_full_docs.json": allowed_doc_ids,
+            "kv_store_text_chunks.json": allowed_chunk_ids,
+            "kv_store_doc_status.json": allowed_doc_ids,
+        }
+        for filename, allowed_ids in scoped_files.items():
+            path = data_dir / filename
+            if not path.exists():
+                continue
+            original = self._read_json_object(path)
+            sanitized = {key: value for key, value in original.items() if key in allowed_ids}
+            removed[filename] = len(original) - len(sanitized)
+            self._write_json_atomic(path, sanitized)
+
+        cache_path = data_dir / "kv_store_llm_response_cache.json"
+        if cache_path.exists():
+            original_cache = self._read_json_object(cache_path)
+            removed[cache_path.name] = len(original_cache)
+            self._write_json_atomic(cache_path, {})
+
+        self._write_json_atomic(
+            marker_path,
+            {
+                "version": 2,
+                "project_id": self.project_id,
+                "migrated_at": datetime.now(timezone.utc).isoformat(),
+                "removed_entries": removed,
+            },
+        )
+        logger.info(
+            "🔒 项目 %s 已完成历史 LightRAG 工作区隔离迁移: %s",
+            self.project_id,
+            removed,
+        )
+        return True
     
     async def sync_from_s3(self):
         """从S3同步项目数据到本地临时目录"""
@@ -128,7 +225,8 @@ class RAGStorageAdapter:
                 'kv_store_full_docs.json',
                 'kv_store_llm_response_cache.json',
                 'kv_store_text_chunks.json',
-                'graph_chunk_entity_relation.graphml'
+                'graph_chunk_entity_relation.graphml',
+                WORKSPACE_ISOLATION_MARKER,
             ]
             
             existing_files = []
@@ -212,7 +310,7 @@ class RAGStorageAdapter:
         if hasattr(self, '_temp_dir') and self._temp_dir and os.path.exists(self._temp_dir):
             try:
                 shutil.rmtree(self._temp_dir)
-            except:
+            except OSError:
                 pass
 
 

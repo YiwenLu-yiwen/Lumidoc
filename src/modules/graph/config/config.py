@@ -3,8 +3,6 @@
 使用统一配置系统
 """
 
-import os
-from pathlib import Path
 from typing import Dict, Any
 from src.shared.config import GraphServiceSettings, get_env
 
@@ -21,7 +19,7 @@ class ExtendedGraphSettings:
     # Neo4j 配置
     neo4j_uri: str = get_env("NEO4J_URI", "bolt://localhost:7687")
     neo4j_user: str = get_env("NEO4J_USER", "neo4j")
-    neo4j_password: str = get_env("NEO4J_PASSWORD", "password")
+    neo4j_password: str = get_env("NEO4J_PASSWORD", "")
     
     # 本地存储配置
     local_storage_dir: str = get_env("GRAPH_LOCAL_STORAGE_DIR", "./data/graphs")
@@ -111,4 +109,4 @@ node_type_colors = {
 edge_default_color = "#999"
 
 # 临时目录配置
-temp_dir = "./temp" 
+temp_dir = "./temp"

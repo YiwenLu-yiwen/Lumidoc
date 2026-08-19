@@ -2,7 +2,7 @@
 
 ## 概述
 
-认证服务是STP平台的核心安全组件，负责用户身份验证、JWT令牌管理和权限控制。该服务提供统一的身份认证接口，支持用户注册、登录、令牌刷新等功能。
+认证服务是Lumidoc平台的核心安全组件，负责用户身份验证、JWT令牌管理和权限控制。该服务提供统一的身份认证接口，支持用户注册、登录、令牌刷新等功能。
 
 ## 服务信息
 
@@ -43,9 +43,7 @@ src/modules/auth/
 │   └── database.py         # 数据库配置
 ├── models/
 │   └── user.py             # 用户实体模型
-└── key/
-    ├── jwt_private_key.pem # JWT私钥
-    └── jwt_public_key.pem  # JWT公钥
+└── Dockerfile              # 容器构建入口
 ```
 
 ## 核心组件
@@ -135,7 +133,7 @@ CREATE TABLE refresh_tokens (
 **访问令牌 (Access Token)**:
 - 有效期: 15分钟
 - 包含: user_id, username, role
-- 算法: RS256
+- 默认算法: HS256（密钥仅从环境变量读取）
 
 **刷新令牌 (Refresh Token)**:
 - 有效期: 7天
@@ -144,8 +142,10 @@ CREATE TABLE refresh_tokens (
 
 ### 密钥管理
 
-- **私钥**: `key/jwt_private_key.pem` - 用于签名令牌
-- **公钥**: `key/jwt_public_key.pem` - 用于验证令牌
+- `SECRET_KEY` 必须通过未提交的 `.env` 或部署密钥管理器提供。
+- 仓库和Docker镜像均不包含签名私钥。
+- 如需RS256，应在部署时挂载密钥文件，并设置 `JWT_PRIVATE_KEY_PATH` 与
+  `JWT_PUBLIC_KEY_PATH`。
 
 ## API使用示例
 
@@ -214,42 +214,21 @@ curl -X GET http://localhost:8007/auth/verify \
 ### 环境变量
 
 ```bash
-# 数据库配置
-AUTH_DB_HOST=localhost
-AUTH_DB_PORT=5432
-AUTH_DB_NAME=stpdb
-AUTH_DB_USER=stpuser
-AUTH_DB_PASSWORD=stppassword
+# 数据库配置（Compose内部地址）
+POSTGRES_HOST=db
+POSTGRES_PORT=5432
+POSTGRES_DB=lumidoc
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=<从密钥管理器注入>
 
 # JWT配置
-JWT_ALGORITHM=RS256
-JWT_ACCESS_TOKEN_EXPIRE_MINUTES=15
-JWT_REFRESH_TOKEN_EXPIRE_DAYS=7
-JWT_PRIVATE_KEY_PATH=key/jwt_private_key.pem
-JWT_PUBLIC_KEY_PATH=key/jwt_public_key.pem
+JWT_ALGORITHM=HS256
+SECRET_KEY=<至少32字符的随机密钥>
+ACCESS_TOKEN_EXPIRE_MINUTES=1440
 
 # 服务配置
 AUTH_SERVICE_PORT=8007
 AUTH_SERVICE_HOST=0.0.0.0
-```
-
-### 配置文件示例
-
-```python
-# config/config.py
-class AuthConfig:
-    # 数据库配置
-    DATABASE_URL = "postgresql://stpuser:stppassword@localhost:5432/stpdb"
-    
-    # JWT配置
-    JWT_ALGORITHM = "RS256"
-    JWT_ACCESS_TOKEN_EXPIRE_MINUTES = 15
-    JWT_REFRESH_TOKEN_EXPIRE_DAYS = 7
-    
-    # 安全配置
-    PASSWORD_MIN_LENGTH = 8
-    MAX_LOGIN_ATTEMPTS = 5
-    ACCOUNT_LOCKOUT_DURATION = 300  # 5分钟
 ```
 
 ## 安全特性
@@ -405,9 +384,6 @@ async def protected_endpoint(token: str = Depends(verify_token)):
 # 检查服务状态
 curl http://localhost:8007/health
 
-# 验证JWT密钥
-openssl rsa -in key/jwt_private_key.pem -check
-
-# 数据库连接测试
-python -c "from config.database import test_connection; test_connection()"
+# 查看认证服务日志
+docker compose logs auth_service
 ```

@@ -3,7 +3,6 @@ Gateway API配置文件
 使用统一配置系统，支持环境变量注入
 """
 
-import os
 from typing import Dict, List, Optional, Any
 from src.shared.config import get_env
 
@@ -13,7 +12,7 @@ class GatewaySettings:
     # 服务基本信息
     service_name: str = "gateway"
     service_version: str = "1.0.0"
-    service_description: str = "STP系统统一API网关"
+    service_description: str = "Lumidoc系统统一API网关"
     
     # 网络配置
     host: str = get_env("GATEWAY_HOST", "0.0.0.0")

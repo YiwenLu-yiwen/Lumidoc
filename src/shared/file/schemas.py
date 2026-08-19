@@ -2,7 +2,7 @@
 文件服务共享的数据模式定义
 """
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any, List
+from typing import Optional
 from datetime import datetime
 from enum import Enum
 

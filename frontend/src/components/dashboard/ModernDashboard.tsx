@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Brain,
   Zap,
@@ -154,6 +154,22 @@ interface DocumentInfo {
   status: 'processed' | 'processing' | 'error';
   summary?: string;
 }
+
+const getFileTypeFromMime = (mimeType: string): 'pdf' | 'docx' | 'txt' | 'image' => {
+  if (mimeType.includes('pdf')) return 'pdf';
+  if (mimeType.includes('word') || mimeType.includes('document')) return 'docx';
+  if (mimeType.includes('text')) return 'txt';
+  if (mimeType.includes('image')) return 'image';
+  return 'txt';
+};
+
+const formatFileSize = (bytes: number): string => {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+};
 
 // 企业级指标卡片组件接口 - 升级版
 interface MetricCardProps {
@@ -424,6 +440,10 @@ export function ModernDashboard() {
   // 真实数据状态
   const [projectStats, setProjectStats] = useState<ProjectStats[]>([]);
   const [recentDocuments, setRecentDocuments] = useState<DocumentInfo[]>([]);
+  const userRef = useRef(user);
+  const recentDocumentsRef = useRef(recentDocuments);
+  userRef.current = user;
+  recentDocumentsRef.current = recentDocuments;
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
   // 知识图谱统计
@@ -442,7 +462,7 @@ export function ModernDashboard() {
   };
   
   // 加载知识图谱统计数据
-  const loadKnowledgeGraphStats = async () => {
+  const loadKnowledgeGraphStats = useCallback(async () => {
     setKnowledgeGraphStats(prev => ({ ...prev, isLoading: true }));
     
     try {
@@ -450,7 +470,7 @@ export function ModernDashboard() {
       // 这里需要替换为真实的 Neo4j API 调用
       const response = await fetch('/api/v1/graph/stats', {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('stp_token')}`
+          'Authorization': `Bearer ${localStorage.getItem('lumidoc_token')}`
         }
       });
       
@@ -468,7 +488,7 @@ export function ModernDashboard() {
     } catch (error) {
       console.log('[Dashboard] Neo4j 连接失败，使用文档统计作为近似值:', error);
       // 如果 Neo4j 不可用，使用文档数量的近似估算
-      const approximateEntities = recentDocuments.length * 50; // 每个文档大约50个实体
+      const approximateEntities = recentDocumentsRef.current.length * 50; // 每个文档大约50个实体
       setKnowledgeGraphStats({
         entityCount: approximateEntities,
         relationCount: approximateEntities * 2, // 关系通常是实体的2倍
@@ -476,33 +496,10 @@ export function ModernDashboard() {
         isConnected: false
       });
     }
-  };
-
-  // 全面的数据刷新函数
-  const refreshAllData = async () => {
-    console.log('[Dashboard] 开始刷新所有数据...');
-    setIsRefreshingData(true);
-    
-    try {
-      // 并行加载所有数据
-      await Promise.allSettled([
-        loadOllamaModels(),
-        user ? loadProjectStats() : Promise.resolve(),
-        loadKnowledgeGraphStats()
-      ]);
-      
-      // 更新数据时间戳
-      setLastDataUpdateTime(new Date());
-      console.log('[Dashboard] 数据刷新完成:', new Date().toLocaleString());
-    } catch (error) {
-      console.error('[Dashboard] 数据刷新失败:', error);
-    } finally {
-      setIsRefreshingData(false);
-    }
-  };
+  }, []);
 
   // 加载 Ollama 模型列表
-  const loadOllamaModels = async () => {
+  const loadOllamaModels = useCallback(async () => {
     setIsLoadingModels(true);
     try {
       const response = await OllamaApi.getInstalledModels();
@@ -517,7 +514,7 @@ export function ModernDashboard() {
     } finally {
       setIsLoadingModels(false);
     }
-  };
+  }, []);
   
   // 下载模型
   const downloadModel = async (modelName: string) => {
@@ -588,8 +585,8 @@ export function ModernDashboard() {
   const popularModels = OllamaApi.getPopularModels(currentLanguage);
   
   // 加载真实项目数据
-  const loadProjectStats = async () => {
-    if (!user) return;
+  const loadProjectStats = useCallback(async () => {
+    if (!userRef.current) return;
     
     setIsLoadingProjects(true);
     try {
@@ -613,11 +610,11 @@ export function ModernDashboard() {
     } finally {
       setIsLoadingProjects(false);
     }
-  };
+  }, []);
 
   // 加载最近文档数据
-  const loadRecentDocuments = async () => {
-    if (!user || projectStats.length === 0) return;
+  const loadRecentDocuments = useCallback(async () => {
+    if (!userRef.current || projectStats.length === 0) return;
     
     setIsLoadingDocuments(true);
     try {
@@ -650,31 +647,34 @@ export function ModernDashboard() {
     } finally {
       setIsLoadingDocuments(false);
     }
-  };
+  }, [projectStats]);
 
-  // 辅助函数
-  const getFileTypeFromMime = (mimeType: string): 'pdf' | 'docx' | 'txt' | 'image' => {
-    if (mimeType.includes('pdf')) return 'pdf';
-    if (mimeType.includes('word') || mimeType.includes('document')) return 'docx';
-    if (mimeType.includes('text')) return 'txt';
-    if (mimeType.includes('image')) return 'image';
-    return 'txt';
-  };
+  // 全面的数据刷新函数
+  const refreshAllData = useCallback(async () => {
+    console.log('[Dashboard] 开始刷新所有数据...');
+    setIsRefreshingData(true);
 
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-  };
+    try {
+      await Promise.allSettled([
+        loadOllamaModels(),
+        userRef.current ? loadProjectStats() : Promise.resolve(),
+        loadKnowledgeGraphStats()
+      ]);
+      setLastDataUpdateTime(new Date());
+      console.log('[Dashboard] 数据刷新完成:', new Date().toLocaleString());
+    } catch (error) {
+      console.error('[Dashboard] 数据刷新失败:', error);
+    } finally {
+      setIsRefreshingData(false);
+    }
+  }, [loadKnowledgeGraphStats, loadOllamaModels, loadProjectStats]);
 
 
   // 组件挂载时初始化数据
   useEffect(() => {
     console.log('[Dashboard] 组件挂载，初始化数据...');
-    refreshAllData();
-  }, [user]);
+    void refreshAllData();
+  }, [refreshAllData, user]);
   
   // 每秒更新当前时间 - 用于实时计算时间差
   useEffect(() => {
@@ -693,14 +693,14 @@ export function ModernDashboard() {
     }, 10 * 60 * 1000); // 10分钟刷新一次
     
     return () => clearInterval(dataRefreshInterval);
-  }, [user]);
+  }, [refreshAllData]);
 
   // 项目数据加载完成后加载文档数据
   useEffect(() => {
     if (projectStats.length > 0) {
       loadRecentDocuments();
     }
-  }, [projectStats]);
+  }, [loadRecentDocuments, projectStats]);
 
   const getStatusColor = (status: string) => {
     switch (status) {

@@ -72,7 +72,7 @@ class FileServiceDatabase:
     @classmethod
     async def _init_db(cls):
         """初始化数据库表 - 使用统一的数据库表创建系统"""
-        # 按照STP项目原则，使用统一的数据库管理系统
+        # 按照Lumidoc项目原则，使用统一的数据库管理系统
         from ..database.ensure_tables import ensure_all_tables
         
         logger.info("使用统一数据库管理系统初始化表结构...")

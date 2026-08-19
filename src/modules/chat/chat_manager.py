@@ -1,21 +1,17 @@
-import os
-import json
 import datetime
 import uuid
 import re
 from typing import Dict, Any, List, Optional, AsyncGenerator
 
 # 导入第三方库
-import redis
 
 # 导入内部模块
 from src.modules.llm_chat import LLMToolService
-from src.shared.clients import default_lightrag_client as lightrag_service
-from src.modules.graph.services.graph_service import GraphService
 from src.modules.chat.chat_engine import ChatEngine
-from src.modules.lightraglocal.config.config import config
+from src.modules.chat.config.config import settings
 
-from src.shared.types.chat import ChatMessage, GraphAnalysisRequest
+from src.shared.clients import GraphServiceClient
+from src.shared.types.chat import GraphAnalysisRequest
 
 def process_special_format(content: str) -> str:
     """处理特殊格式的消息内容"""
@@ -69,7 +65,7 @@ class ChatManager:
     """聊天管理器类，负责管理聊天会话和处理消息"""
     
     def __init__(self, llm_service: LLMToolService, 
-                 graph_service: GraphService,
+                 graph_service: GraphServiceClient,
                  chat_engine: ChatEngine):
         self.sessions: Dict[str, ChatSession] = {}
         self.llm_service = llm_service
@@ -88,7 +84,9 @@ class ChatManager:
                           project_id: str,
                           use_stream: bool = False,
                           search_mode: str = None,
-                          use_graph: bool = True) -> str:
+                          use_graph: bool = True,
+                          auth_header: Optional[str] = None,
+                          model: Optional[str] = None) -> str:
         """处理用户消息并返回回复"""
         # 检查会话是否存在，不存在则创建
         if session_id not in self.sessions:
@@ -105,8 +103,10 @@ class ChatManager:
             project_id, 
             session_id,
             use_stream=use_stream,
-            search_mode=search_mode or config.default_query_mode,
-            use_graph=use_graph
+            search_mode=search_mode or settings.default_query_mode,
+            use_graph=use_graph,
+            auth_header=auth_header,
+            model=model,
         )
         
         # 将AI回复添加到会话历史
@@ -119,7 +119,9 @@ class ChatManager:
                                   message: str,
                                   user_id: Optional[str] = None,
                                   search_mode: Optional[str] = None,
-                                  use_graph: Optional[bool] = None) -> AsyncGenerator[str, None]:
+                                  use_graph: Optional[bool] = None,
+                                  auth_header: Optional[str] = None,
+                                  model: Optional[str] = None) -> AsyncGenerator[str, None]:
         """
         流式处理用户消息
         
@@ -151,7 +153,9 @@ class ChatManager:
             streaming_response = self.chat_engine.chat_stream(
                 message=message, 
                 project_id=project_id,
-                user_id=user_id
+                user_id=user_id,
+                auth_header=auth_header,
+                model=model,
             )
             
             # chat_stream总是返回异步生成器，逐块生成
@@ -270,4 +274,4 @@ class ChatManager:
                 return await self.graph_service.analyze_text(request)
         except Exception as e:
             print(f"Error analyzing knowledge framework: {str(e)}")
-            return {"error": str(e)} 
+            return {"error": str(e)}

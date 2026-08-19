@@ -16,6 +16,7 @@ from .shared_storage import (
     get_storage_lock,
     get_update_flag,
     set_all_update_flags,
+    workspace_namespace,
 )
 
 
@@ -27,6 +28,7 @@ class NanoVectorDBStorage(BaseVectorStorage):
         self._client = None
         self._storage_lock = None
         self.storage_updated = None
+        self._shared_namespace = workspace_namespace(self.namespace, self.workspace)
 
         # Use global config value if specified, otherwise use default
         kwargs = self.global_config.get("vector_db_storage_cls_kwargs", {})
@@ -60,7 +62,7 @@ class NanoVectorDBStorage(BaseVectorStorage):
     async def initialize(self):
         """Initialize storage data"""
         # Get the update flag for cross-process update notification
-        self.storage_updated = await get_update_flag(self.namespace)
+        self.storage_updated = await get_update_flag(self._shared_namespace)
         # Get the storage lock for use in other methods
         self._storage_lock = get_storage_lock(enable_logging=False)
 
@@ -255,7 +257,7 @@ class NanoVectorDBStorage(BaseVectorStorage):
                 # Save data to disk
                 self._client.save()
                 # Notify other processes that data has been updated
-                await set_all_update_flags(self.namespace)
+                await set_all_update_flags(self._shared_namespace)
                 # Reset own update flag to avoid self-reloading
                 self.storage_updated.value = False
                 return True  # Return success
@@ -336,7 +338,7 @@ class NanoVectorDBStorage(BaseVectorStorage):
                 )
 
                 # Notify other processes that data has been updated
-                await set_all_update_flags(self.namespace)
+                await set_all_update_flags(self._shared_namespace)
                 # Reset own update flag to avoid self-reloading
                 self.storage_updated.value = False
 

@@ -1,8 +1,13 @@
 import { useState } from 'react';
-import * as XLSX from 'xlsx';
+import type { GeneratedQuestion } from './types';
+import {
+  buildQuestionExportTable,
+  sanitizeExportFileName,
+  serializeCsv,
+} from './questionExport';
 
 interface QuestionExporterProps {
-  questions: any[];
+  questions: GeneratedQuestion[];
   projectName: string;
   onClose: () => void;
 }
@@ -11,8 +16,8 @@ export default function QuestionExporter({ questions, projectName, onClose }: Qu
   const [selectedQuestions, setSelectedQuestions] = useState<Set<number>>(new Set());
   const [exportFormat, setExportFormat] = useState<'csv' | 'xlsx'>('csv');
   const [fileName, setFileName] = useState(`${projectName}_questions`);
-
-
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   // 处理题目选择
   const handleQuestionSelect = (index: number) => {
@@ -28,48 +33,51 @@ export default function QuestionExporter({ questions, projectName, onClose }: Qu
   };
 
   // 处理导出
-  const handleExport = () => {
+  const handleExport = async () => {
     const selectedQuestionsData = questions.filter((_, index) => selectedQuestions.has(index));
-    
-    // 准备数据
-    const data = selectedQuestionsData.map((q, index) => {
-      const row: any = {
-        '题型': q.type,
-        '项目名称': projectName,
-        '习题编号': q.id || index + 1,
-        '题干': q.question,
-        '答案': Array.isArray(q.answer) ? q.answer.join('、') : q.answer,
-        '解析': q.explanation || ''
-      };
+    const table = buildQuestionExportTable(selectedQuestionsData, projectName);
+    const safeFileName = sanitizeExportFileName(fileName);
 
-      // 添加选项
-      (q.options || []).forEach((opt: string, i: number) => {
-        row[`答案选项(${String.fromCharCode(65 + i)})`] = opt;
-      });
+    setExporting(true);
+    setExportError(null);
+    try {
+      if (exportFormat === 'xlsx') {
+        const { default: writeExcelFile } = await import('write-excel-file/browser');
+        const sheetData = table.map((row, rowIndex) =>
+          row.map((value) => ({
+            value,
+            ...(rowIndex === 0 ? { fontWeight: 'bold' as const } : {}),
+          })),
+        );
+        await writeExcelFile(sheetData, {
+          sheet: '题目',
+          stickyRowsCount: 1,
+        }).toFile(`${safeFileName}.xlsx`);
+      } else {
+        const blob = new Blob(['\uFEFF', serializeCsv(table)], {
+          type: 'text/csv;charset=utf-8',
+        });
+        const downloadUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = `${safeFileName}.csv`;
+        link.click();
+        URL.revokeObjectURL(downloadUrl);
+      }
 
-      return row;
-    });
-
-    // 创建工作表
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, '题目');
-
-    // 导出文件
-    if (exportFormat === 'xlsx') {
-      XLSX.writeFile(wb, `${fileName}.xlsx`);
-    } else {
-      XLSX.writeFile(wb, `${fileName}.csv`);
+      onClose();
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : '导出失败，请重试');
+    } finally {
+      setExporting(false);
     }
-
-    onClose();
   };
 
   return (
     <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center">
       <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
         <h2 className="text-2xl font-bold mb-4 text-gray-800">导出题目</h2>
-        
+
         {/* 文件格式选择 */}
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-800 mb-2">文件格式</label>
@@ -149,6 +157,12 @@ export default function QuestionExporter({ questions, projectName, onClose }: Qu
           </div>
         </div>
 
+        {exportError && (
+          <p role="alert" className="mb-4 text-sm text-red-600">
+            {exportError}
+          </p>
+        )}
+
         {/* 操作按钮 */}
         <div className="flex justify-end gap-4">
           <button
@@ -159,13 +173,13 @@ export default function QuestionExporter({ questions, projectName, onClose }: Qu
           </button>
           <button
             onClick={handleExport}
-            disabled={selectedQuestions.size === 0}
+            disabled={selectedQuestions.size === 0 || exporting}
             className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50"
           >
-            导出
+            {exporting ? '正在导出...' : '导出'}
           </button>
         </div>
       </div>
     </div>
   );
-} 
+}

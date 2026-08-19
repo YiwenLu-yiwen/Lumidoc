@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -16,8 +16,10 @@ import {
   ChevronDown,
   ChevronRight
 } from 'lucide-react';
-import { detectBrowserLanguage, getTranslation } from '@/utils/language';
+import { detectBrowserLanguage } from '@/utils/language';
 import { useTheme } from '@/context/ThemeContext';
+import { useSelectedModel } from '@/hooks/useModel';
+import { createChatRequestPayload } from './chatRequest';
 
 // 导入迁移按钮组件
 import MigrationButton from './components/MigrationButton';
@@ -25,13 +27,10 @@ import MigrationButton from './components/MigrationButton';
 // 是否开启调试模式
 const DEBUG_MODE = import.meta.env.VITE_DEBUG_MODE === 'true';
 
-// 欢迎消息
-const WELCOME_MESSAGE = `What can I help with?`;
-
 // 移除连接建立前缀的函数
 const removeConnectionPrefix = (content: string): string => {
   if (!content) return content;
-  
+
   // 移除 ": connection established" 前缀（支持各种变体）
   let cleaned = content.replace(/^:?\s*connection\s+established[\s\n]*/i, '');
   
@@ -148,10 +147,24 @@ interface Message {
   thinking?: string; // 添加思考内容字段
 }
 
+interface ChatHistoryMessage {
+  id?: string;
+  content?: string;
+  role?: string;
+  timestamp?: string;
+}
+
+interface MigrationResult {
+  projects_processed: number;
+  messages_migrated: number;
+  errors: number;
+}
+
 const MAX_MESSAGES = 500;
 
 export default function ChatLayout() {
   const { projectId } = useParams<{ projectId: string }>();
+  const { selectedModel } = useSelectedModel();
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -166,25 +179,23 @@ export default function ChatLayout() {
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const forceRefreshTimer = useRef<NodeJS.Timeout | null>(null);
   const [requestTimeout, setRequestTimeout] = useState<NodeJS.Timeout | null>(null);
-  const [_editOriginalValue, setEditOriginalValue] = useState('');
-  const [_initialized, setInitialized] = useState(false);
-  const [lastError, _setLastError] = useState<string | null>(null);
-  const [_isHistoryLoaded, setIsHistoryLoaded] = useState(false);
+  const [, setEditOriginalValue] = useState('');
+  const [, setInitialized] = useState(false);
+  const [lastError, setLastError] = useState<string | null>(null);
+  const [, setIsHistoryLoaded] = useState(false);
   const loadedRef = useRef(false);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [showHistorySelector, setShowHistorySelector] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
   const [historyPage, setHistoryPage] = useState(0);
   const [isMigrating, setIsMigrating] = useState(false);
-  const [migrationResult, setMigrationResult] = useState<any>(null);
+  const [migrationResult, setMigrationResult] = useState<MigrationResult | null>(null);
   const [collapsedThinking, setCollapsedThinking] = useState<Set<string>>(new Set());
 
   // 主题模式和语言检测
   const { isDarkMode } = useTheme();
   const currentLanguage = detectBrowserLanguage();
-  const t = (key: keyof typeof import('@/utils/language').translations['zh-CN']) => {
-    return getTranslation(currentLanguage, key);
-  };
+
 
   // 切换思考内容折叠状态
   const toggleThinkingCollapse = (messageId: string) => {
@@ -266,14 +277,14 @@ export default function ChatLayout() {
   }, []);
 
   // 加载聊天历史 - 修改为支持存档消息和分页
-  const loadChatHistory = async (includeArchivedMessages = false, page = 0) => {
+  const loadChatHistory = useCallback(async (includeArchivedMessages = false, page = 0) => {
     if (loadedRef.current && !includeArchivedMessages && page === 0) return;
     
     try {
-      const token = localStorage.getItem('stp_token');
-      const userId = JSON.parse(localStorage.getItem('stp_user') || '{}').id || 'unknown';
+      const token = localStorage.getItem('lumidoc_token');
+      const userId = JSON.parse(localStorage.getItem('lumidoc_user') || '{}').id || 'unknown';
       
-      const gatewayUrl = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8000';
+      const gatewayUrl = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8888';
       // 构建包含归档参数的URL - 通过Gateway访问
       const url = `${gatewayUrl}/chat/api/chat/history/${projectId || 'default'}?user_id=${userId}&include_archived=${includeArchivedMessages}&offset=${page * 50}&limit=50`;
       
@@ -290,7 +301,7 @@ export default function ChatLayout() {
         const data = await response.json();
         if (data && Array.isArray(data) && data.length > 0) {
           // 转换历史消息格式并加载
-          const historyMessages = data.map((msg: any) => ({
+          const historyMessages = (data as ChatHistoryMessage[]).map((msg) => ({
             id: msg.id || Date.now().toString() + Math.random().toString(),
             content: processSpecialFormat(msg.content || ''),
             isUser: msg.role === 'user',
@@ -323,12 +334,13 @@ export default function ChatLayout() {
       }
     } catch (error) {
       console.error('加载聊天历史出错:', error);
+      setLastError(error instanceof Error ? error.message : '加载聊天历史出错');
     }
     
     if (!includeArchivedMessages && page === 0) {
       loadedRef.current = true;
     }
-  };
+  }, [projectId]);
 
   // 加载更多历史消息
   const loadMoreHistory = () => {
@@ -348,8 +360,8 @@ export default function ChatLayout() {
   // 保存消息到数据库
   const saveChatMessage = async (message: Message) => {
     try {
-      const token = localStorage.getItem('stp_token');
-      const userId = JSON.parse(localStorage.getItem('stp_user') || '{}').id || 'unknown';
+      const token = localStorage.getItem('lumidoc_token');
+      const userId = JSON.parse(localStorage.getItem('lumidoc_user') || '{}').id || 'unknown';
       
       const gatewayUrl = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8888';
       const url = `${gatewayUrl}/chat/api/chat/save`;
@@ -386,6 +398,7 @@ export default function ChatLayout() {
       }
     } catch (error) {
       console.error('保存聊天消息失败:', error);
+      setLastError(error instanceof Error ? error.message : '保存聊天消息失败');
     }
   };
               
@@ -394,10 +407,10 @@ export default function ChatLayout() {
     if (!confirm('确定要清除所有聊天记录吗？此操作不可撤销。')) return;
     
     try {
-      const token = localStorage.getItem('stp_token');
-      const userId = JSON.parse(localStorage.getItem('stp_user') || '{}').id || 'unknown';
+      const token = localStorage.getItem('lumidoc_token');
+      const userId = JSON.parse(localStorage.getItem('lumidoc_user') || '{}').id || 'unknown';
       
-      const gatewayUrl = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8000';
+      const gatewayUrl = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8888';
       // 修正API路径，确保使用正确的端点 - 通过Gateway访问
       const url = `${gatewayUrl}/chat/api/chat/history/${projectId || 'default'}?user_id=${userId}`;
       
@@ -422,6 +435,7 @@ export default function ChatLayout() {
       }
     } catch (error) {
       console.error('清除聊天历史出错:', error);
+      setLastError(error instanceof Error ? error.message : '清除聊天历史出错');
       alert('清除聊天历史出错，请稍后再试');
     }
   };
@@ -435,24 +449,18 @@ export default function ChatLayout() {
     console.log('ChatLayout组件已初始化，重置所有状态');
     
     // 加载聊天历史
-    loadChatHistory();
+    void loadChatHistory();
     
     // 清除任何可能存在的中断请求
     if (abortControllerRef.current) {
       console.log('组件初始化，取消可能存在的旧请求');
       try {
       abortControllerRef.current.abort();
-      } catch (e) {
+      } catch {
         // 忽略中断过程中的任何错误
       }
       abortControllerRef.current = null;
     }
-    
-    // 添加强制刷新定时器
-    const refreshTimer = setInterval(() => {
-      // 简单的状态修改，触发重新渲染
-      setMessages(prev => [...prev]);
-    }, 3000);
     
     // 组件卸载时的清理
     return () => {
@@ -461,17 +469,15 @@ export default function ChatLayout() {
         
         try {
         abortControllerRef.current.abort();
-        } catch (e) {
+        } catch {
           // 忽略中断过程中的任何错误
         }
         
         abortControllerRef.current = null;
       }
       
-      // 清除强制刷新定时器
-      clearInterval(refreshTimer);
     };
-  }, []);
+  }, [loadChatHistory]);
 
   // 强制重置状态函数 - 添加不显示黄色警告功能
   const forceResetState = () => {
@@ -481,8 +487,8 @@ export default function ChatLayout() {
     if (abortControllerRef.current) {
       try {
         abortControllerRef.current.abort();
-      } catch (e) {
-        console.error('中断请求时出错:', e);
+      } catch (abortError) {
+        console.error('中断请求时出错:', abortError);
       }
       abortControllerRef.current = null;
     }
@@ -690,7 +696,7 @@ export default function ChatLayout() {
       setIsLoading(true);
       
       // 获取token
-        const token = localStorage.getItem('stp_token');
+        const token = localStorage.getItem('lumidoc_token');
         
         try {
         // 创建中断控制器
@@ -698,7 +704,7 @@ export default function ChatLayout() {
           abortControllerRef.current = controller;
         
         // 通过Gateway访问聊天服务API
-        const gatewayUrl = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8000';
+        const gatewayUrl = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8888';
         const url = `${gatewayUrl}/chat/api/chat/stream`;
         
         // 发送请求
@@ -708,14 +714,12 @@ export default function ChatLayout() {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${token}`
             },
-          body: JSON.stringify({ 
+          body: JSON.stringify(createChatRequestPayload({
             content: userMessage.content,
-            message: userMessage.content,
-            project_id: projectId || 'default',
-            search_mode: 'hybrid', 
-            use_graph: true,
-            user_id: JSON.parse(localStorage.getItem('stp_user') || '{}').id || 'unknown'
-          }),
+            projectId,
+            userId: JSON.parse(localStorage.getItem('lumidoc_user') || '{}').id,
+            modelId: selectedModel?.id,
+          })),
             signal: controller.signal,
           });
           
@@ -854,14 +858,15 @@ export default function ChatLayout() {
           clearTimeout(requestTimeout);
           setRequestTimeout(null);
         }
-        } catch (error: any) {
+        } catch (error: unknown) {
           // 确保错误情况下也重置所有状态
           setStreamingComplete(true);
           setIsLoading(false);
           setIsProcessing(false);
+          const errorMessage = error instanceof Error ? error.message : String(error);
           
         // 错误处理
-          if (error.name === 'AbortError') {
+          if (error instanceof Error && error.name === 'AbortError') {
           console.log('聊天请求被中断，这是预期行为');
           
           // 中断消息内容
@@ -884,6 +889,7 @@ export default function ChatLayout() {
           });
         } else {
           console.error('聊天请求出错:', error);
+          setLastError(errorMessage);
           setMessages(prev => {
             const newMessages = [...prev];
             // 找到并更新最后一个机器人消息
@@ -891,7 +897,7 @@ export default function ChatLayout() {
               if (!newMessages[i].isUser) {
                 newMessages[i] = {
                   ...newMessages[i],
-                  content: `发生错误：${error.message || error.toString()}`
+                  content: `发生错误：${errorMessage}`
                 };
                 break;
               }
@@ -909,8 +915,9 @@ export default function ChatLayout() {
           setRequestTimeout(null);
                 }
               }
-      } catch (error: any) {
+      } catch (error: unknown) {
       console.error('处理消息提交出错:', error);
+      setLastError(error instanceof Error ? error.message : String(error));
       setIsProcessing(false);
         setStreamingComplete(true);
         setIsLoading(false);
@@ -930,7 +937,7 @@ export default function ChatLayout() {
     try {
       setIsMigrating(true);
       
-      const token = localStorage.getItem('stp_token');
+      const token = localStorage.getItem('lumidoc_token');
       const gatewayUrl = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8888';
       const url = `${gatewayUrl}/chat/api/chat/migrate?days=${days}`;
       
@@ -956,6 +963,7 @@ export default function ChatLayout() {
       }
     } catch (error) {
       console.error('触发迁移时出错:', error);
+      setLastError(error instanceof Error ? error.message : '触发迁移时出错');
       alert('迁移请求出错，请查看控制台日志');
     } finally {
       setIsMigrating(false);
@@ -964,7 +972,7 @@ export default function ChatLayout() {
 
   // 渲染UI
   return (
-    <div className={`h-screen flex flex-col transition-colors duration-300 ${
+    <div className={`h-full min-h-0 flex flex-col transition-colors duration-300 ${
       isDarkMode ? 'bg-[#212121] text-gray-100' : 'bg-white text-gray-900'
     }`}>
       {/* 顶部导航栏 */}
@@ -1090,7 +1098,7 @@ export default function ChatLayout() {
         {/* 滚动消息区域 - 填充可用空间 */}
         <div 
           ref={messagesContainerRef}
-          className="flex-1 overflow-y-auto py-6 px-6 pb-32"
+          className="flex-1 overflow-y-auto py-6 px-6 pb-6 md:pb-8"
         >
           {messages.length === 0 ? (
             /* 空消息状态 - 完全居中显示 */
@@ -1259,7 +1267,7 @@ export default function ChatLayout() {
         </div>
         
         {/* 输入区域固定在底部 */}
-        <div className={`w-full border-t py-4 px-6 fixed bottom-0 left-0 right-0 z-10 transition-colors duration-300 ${
+        <div className={`w-full border-t py-4 px-4 md:px-6 sticky bottom-0 z-10 transition-colors duration-300 ${
           isDarkMode ? 'border-gray-800 bg-[#212121]' : 'border-gray-200 bg-white'
         }`}>
           <div className="max-w-4xl mx-auto">

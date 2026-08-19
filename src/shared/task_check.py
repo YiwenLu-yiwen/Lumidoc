@@ -5,14 +5,11 @@
 
 import asyncio
 import logging
-import json
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List
 import os
-import time
 from datetime import datetime, timedelta
 
-from src.shared.task_manager import TaskManager, TaskStatus, get_task_manager
-from src.shared.service_discovery import get_service_client
+from src.shared.task_manager import TaskStatus, get_task_manager
 
 # 配置日志
 logger = logging.getLogger(__name__)

@@ -1,6 +1,5 @@
 from typing import List, Dict, Any, Optional
 from datetime import datetime
-from src.shared.clients import default_lightrag_client as lightrag_service
 from src.shared.clients import default_llm_client as LLMService
 from src.modules.graph.services.graph_service import GraphService
 from .generator import QuestionGenerator

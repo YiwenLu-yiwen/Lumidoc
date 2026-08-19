@@ -7,10 +7,8 @@
 """
 
 import json
-import asyncio
-import logging
 from typing import Dict, Set
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 
 from src.shared.logger import get_logger

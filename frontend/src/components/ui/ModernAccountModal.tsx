@@ -21,11 +21,10 @@ import {
   Sun,
   Moon
 } from 'lucide-react';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth, type User as AuthUser } from '@/context/AuthContext';
 import { projectApi } from '@/api/project';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useProjects } from '@/context/ProjectContext';
-import { ConfirmDialog } from './ConfirmDialog';
 import { detectBrowserLanguage, getTranslation } from '@/utils/language';
 import { useTheme } from '@/context/ThemeContext';
 
@@ -76,9 +75,9 @@ function ModernAvatar({ username, size = 64 }: { username: string, size?: number
 }
 
 // 个人信息卡片
-function ProfileCard({ user, isDarkMode }: { user: any, isDarkMode: boolean }) {
+function ProfileCard({ user, isDarkMode }: { user: AuthUser | null, isDarkMode: boolean }) {
   const currentLanguage = detectBrowserLanguage();
-  const t = (key: keyof typeof import('@/utils/language').translations['zh-CN']) => 
+  const t = (key: keyof typeof import('@/utils/language').translations['zh-CN']) =>
     getTranslation(currentLanguage, key);
 
   return (
@@ -185,7 +184,7 @@ function SettingsCard({ isDarkMode }: { isDarkMode: boolean }) {
     getTranslation(currentLanguage, key);
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem('stp_theme_mode') as ThemeMode;
+    const savedTheme = localStorage.getItem('lumidoc_theme_mode') as ThemeMode;
     if (savedTheme) setThemeMode(savedTheme);
   }, []);
 
@@ -194,7 +193,7 @@ function SettingsCard({ isDarkMode }: { isDarkMode: boolean }) {
     const currentIndex = modes.indexOf(themeMode);
     const nextMode = modes[(currentIndex + 1) % modes.length];
     setThemeMode(nextMode);
-    localStorage.setItem('stp_theme_mode', nextMode);
+    localStorage.setItem('lumidoc_theme_mode', nextMode);
   };
 
   const getThemeIcon = () => {
@@ -298,8 +297,6 @@ function ProjectsCard({ isDarkMode }: { isDarkMode: boolean }) {
   const navigate = useNavigate();
   const location = useLocation();
   const currentLanguage = detectBrowserLanguage();
-  const t = (key: keyof typeof import('@/utils/language').translations['zh-CN']) => 
-    getTranslation(currentLanguage, key);
 
   const currentProjectId = location.pathname.match(/project\/([\w-]+)/)?.[1];
 
@@ -315,7 +312,7 @@ function ProjectsCard({ isDarkMode }: { isDarkMode: boolean }) {
       setNewProjectName('');
       setCreating(false);
       await refreshProjects();
-    } catch (e) {
+    } catch {
       setCreateError(currentLanguage === 'zh-CN' ? '创建失败' : 'Creation failed');
     } finally {
       setLoading(false);
