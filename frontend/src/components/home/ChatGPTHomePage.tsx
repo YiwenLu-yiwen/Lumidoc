@@ -317,7 +317,7 @@ export function ChatGPTHomePage() {
         isDarkMode ? 'border-gray-800 bg-[#171717]' : 'border-gray-200 bg-white'
       }`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
+          <div className="flex h-16 items-center justify-between gap-2">
             {/* 左侧：Logo和品牌 */}
             <div className="flex items-center space-x-3">
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
@@ -325,13 +325,13 @@ export function ChatGPTHomePage() {
               }`}>
                 <MessageSquare className="w-6 h-6 text-white" />
               </div>
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                Lumidoc Intelligence
+              <h1 className="bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-lg font-bold text-transparent sm:text-2xl">
+                Lumidoc<span className="hidden lg:inline"> Intelligence</span>
               </h1>
             </div>
 
             {/* 右侧：登录注册按钮 */}
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2 sm:space-x-4">
               {!user ? (
                 <>
                   <Button
@@ -723,7 +723,7 @@ export function ChatGPTHomePage() {
             </div>
           </div>
 
-          <div className={`overflow-hidden rounded-2xl border ${
+          <div className={`overflow-x-auto rounded-2xl border ${
             isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
           } shadow-2xl`}>
             {/* 表格头 */}
