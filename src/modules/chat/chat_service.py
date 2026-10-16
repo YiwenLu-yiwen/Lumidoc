@@ -17,6 +17,11 @@ from fastapi.routing import APIRouter
 import uuid
 from datetime import datetime
 from .models import ChatHistory
+from src.shared.project_access import require_project_access
+from .response_jobs import ResponseJobs
+from .conversations import unique_messages, conversation_summaries, session_id as message_session_id
+
+response_jobs = ResponseJobs()
 from .data_migration import fetch_chat_history, migrate_old_messages_to_db
 
 # 导入共享类型
@@ -41,7 +46,7 @@ api_router = APIRouter()
 # 配置CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://115.29.191.36:3000", "http://localhost:3000"],
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -424,6 +429,7 @@ async def stream_chat(
         message = data.get("message")  # 修改为使用message字段
         content = data.get("content")  # 保持兼容，同时检查content字段
         user_id = data.get("user_id")
+        conversation_id = data.get("session_id") or "legacy"
         search_mode = data.get("search_mode", settings.default_query_mode)
         use_graph = data.get("use_graph", True)  # 默认使用图谱增强
         model = data.get("model")
@@ -435,55 +441,35 @@ async def stream_chat(
         if not content_to_use:
             raise HTTPException(status_code=400, detail="Missing content")
         
-        # 将用户消息添加到聊天历史
-        chat_manager.add_message(project_id, "user", content_to_use)
-        
-        # 创建SSE流响应
+        # 服务端持久化用户消息和最终回复，不依赖浏览器继续停留在页面。
+        async def persist_message(role, content):
+            record = {
+                "id": str(uuid.uuid4()), "role": role, "content": content,
+                "project_id": project_id, "user_id": user_id, "session_id": conversation_id,
+                "timestamp": datetime.now().isoformat(),
+            }
+            key = f"chat:history:{project_id}"
+            redis_client.lpush(key, json.dumps(record))
+            redis_client.expire(key, 60 * 60 * 24 * 30)
+
+        await persist_message("user", content_to_use)
+        async def persist_answer(content):
+            await persist_message("assistant", content)
+
+        job = response_jobs.start(
+            (str(project_id), str(user_id), conversation_id),
+            chat_manager.process_message_stream(
+                project_id=project_id, message=content_to_use, user_id=user_id,
+                search_mode=search_mode, use_graph=use_graph,
+                auth_header=auth_header, model=model, conversation_id=conversation_id,
+            ),
+            persist_answer,
+        )
+
         async def event_generator():
-            full_response = ""
-            has_sent_content = False
-            
-            try:
-                # 使用ChatManager的process_message_stream方法处理流式响应
-                async for chunk in chat_manager.process_message_stream(
-                    project_id=project_id,
-                    message=content_to_use,
-                    user_id=user_id,
-                    search_mode=search_mode,
-                    use_graph=use_graph,
-                    auth_header=auth_header,
-                    model=model,
-                ):
-                    if chunk and chunk.strip():
-                        has_sent_content = True
-                    
-                    full_response += chunk
-                    # 处理特殊格式内容
-                    processed_chunk = process_special_format(chunk)
-                    
-                    # 返回SSE格式数据
-                    yield f"data: {json.dumps({'content': processed_chunk})}\n\n"
-                
-                # 检查是否有实际内容返回，如果没有，发送默认回复
-                processed_response = process_special_format(full_response)
-                if not has_sent_content or not processed_response or processed_response.strip() in ["", "<|COMPLETE|>", "<COMPLETE>"]:
-                    # 发送默认回复
-                    default_response = "我已收到您的问题，正在处理中。请再详细描述您的需求，以便我能更好地帮助您。"
-                    yield f"data: {json.dumps({'content': default_response})}\n\n"
-                    # 更新full_response
-                    full_response = default_response
-                
-                # 标记结束
-                yield f"data: {json.dumps({'content': '', 'done': True})}\n\n"
-                
-                # 添加处理后的完整回复到聊天历史
-                chat_manager.add_message(project_id, "assistant", process_special_format(full_response))
-            except Exception as e:
-                logger.error(f"Streaming error: {str(e)}")
-                error_msg = f"处理消息时发生错误: {str(e)}"
-                full_response = error_msg
-                yield f"data: {json.dumps({'error': str(e)})}\n\n"
-        
+            async for event in job.events():
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
         return StreamingResponse(
             event_generator(),
             media_type="text/event-stream",
@@ -534,7 +520,8 @@ async def get_project_chat_history(
     limit: int = 100,
     offset: int = 0,
     include_archived: bool = False,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    session_id: Optional[str] = None
 ):
     """获取特定项目的聊天历史，支持从Redis和PostgreSQL混合获取"""
     try:
@@ -562,6 +549,7 @@ async def get_project_chat_history(
                         
                         redis_messages.append({
                             'id': msg_data.get('id', ''),
+                            'session_id': message_session_id(msg_data),
                             'role': msg_data.get('role', 'unknown'),
                             'content': msg_data.get('content', ''),
                             'timestamp': msg_data.get('timestamp', ''),
@@ -597,7 +585,9 @@ async def get_project_chat_history(
                 error_occurred = True
         
         # 3. 合并消息并按时间戳排序 - 从早到晚排序（不用reverse=True）
-        messages = redis_messages + pg_messages
+        messages = unique_messages(redis_messages + pg_messages)
+        if session_id is not None:
+            messages = [msg for msg in messages if message_session_id(msg) == session_id]
         if messages:
             try:
                 # 按时间戳从早到晚排序
@@ -607,8 +597,8 @@ async def get_project_chat_history(
                 # 如果排序失败，保持原始顺序
         
         # 4. 分页处理
-        start_idx = min(offset, len(messages))
-        end_idx = min(start_idx + limit, len(messages))
+        end_idx = max(0, len(messages) - offset)
+        start_idx = max(0, end_idx - limit)
         
         # 返回指定范围的消息
         result = messages[start_idx:end_idx]
@@ -622,6 +612,8 @@ async def get_project_chat_history(
         # 6. 转换为API响应格式
         return [
             ChatMessage(
+                id=msg.get('id') or None,
+                session_id=message_session_id(msg),
                 role=msg.get('role', 'unknown'),
                 content=msg.get('content', ''),
                 timestamp=msg.get('timestamp', '')
@@ -657,6 +649,23 @@ async def analyze_knowledge_framework(
         raise HTTPException(status_code=500, detail=str(e))
 
 # 添加带/api前缀的流式聊天接口 - 复用相同的代码处理逻辑
+@api_router.get("/chat/conversations/{project_id}")
+async def list_conversations(project_id: str, user_id: str, db: Session = Depends(get_db)):
+    records = await get_project_chat_history(project_id, user_id=user_id, limit=10000, include_archived=True, db=db)
+    return conversation_summaries([record.model_dump() for record in records])
+
+
+@api_router.post("/chat/stop/{project_id}")
+async def stop_chat(project_id: str, user_id: str, session_id: str = "legacy"):
+    stopped = await response_jobs.stop((project_id, user_id, session_id))
+    return {"success": True, "stopped": stopped}
+
+
+@api_router.get("/chat/pending/{project_id}")
+async def pending_chat(project_id: str, user_id: str, session_id: str = "legacy"):
+    return {"pending": response_jobs.pending((project_id, user_id, session_id))}
+
+
 @api_router.post("/chat/stream")
 async def api_stream_chat(
     request: Request,
@@ -677,7 +686,8 @@ async def api_get_project_chat_history(
     limit: int = 100,
     offset: int = 0,
     include_archived: bool = False,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    session_id: Optional[str] = None
 ):
     """带API前缀的获取特定项目的聊天历史接口"""
     logger.info(f"通过API前缀路径获取项目 {project_id} 的聊天历史")
@@ -687,7 +697,7 @@ async def api_get_project_chat_history(
         limit=limit, 
         offset=offset, 
         include_archived=include_archived, 
-        db=db
+        db=db, session_id=session_id
     )
 
 @api_router.post("/chat/migrate")
@@ -698,6 +708,44 @@ async def api_trigger_chat_migration(
     """带API前缀的迁移聊天历史接口"""
     logger.info(f"通过API前缀路径触发聊天历史迁移，days={days}")
     return await trigger_chat_migration(days, db)
+
+@api_router.delete("/chat/conversations/{project_id}/{session_id}", response_model=ApiResponse)
+async def delete_conversation(
+    project_id: str,
+    session_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """删除当前用户的指定会话，先停止后台回复以防删除后重新出现。"""
+    context = await require_project_access(request, project_id)
+    user_id = context.get("user", {}).get("user_id")
+    if user_id is None:
+        raise HTTPException(status_code=403, detail="请使用用户身份删除会话")
+    user_id = str(user_id)
+    await response_jobs.stop((project_id, user_id, session_id))
+    try:
+        rows = db.query(ChatHistory).filter(
+            ChatHistory.project_id == project_id,
+            ChatHistory.user_id == user_id,
+        ).all()
+        deleted_count = 0
+        for row in rows:
+            if message_session_id({"meta_data": row.meta_data}) == session_id:
+                db.delete(row)
+                deleted_count += 1
+        db.commit()
+        # 按原始消息删除，保留其他会话及同时追加的新消息。
+        key = f"chat:history:{project_id}"
+        for raw in redis_client.lrange(key, 0, -1):
+            message = json.loads(raw)
+            if str(message.get("user_id")) == user_id and message_session_id(message) == session_id:
+                deleted_count += redis_client.lrem(key, 0, raw)
+        return ApiResponse(success=True, message="会话已删除", data={"deleted_count": deleted_count})
+    except Exception as exc:
+        db.rollback()
+        logger.exception("删除会话失败")
+        raise HTTPException(status_code=500, detail="会话删除失败，请重试") from exc
+
 
 @api_router.delete("/chat/history/{project_id}")
 async def api_clear_chat_history(

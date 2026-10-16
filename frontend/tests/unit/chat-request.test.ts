@@ -15,3 +15,11 @@ describe('createChatRequestPayload', () => {
     expect(payload.model).toBe('qwen3:8b');
   });
 });
+
+it('keeps multiple turns in the selected conversation', () => {
+  const first = createChatRequestPayload({ content: 'First', conversationId: 'conversation-a' });
+  const second = createChatRequestPayload({ content: 'Followup', conversationId: 'conversation-a' });
+  const other = createChatRequestPayload({ content: 'New chat', conversationId: 'conversation-b' });
+  expect(first.session_id).toBe(second.session_id);
+  expect(other.session_id).not.toBe(first.session_id);
+});

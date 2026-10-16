@@ -215,7 +215,13 @@ class LLMServiceClient:
                 "stream": True
             }
 
-            logger.debug(f"开始流式生成请求: {data}")
+            # 使用聊天接口保留消息结构及用户选择的模型。
+            messages = kwargs.get("messages")
+            if messages is not None:
+                data.pop("prompt")
+                data["messages"] = messages
+            if kwargs.get("model"):
+                data["model"] = kwargs["model"]
 
             # 设置请求头，包含服务间认证
             headers = {"Content-Type": "application/json"}
@@ -229,7 +235,8 @@ class LLMServiceClient:
                 pool=30.0        # 连接池超时30秒
             )
             async with httpx.AsyncClient(timeout=timeout_config) as client:
-                api_url = f"{self.gateway_url}/api/v1/llm/generate"
+                endpoint = "chat" if messages is not None else "generate"
+                api_url = f"{self.gateway_url}/api/v1/llm/{endpoint}"
 
                 async with client.stream(
                     "POST",
@@ -240,6 +247,9 @@ class LLMServiceClient:
                     if response.status_code == 200:
                         logger.debug("开始处理流式响应")
                         async for line in response.aiter_lines():
+                            # SSE 注释心跳不是模型正文。
+                            if line.startswith(":"):
+                                continue
                             if line.strip():
                                 try:
                                     # 处理SSE格式

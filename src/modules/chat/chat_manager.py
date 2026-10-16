@@ -121,7 +121,8 @@ class ChatManager:
                                   search_mode: Optional[str] = None,
                                   use_graph: Optional[bool] = None,
                                   auth_header: Optional[str] = None,
-                                  model: Optional[str] = None) -> AsyncGenerator[str, None]:
+                                  model: Optional[str] = None,
+                                  conversation_id: str = "legacy") -> AsyncGenerator[str, None]:
         """
         流式处理用户消息
         
@@ -156,6 +157,7 @@ class ChatManager:
                 user_id=user_id,
                 auth_header=auth_header,
                 model=model,
+                conversation_id=conversation_id,
             )
             
             # chat_stream总是返回异步生成器，逐块生成

@@ -58,7 +58,9 @@ class LLMToolService:
                 prompt = self._messages_to_prompt(messages)
                 return llm_client.stream_generate(
                     prompt=prompt,
+                    messages=messages,
                     temperature=temperature,
+                    max_tokens=max_tokens,
                     **kwargs
                 )
             else:
@@ -184,6 +186,8 @@ class LLMToolService:
         prompt: str,
         temperature: float = 0.2,
         max_tokens: int = 2000,
+        history: Optional[List[Dict[str, str]]] = None,
+        system_prompt: Optional[str] = None,
         **kwargs
     ) -> AsyncGenerator[str, None]:
         """
@@ -200,7 +204,9 @@ class LLMToolService:
         """
         try:
             # 构造标准的聊天消息格式
-            messages = [{"role": "user", "content": prompt}]
+            messages = ([{"role": "system", "content": system_prompt}] if system_prompt else [])
+            messages.extend(history or [])
+            messages.append({"role": "user", "content": prompt})
             
             # 使用chat_completion的流式功能
             stream_generator = await self.chat_completion(

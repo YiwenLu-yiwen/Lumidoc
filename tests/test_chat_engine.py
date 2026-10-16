@@ -44,9 +44,9 @@ async def test_chat_engine_forwards_selected_model_to_llm(monkeypatch) -> None:
     class RecordingLLMService:
         received_model = None
 
-        async def process_general(self, prompt: str, **kwargs) -> str:
+        async def stream_generate(self, prompt: str, **kwargs):
             self.received_model = kwargs.get("model")
-            return "model response"
+            yield "model response"
 
     monkeypatch.setattr(
         "src.modules.chat.chat_engine.httpx.AsyncClient", FailingRagClient

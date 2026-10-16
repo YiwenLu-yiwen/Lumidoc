@@ -5,6 +5,8 @@ from datetime import datetime
 
 class ChatMessage(BaseModel):
     """聊天消息模型"""
+    id: Optional[str] = None
+    session_id: str = "legacy"
     role: str
     content: str
     timestamp: Optional[Union[float, str, datetime]] = None

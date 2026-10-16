@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { 
   MessageSquare, 
   FolderOpen, 
@@ -23,6 +23,7 @@ import {
   FileText,
   Menu
 } from 'lucide-react';
+import { deleteConversation } from '@/api/conversations';
 import { useAuth } from '@/context/AuthContext';
 import { useProjects } from '@/context/ProjectContext';
 import { Button } from '@/components/ui/button';
@@ -52,13 +53,6 @@ interface ChatSession {
   model?: 'thinking' | 'fast';
 }
 
-interface ChatHistoryItem {
-  id?: string;
-  role?: 'user' | 'assistant' | string;
-  content?: string;
-  timestamp?: string;
-}
-
 export default function MainLayout({ children }: MainLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -78,10 +72,12 @@ export default function MainLayout({ children }: MainLayoutProps) {
   const { currentLanguage, setLanguage, t } = useLanguage();
   const { themeMode, isDarkMode, toggleTheme } = useTheme();
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
+  const sessionsRequest = useRef(0);
+  const [deletingChatId, setDeletingChatId] = useState<string | null>(null);
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
-  const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
+  const [, setSelectedChatId] = useState<string | null>(null);
   const [showStarredOnly, setShowStarredOnly] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false); // 管理员状态
   
@@ -94,7 +90,8 @@ export default function MainLayout({ children }: MainLayoutProps) {
     error: modelsError,
     selectModel,
   } = useModel();
-  const currentProject = projects[0] ?? null;
+  const { projectId } = useParams<{ projectId: string }>();
+  const currentProject = projects.find(project => project.id === projectId) ?? projects[0] ?? null;
   
   // 从路由路径确定当前页面
   const getCurrentSection = () => {
@@ -141,8 +138,9 @@ export default function MainLayout({ children }: MainLayoutProps) {
 
       const gatewayUrl = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8888';
       const userId = user?.id || getStoredUserId() || 'unknown';
-      const historyUrl = `${gatewayUrl}/chat/api/chat/history/${currentProject.id}?user_id=${userId}&include_archived=false&offset=0&limit=200`;
+      const historyUrl = `${gatewayUrl}/chat/api/chat/conversations/${currentProject.id}?user_id=${userId}`;
 
+      const requestVersion = ++sessionsRequest.current;
       setSessionsLoading(true);
       setSessionsError(null);
 
@@ -158,53 +156,30 @@ export default function MainLayout({ children }: MainLayoutProps) {
         }
 
         const data = await response.json();
-        const historyItems: ChatHistoryItem[] = Array.isArray(data) ? data : [];
-        const compact = (text?: string): string => (text || '').replace(/\s+/g, ' ').trim();
-        const safeDate = (value?: string): Date => {
-          if (!value) return new Date();
-          const d = new Date(value);
-          return Number.isNaN(d.getTime()) ? new Date() : d;
-        };
-        const toTitle = (text?: string): string => {
-          const normalized = compact(text);
-          if (!normalized) return t('newConversation');
-          return normalized.length > 22 ? `${normalized.slice(0, 22)}...` : normalized;
-        };
-
-        const sorted = historyItems
-          .map((item, index) => ({
-            ...item,
-            _index: index,
-            _date: safeDate(item.timestamp)
-          }))
-          .sort((a, b) => b._date.getTime() - a._date.getTime());
-
-        const userMessages = sorted.filter((item) => item.role === 'user' && compact(item.content));
-        const sessions: ChatSession[] = (userMessages.length > 0 ? userMessages : sorted)
-          .slice(0, 50)
-          .map((item, index) => ({
-            id: String(item.id || `${currentProject.id}-${item._index || index}`),
-            title: toTitle(item.content),
-            lastMessage: compact(item.content) || t('emptyMessage'),
-            timestamp: item._date,
-            projectId: currentProject.id,
-            messageCount: userMessages.length > 0 ? userMessages.length : sorted.length,
-            isStarred: false,
-            model: selectedModel?.type || 'thinking'
-          }));
+        if (requestVersion !== sessionsRequest.current) return;
+        const sessions: ChatSession[] = (Array.isArray(data) ? data : []).map(item => ({
+          ...item,
+          timestamp: new Date(item.timestamp),
+          projectId: currentProject.id,
+          model: selectedModel?.type || 'fast',
+        }));
 
         setChatSessions(sessions);
       } catch (error: unknown) {
+        if (requestVersion !== sessionsRequest.current) return;
         console.error('[MainLayout] 加载会话失败:', error);
         setChatSessions([]);
         setSessionsError(error instanceof Error ? error.message : t('sessionLoadFailed'));
       } finally {
-        setSessionsLoading(false);
+        if (requestVersion === sessionsRequest.current) setSessionsLoading(false);
       }
     };
 
-    fetchChatSessions();
-  }, [currentLanguage, currentProject?.id, currentSection, selectedModel?.type, t, token, user?.id]);
+    void fetchChatSessions();
+    const refresh = () => { void fetchChatSessions(); };
+    window.addEventListener('chat-updated', refresh);
+    return () => { sessionsRequest.current++; window.removeEventListener('chat-updated', refresh); };
+  }, [location.search, currentLanguage, currentProject?.id, currentSection, selectedModel?.type, t, token, user?.id]);
 
   // 主题状态现在由 ThemeContext 管理
 
@@ -304,20 +279,35 @@ export default function MainLayout({ children }: MainLayoutProps) {
   };
 
   const navigateFromSidebar = (path: string) => {
-    navigate(path);
+    const section = path.replace('/app/', '');
+    const target = projectId && ['dashboard', 'documents', 'chat', 'rag'].includes(section)
+      ? `/project/${projectId}/${section}` : path;
+    const conversation = sessionStorage.getItem(`lumidoc-conversation:${currentProject?.id || 'default'}`);
+    navigate(section === 'chat' && conversation ? `${target}?conversation=${encodeURIComponent(conversation)}` : target);
     if (isCompactLayout) setSidebarCollapsed(true);
   };
 
   // 创建新聊天
   const createNewChat = () => {
     setSelectedChatId(null);
-    navigate('/app/chat');
+    const path = currentProject ? `/project/${currentProject.id}/chat` : '/app/chat';
+    navigate(`${path}?conversation=${crypto.randomUUID()}`);
   };
 
   // 删除聊天会话
-  const deleteChatSession = (chatId: string, e: React.MouseEvent) => {
+  const deleteChatSession = async (chatId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setChatSessions((prev) => prev.filter((session) => session.id !== chatId));
+    if (!currentProject || deletingChatId) return;
+    if (!confirm(currentLanguage === 'zh-CN' ? '确定要删除这个会话吗？' : 'Delete this conversation?')) return;
+    setDeletingChatId(chatId);
+    try {
+      await deleteConversation(currentProject.id, chatId);
+      setChatSessions(prev => prev.filter(session => session.id !== chatId));
+    } catch (error) {
+      setSessionsError(error instanceof Error ? error.message : '会话删除失败');
+    } finally {
+      setDeletingChatId(null);
+    }
   };
 
   // 收藏/取消收藏聊天
@@ -378,7 +368,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
   }, []);
 
   return (
-    <div className={`flex flex-col h-screen bg-background text-foreground ${isDarkMode ? 'dark' : ''}`}>
+    <div className={`flex flex-col h-dvh overflow-hidden bg-background text-foreground ${isDarkMode ? 'dark' : ''}`}>
       {/* 统一的顶部导航栏 - 充分利用界面版 */}
       <header className={`border-b transition-colors duration-300 ${
         isDarkMode ? 'border-gray-800 bg-[#343541]' : 'border-gray-200 bg-white'
@@ -677,11 +667,14 @@ export default function MainLayout({ children }: MainLayoutProps) {
                   <div
                     key={session.id}
                     className={`group p-2 rounded-md cursor-pointer transition-all duration-200 ${
-                      selectedChatId === session.id
+                      (new URLSearchParams(location.search).get('conversation') || sessionStorage.getItem(`lumidoc-conversation:${currentProject?.id || 'default'}`) || 'legacy') === session.id
                         ? `${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-blue-50 border-blue-200'} border`
                         : `hover:${isDarkMode ? 'bg-gray-700' : 'bg-gray-100'}`
                     }`}
-                    onClick={() => setSelectedChatId(session.id)}
+                    onClick={() => {
+                      setSelectedChatId(session.id);
+                      navigate(`/project/${session.projectId}/chat?conversation=${encodeURIComponent(session.id)}`);
+                    }}
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0">
@@ -735,7 +728,9 @@ export default function MainLayout({ children }: MainLayoutProps) {
                           variant="ghost"
                           size="sm"
                           className="p-1 h-5 w-5 text-red-500 hover:text-red-600"
-                          onClick={(e) => deleteChatSession(session.id, e)}
+                          onClick={(e) => void deleteChatSession(session.id, e)}
+                          disabled={deletingChatId !== null}
+                          aria-label={`${currentLanguage === 'zh-CN' ? '删除会话' : 'Delete conversation'}: ${session.title}`}
                         >
                           <Trash2 className="w-2.5 h-2.5" />
                         </Button>
@@ -779,7 +774,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
         </div>
 
         {/* 主内容区域 */}
-        <main className="min-w-0 flex-1 overflow-hidden bg-background">
+        <main className="min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
           <ModelSelectionContext.Provider value={{ selectedModel, selectModel }}>
             {children}
           </ModelSelectionContext.Provider>

@@ -239,13 +239,15 @@ class RequestProxy:
             logger.debug(f"🔧 请求头: {headers}")
             logger.debug(f"🔧 超时设置: {timeout}秒")
 
-            response = await self.client.request(
+            upstream_request = self.client.build_request(
                 method=method,
                 url=url,
                 headers=headers,
                 content=content,
                 timeout=timeout
             )
+
+            response = await self.client.send(upstream_request, stream=True)
 
             logger.debug(f"✅ Gateway请求成功: {method} {url} -> {response.status_code}")
             return response
@@ -338,6 +340,8 @@ class RequestProxy:
                 logger.error(f"流式响应处理错误: {str(e)}")
                 error_msg = "Processing error, please retry"
                 yield f"data: {{\"error\":\"{error_msg}\"}}\n\n".encode('utf-8')
+            finally:
+                await response.aclose()
 
         return StreamingResponse(
             content=generate(),

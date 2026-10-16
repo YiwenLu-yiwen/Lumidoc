@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import TextareaAutosize from 'react-textarea-autosize';
@@ -8,7 +8,8 @@ import {
   Edit3, 
   Trash2, 
   History, 
-  Send, 
+  Send,
+  Square,
   MessageSquare, 
   User,
   Bot,
@@ -18,7 +19,9 @@ import {
 } from 'lucide-react';
 import { useTheme } from '@/context/ThemeContext';
 import { useLanguage } from '@/context/LanguageContext';
+import { useProjects } from '@/context/ProjectContext';
 import { useSelectedModel } from '@/hooks/useModel';
+import { deleteConversation } from '@/api/conversations';
 import { createChatRequestPayload } from './chatRequest';
 
 // 导入迁移按钮组件
@@ -163,22 +166,47 @@ interface MigrationResult {
 const MAX_MESSAGES = 500;
 
 export default function ChatLayout() {
-  const { projectId } = useParams<{ projectId: string }>();
+  const { projectId: routeProjectId } = useParams<{ projectId: string }>();
+  const { projects } = useProjects();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const projectId = routeProjectId || projects[0]?.id;
+  const storageKey = `lumidoc-conversation:${projectId || 'default'}`;
+  const conversationId = searchParams.get('conversation') || sessionStorage.getItem(storageKey) || 'legacy';
+  useEffect(() => { sessionStorage.setItem(storageKey, conversationId); }, [storageKey, conversationId]);
+  useEffect(() => {
+    const onDeleted = (event: Event) => {
+      const detail = (event as CustomEvent<{ projectId: string; conversationId: string }>).detail;
+      if (detail.projectId !== projectId || detail.conversationId !== conversationId) return;
+      const nextId = crypto.randomUUID();
+      sessionStorage.setItem(storageKey, nextId);
+      setSearchParams(params => { params.set('conversation', nextId); return params; }, { replace: true });
+    };
+    window.addEventListener('conversation-deleted', onDeleted);
+    return () => window.removeEventListener('conversation-deleted', onDeleted);
+  }, [projectId, conversationId, storageKey, setSearchParams]);
+  return <ChatConversation key={`${projectId}/${conversationId}`} projectId={projectId} conversationId={conversationId} />;
+}
+
+function ChatConversation({ projectId, conversationId }: { projectId?: string; conversationId: string }) {
   const { selectedModel } = useSelectedModel();
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const followBottom = useRef(true);
+  const submitting = useRef(false);
+  const streamFinished = useRef<Promise<void> | null>(null);
+  const [streamAccepted, setStreamAccepted] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editMessageId, setEditMessageId] = useState<string | null>(null);
   const [isComposing, setIsComposing] = useState(false);
   const [streamingComplete, setStreamingComplete] = useState(true);
-  const [showStreamingAlert, setShowStreamingAlert] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
-  const forceRefreshTimer = useRef<NodeJS.Timeout | null>(null);
-  const [requestTimeout, setRequestTimeout] = useState<NodeJS.Timeout | null>(null);
+  const requestTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const historyRequest = useRef(0);
+  const [backgroundPending, setBackgroundPending] = useState(false);
   const [, setEditOriginalValue] = useState('');
   const [, setInitialized] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
@@ -246,21 +274,20 @@ export default function ChatLayout() {
 
   // 滚动到底部
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = messagesContainerRef.current;
+    if (container && followBottom.current) container.scrollTop = container.scrollHeight;
   };
 
-  // 当消息变化时滚动到底部 - 修改为只在特定情况下滚动
+  // 只跟随消息容器底部；用户阅读历史时保留其滚动位置。
   useEffect(() => {
-    // 只有在发送新消息或接收新消息时才滚动到底部
-    if (isLoading || (!streamingComplete && messages.length > 0 && !messages[messages.length - 1].isUser)) {
-      scrollToBottom();
-    }
-  }, [messages, isLoading, streamingComplete]);
+    scrollToBottom();
+  }, [messages]);
 
   // 优化处理滚动事件，防止不必要的黄色警告显示
   useEffect(() => {
     const handleScroll = () => {
-      // 滚动时不触发警告，除非是用户手动取消请求
+      const container = messagesContainerRef.current;
+      if (container) followBottom.current = container.scrollHeight - container.scrollTop - container.clientHeight < 80;
     };
     
     // 为消息容器添加滚动事件监听器
@@ -279,6 +306,7 @@ export default function ChatLayout() {
   // 加载聊天历史 - 修改为支持存档消息和分页
   const loadChatHistory = useCallback(async (includeArchivedMessages = false, page = 0) => {
     if (loadedRef.current && !includeArchivedMessages && page === 0) return;
+    const requestId = ++historyRequest.current;
     
     try {
       const token = localStorage.getItem('lumidoc_token');
@@ -286,7 +314,7 @@ export default function ChatLayout() {
       
       const gatewayUrl = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8888';
       // 构建包含归档参数的URL - 通过Gateway访问
-      const url = `${gatewayUrl}/chat/api/chat/history/${projectId || 'default'}?user_id=${userId}&include_archived=${includeArchivedMessages}&offset=${page * 50}&limit=50`;
+      const url = `${gatewayUrl}/chat/api/chat/history/${projectId || 'default'}?user_id=${userId}&include_archived=${includeArchivedMessages}&offset=${page * 50}&limit=50&session_id=${encodeURIComponent(conversationId)}`;
       
       console.log('正在加载聊天历史，请求URL:', url);
       
@@ -299,6 +327,8 @@ export default function ChatLayout() {
       
       if (response.ok) {
         const data = await response.json();
+        // 丢弃项目切换或发送新消息之前发起的历史请求。
+        if (requestId !== historyRequest.current) return;
         if (data && Array.isArray(data) && data.length > 0) {
           // 转换历史消息格式并加载
           const historyMessages = (data as ChatHistoryMessage[]).map((msg) => ({
@@ -311,8 +341,8 @@ export default function ChatLayout() {
           console.log(`已加载 ${historyMessages.length} 条聊天历史`);
           
           // 如果是加载更多历史消息，则追加到现有消息末尾
-          if (page > 0 || includeArchivedMessages) {
-            setMessages(prev => [...prev, ...historyMessages]);
+          if (page > 0) {
+            setMessages(prev => Array.from(new Map([...historyMessages, ...prev].map(msg => [msg.id, msg])).values()));
           } else {
             setMessages(historyMessages);
           }
@@ -340,7 +370,7 @@ export default function ChatLayout() {
     if (!includeArchivedMessages && page === 0) {
       loadedRef.current = true;
     }
-  }, [projectId]);
+  }, [projectId, conversationId]);
 
   // 加载更多历史消息
   const loadMoreHistory = () => {
@@ -354,89 +384,21 @@ export default function ChatLayout() {
     const newValue = !includeArchived;
     setIncludeArchived(newValue);
     setHistoryPage(0); // 重置分页
-    loadChatHistory(newValue, 0); // 重新加载消息
+    loadedRef.current = false;
+    void loadChatHistory(newValue, 0); // 重新加载消息
   };
 
-  // 保存消息到数据库
-  const saveChatMessage = async (message: Message) => {
-    try {
-      const token = localStorage.getItem('lumidoc_token');
-      const userId = JSON.parse(localStorage.getItem('lumidoc_user') || '{}').id || 'unknown';
-      
-      const gatewayUrl = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8888';
-      const url = `${gatewayUrl}/chat/api/chat/save`;
-      
-      console.log('正在保存聊天消息，请求URL:', url, 'message:', message);
-      
-      const messageData = {
-        id: message.id,
-        content: message.content,
-        role: message.isUser ? 'user' : 'assistant',
-        user_id: userId,
-        project_id: projectId || 'default',
-        timestamp: message.timestamp
-      };
-      
-      console.log('准备发送的消息数据:', messageData);
-      
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(messageData)
-      });
-          
-      if (response.ok) {
-        console.log('保存聊天消息成功');
-        const result = await response.json();
-        console.log('保存结果:', result);
-      } else {
-        const errorText = await response.text();
-        console.error('保存聊天消息失败:', response.statusText, errorText);
-      }
-    } catch (error) {
-      console.error('保存聊天消息失败:', error);
-      setLastError(error instanceof Error ? error.message : '保存聊天消息失败');
-    }
-  };
-              
   // 清除聊天历史
+  const [isDeleting, setIsDeleting] = useState(false);
   const clearChatHistory = async () => {
-    if (!confirm('确定要清除所有聊天记录吗？此操作不可撤销。')) return;
-    
+    if (!projectId || isDeleting) return;
+    if (!confirm(currentLanguage === 'zh-CN' ? '确定要删除当前会话吗？' : 'Delete this conversation?')) return;
+    setIsDeleting(true);
     try {
-      const token = localStorage.getItem('lumidoc_token');
-      const userId = JSON.parse(localStorage.getItem('lumidoc_user') || '{}').id || 'unknown';
-      
-      const gatewayUrl = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8888';
-      // 修正API路径，确保使用正确的端点 - 通过Gateway访问
-      const url = `${gatewayUrl}/chat/api/chat/history/${projectId || 'default'}?user_id=${userId}`;
-      
-      console.log('正在清除聊天历史，请求URL:', url);
-      
-      const response = await fetch(url, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (response.ok) {
-        setMessages([]);
-        console.log('聊天历史已成功清除');
-      } else {
-        console.error('清除聊天历史失败:', response.statusText);
-        const errorText = await response.text();
-        console.error('错误详情:', errorText);
-        alert('清除聊天历史失败，请稍后再试');
-      }
+      await deleteConversation(projectId, conversationId);
     } catch (error) {
-      console.error('清除聊天历史出错:', error);
-      setLastError(error instanceof Error ? error.message : '清除聊天历史出错');
-      alert('清除聊天历史出错，请稍后再试');
+      setLastError(error instanceof Error ? error.message : '会话删除失败');
+      setIsDeleting(false);
     }
   };
 
@@ -448,7 +410,9 @@ export default function ChatLayout() {
     setInitialized(true);
     console.log('ChatLayout组件已初始化，重置所有状态');
     
-    // 加载聊天历史
+    // 切换项目时重新读取历史，并清除上一项目的消息。
+    loadedRef.current = false;
+    setMessages([]);
     void loadChatHistory();
     
     // 清除任何可能存在的中断请求
@@ -464,6 +428,8 @@ export default function ChatLayout() {
     
     // 组件卸载时的清理
     return () => {
+      historyRequest.current++;
+      if (requestTimeout.current) clearTimeout(requestTimeout.current);
       if (abortControllerRef.current) {
         console.log('组件卸载，取消未完成的请求');
         
@@ -479,85 +445,59 @@ export default function ChatLayout() {
     };
   }, [loadChatHistory]);
 
-  // 强制重置状态函数 - 添加不显示黄色警告功能
-  const forceResetState = () => {
-    console.log('用户强制重置聊天状态');
-    
-    // 取消任何正在进行的请求
-    if (abortControllerRef.current) {
+  // 返回聊天页面时跟踪服务端任务，完成后重新加载已保存的回复。
+  useEffect(() => {
+    let disposed = false;
+    let wasPending = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
       try {
-        abortControllerRef.current.abort();
-      } catch (abortError) {
-        console.error('中断请求时出错:', abortError);
-      }
-      abortControllerRef.current = null;
-    }
-    
-    // 清除超时计时器
-    if (requestTimeout) {
-      clearTimeout(requestTimeout);
-      setRequestTimeout(null);
-    }
-    
-    // 清除刷新计时器
-    if (forceRefreshTimer.current) {
-      clearInterval(forceRefreshTimer.current);
-    }
-    
-    // 重置所有状态
-    setIsLoading(false);
-    setStreamingComplete(true);
-    setIsProcessing(false);
-    // 当用户手动点击重置按钮时才显示黄色警告
-    setShowStreamingAlert(true);
-    
-    // 强制立即重建刷新计时器
-    forceRefreshTimer.current = setInterval(() => {
-      setMessages(prevMessages => [...prevMessages]);
-    }, 5000);
-    
-    // 更新最后一条思考中的消息
-    setMessages(prev => {
-      const newMessages = [...prev];
-      let updated = false;
-      
-      // 找到最后一条思考中的消息
-      for (let i = newMessages.length - 1; i >= 0; i--) {
-        if (!newMessages[i].isUser && (!newMessages[i].content || newMessages[i].content.trim() === '')) {
-          // 将空消息替换为错误提示
-          newMessages[i] = {
-            ...newMessages[i],
-            content: "消息处理已被用户手动取消，请重新发送您的问题。"
-          };
-          updated = true;
-        break;
-      }
-    }
-    
-      // 如果没有找到空消息但有非用户消息，更新最后一条非用户消息
-      if (!updated) {
-        for (let i = newMessages.length - 1; i >= 0; i--) {
-          if (!newMessages[i].isUser) {
-            // 在内容后附加一个提示，告知用户状态已被重置
-            newMessages[i] = {
-              ...newMessages[i],
-              content: newMessages[i].content + "\n\n*消息处理已被用户手动中断并重置。*"
-            };
-            break;
-          }
+        const gatewayUrl = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8888';
+        const userId = JSON.parse(localStorage.getItem('lumidoc_user') || '{}').id || 'unknown';
+        const response = await fetch(`${gatewayUrl}/chat/api/chat/pending/${projectId || 'default'}?user_id=${encodeURIComponent(userId)}&session_id=${encodeURIComponent(conversationId)}`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem('lumidoc_token')}` },
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (disposed || typeof data.pending !== 'boolean') return;
+        setBackgroundPending(data.pending);
+        if (!abortControllerRef.current && wasPending && !data.pending) {
+          loadedRef.current = false;
+          await loadChatHistory();
         }
+        wasPending = data.pending;
+      } catch {
+        // 暂时的网络错误不影响当前对话，下一次继续检查。
+      } finally {
+        if (!disposed) timer = setTimeout(poll, 2000);
       }
-      
-      return newMessages;
-    });
-    
-    // 通知用户状态已重置
-    alert('聊天状态已被强制解除锁定，现在您可以正常发送消息了');
-    
-    // 3秒后隐藏提示条
-    setTimeout(() => {
-      setShowStreamingAlert(false);
-    }, 3000);
+    };
+    void poll();
+    return () => { disposed = true; clearTimeout(timer); };
+  }, [projectId, conversationId, loadChatHistory]);
+
+  const stopGeneration = async () => {
+    if (isStopping) return;
+    setIsStopping(true);
+    setLastError(null);
+    try {
+      const gatewayUrl = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8888';
+      const userId = JSON.parse(localStorage.getItem('lumidoc_user') || '{}').id || 'unknown';
+      const response = await fetch(`${gatewayUrl}/chat/api/chat/stop/${projectId || 'default'}?user_id=${encodeURIComponent(userId)}&session_id=${encodeURIComponent(conversationId)}`, {
+        method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('lumidoc_token')}` },
+      });
+      if (!response.ok) throw new Error(currentLanguage === 'zh-CN' ? '停止生成失败，请重试。' : 'Could not stop generation. Please retry.');
+      // 等待已取消的流退出，避免上一请求的清理影响下一条消息。
+      await streamFinished.current;
+      setBackgroundPending(false);
+      loadedRef.current = false;
+      await loadChatHistory();
+      window.dispatchEvent(new Event('chat-updated'));
+    } catch (error) {
+      setLastError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsStopping(false);
+    }
   };
 
   // UI交互处理函数
@@ -602,27 +542,31 @@ export default function ChatLayout() {
     setShowDebugPanel(!showDebugPanel);
   };
   
-  const handleManualReset = () => {
-    forceResetState();
-  };
-
   // 消息提交处理 - 添加避免频繁显示警告的逻辑
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     
     // 如果已经在处理中，直接返回
-    if (isProcessing || !streamingComplete || isLoading || !inputValue.trim()) {
+    if (isStopping || submitting.current || backgroundPending || isProcessing || !streamingComplete || isLoading || !inputValue.trim()) {
       return;
     }
     
+    let finishStream!: () => void;
+    streamFinished.current = new Promise(resolve => { finishStream = resolve; });
+    setStreamAccepted(false);
     try {
+      submitting.current = true;
+      followBottom.current = true;
+      // 新消息优先，未完成的历史读取不能覆盖当前对话。
+      historyRequest.current++;
+      loadedRef.current = true;
       // 设置为处理中状态
       setIsProcessing(true);
       setStreamingComplete(false);
       
-      // 添加超时处理 - 30秒后自动中断请求但不显示黄色警告
+      // 为本地模型预留首次加载和检索时间，到期后解除输入锁定。
       const timeoutId = setTimeout(() => {
-        console.log('请求超时(30秒)，自动中断');
+        console.log('聊天请求超时，自动中断');
         if (abortControllerRef.current) {
           abortControllerRef.current.abort();
           abortControllerRef.current = null;
@@ -636,7 +580,7 @@ export default function ChatLayout() {
             if (!newMessages[i].isUser && !newMessages[i].content) {
               newMessages[i] = {
                 ...newMessages[i],
-                content: "请求超时，请重新发送您的问题或稍后再试。如果问题持续，请尝试使用右下角的\"解除锁定状态\"按钮。"
+                content: "请求超时，请重新发送您的问题或稍后再试。"
               };
               break;
             }
@@ -650,9 +594,9 @@ export default function ChatLayout() {
         setStreamingComplete(true);
         
         // 超时时不显示黄色警告，避免滚动时警告频繁弹出
-      }, 30000); // 30秒超时
+      }, 180000); // 本地模型首次响应最多等待三分钟
       
-      setRequestTimeout(timeoutId);
+      requestTimeout.current = timeoutId;
       
       // 添加强制滚动的计时器，确保思考中动画显示
       setTimeout(() => {
@@ -680,9 +624,7 @@ export default function ChatLayout() {
             return arr.length > MAX_MESSAGES ? arr.slice(-MAX_MESSAGES) : arr;
           });
       
-      // 使用专用函数保存用户消息到数据库
-      console.log('保存用户消息到数据库');
-      await saveChatMessage(userMessage);
+      // 用户消息和最终回复由服务端统一保存。
       
       // 强制滚动到底部显示思考中动画
       setTimeout(() => {
@@ -719,6 +661,7 @@ export default function ChatLayout() {
             projectId,
             userId: JSON.parse(localStorage.getItem('lumidoc_user') || '{}').id,
             modelId: selectedModel?.id,
+            conversationId,
           })),
             signal: controller.signal,
           });
@@ -727,6 +670,7 @@ export default function ChatLayout() {
           throw new Error(`API返回状态码 ${response.status}`);
         }
           
+        setStreamAccepted(true);
         if (!response.body) {
           throw new Error('No response body');
         }
@@ -745,7 +689,7 @@ export default function ChatLayout() {
             
             if (value) {
               // 解码二进制数据
-              const chunk = decoder.decode(value);
+              const chunk = decoder.decode(value, { stream: true });
               buffer += chunk;
               
               // 处理可能的多行SSE数据
@@ -771,6 +715,10 @@ export default function ChatLayout() {
                       continue;
                     }
                     
+                    if (data.stopped) {
+                      setMessages(prev => prev.map((m, idx) => idx === prev.length - 1 && !m.isUser && !m.content
+                        ? { ...m, content: currentLanguage === 'zh-CN' ? '已停止生成。' : 'Generation stopped.' } : m));
+                    }
                     // 如果是完成标记
                     if (data.done) {
                       done = true;
@@ -780,7 +728,7 @@ export default function ChatLayout() {
                     // 累积回复内容
                     if (data.content) {
                       // 处理特殊标记
-                      const processedContent = processSpecialFormat(data.content);
+                      const processedContent = data.content;
                       aiReply += processedContent;
                       
                       // 解析思考模型的输出
@@ -788,8 +736,7 @@ export default function ChatLayout() {
                       
                       // 检查是否含有完成标记
                       if (data.content.includes("<COMPLETE>") || 
-                          data.content.includes("<|COMPLETE|>") ||
-                          data.content.includes("COMPLETE")) {
+                          data.content.includes("<|COMPLETE|>")) {
                         console.log('在内容中检测到完成标记');
                         done = true;
                         setStreamingComplete(true);
@@ -836,27 +783,12 @@ export default function ChatLayout() {
           setIsLoading(false);
           setIsProcessing(false);
           console.log('消息流式处理完成，状态已重置');
+          window.dispatchEvent(new Event('chat-updated'));
           
-          // 保存AI回复到数据库
-          if (aiReply) {
-            // 解析最终的思考内容和回答
-            const finalParsed = parseThinkingModelOutput(aiReply);
-            const aiMessage: Message = {
-              id: (Date.now() + 2).toString(),
-              content: finalParsed.answer || aiReply,
-              isUser: false,
-              timestamp: new Date().toISOString(),
-              thinking: finalParsed.thinking || undefined,
-            };
-            
-            console.log('保存AI回复到数据库');
-            await saveChatMessage(aiMessage);
-          }
-        
         // 清除请求超时
-        if (requestTimeout) {
-          clearTimeout(requestTimeout);
-          setRequestTimeout(null);
+        if (requestTimeout.current) {
+          clearTimeout(requestTimeout.current);
+          requestTimeout.current = null;
         }
         } catch (error: unknown) {
           // 确保错误情况下也重置所有状态
@@ -910,9 +842,9 @@ export default function ChatLayout() {
         abortControllerRef.current = null;
             
         // 清除请求超时
-        if (requestTimeout) {
-          clearTimeout(requestTimeout);
-          setRequestTimeout(null);
+        if (requestTimeout.current) {
+          clearTimeout(requestTimeout.current);
+          requestTimeout.current = null;
                 }
               }
       } catch (error: unknown) {
@@ -923,10 +855,14 @@ export default function ChatLayout() {
         setIsLoading(false);
       
       // 清除请求超时
-      if (requestTimeout) {
-        clearTimeout(requestTimeout);
-        setRequestTimeout(null);
+      if (requestTimeout.current) {
+        clearTimeout(requestTimeout.current);
+        requestTimeout.current = null;
       }
+    } finally {
+      submitting.current = false;
+      setStreamAccepted(false);
+      finishStream();
     }
   };
     
@@ -1002,10 +938,12 @@ export default function ChatLayout() {
           </button>
           <button 
             onClick={clearChatHistory}
+            disabled={isDeleting}
             className={`p-2 rounded-lg transition-colors ${
               isDarkMode ? 'text-gray-400 hover:text-white hover:bg-gray-700' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
             }`}
-            title={currentLanguage === 'zh-CN' ? '清除所有聊天记录' : 'Clear All Chat History'}
+            title={currentLanguage === 'zh-CN' ? '删除当前会话' : 'Delete current conversation'}
+            aria-label={currentLanguage === 'zh-CN' ? '删除当前会话' : 'Delete current conversation'}
           >
             <Trash2 className="w-5 h-5" />
           </button>
@@ -1094,11 +1032,12 @@ export default function ChatLayout() {
       )}
       
       {/* 主要聊天区域 - 使用相对定位和灵活布局 */}
-      <div className="relative flex-1 flex flex-col overflow-hidden">
+      <div className="relative min-h-0 flex-1 flex flex-col overflow-hidden">
         {/* 滚动消息区域 - 填充可用空间 */}
         <div 
           ref={messagesContainerRef}
-          className="flex-1 overflow-y-auto py-6 px-6 pb-6 md:pb-8"
+          aria-label="Chat messages"
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-6 px-6 pb-6 md:pb-8"
         >
           {messages.length === 0 ? (
             /* 空消息状态 - 完全居中显示 */
@@ -1256,16 +1195,22 @@ export default function ChatLayout() {
                   </div>
                 </div>
               ))}
-              <div ref={messagesEndRef} />
+
             </div>
           )}
         </div>
         
         {/* 输入区域固定在底部 */}
-        <div className={`w-full border-t py-4 px-4 md:px-6 sticky bottom-0 z-10 transition-colors duration-300 ${
+        <div className={`w-full shrink-0 border-t py-4 px-4 md:px-6 z-10 transition-colors duration-300 ${
           isDarkMode ? 'border-gray-800 bg-[#212121]' : 'border-gray-200 bg-white'
         }`}>
           <div className="max-w-4xl mx-auto">
+            {backgroundPending && !isLoading && (
+              <p role="status" className="mb-2 text-sm text-blue-600">
+                {currentLanguage === 'zh-CN' ? '回复正在后台生成，离开页面后仍会继续' : 'Reply continues in the background'}
+              </p>
+            )}
+            {lastError && <p role="alert" className="mb-2 text-sm text-red-600">{lastError}</p>}
             <form onSubmit={handleSubmit} className={`relative rounded-2xl shadow-lg transition-colors duration-300 ${
               isDarkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-200'
             }`}>
@@ -1283,22 +1228,24 @@ export default function ChatLayout() {
                 }`}
                 minRows={1}
                 maxRows={6}
-                disabled={isProcessing || !streamingComplete || isLoading}
+                disabled={backgroundPending || isProcessing || !streamingComplete || isLoading}
               />
-              <button
-                type="submit"
-                className={`absolute bottom-3 right-3 p-2 rounded-xl transition-all duration-200 ${
-                  isProcessing || !streamingComplete || isLoading || !inputValue.trim()
-                    ? 'text-gray-400 cursor-not-allowed'
-                    : isDarkMode
-                      ? 'text-gray-400 hover:text-white hover:bg-blue-600'
-                      : 'text-gray-500 hover:text-white hover:bg-blue-500'
-                }`}
-                disabled={isProcessing || !streamingComplete || isLoading || !inputValue.trim()}
-              >
-                <Send className="w-4 h-4" />
-              </button>
-              
+              {(backgroundPending || isProcessing || !streamingComplete || isLoading || isStopping) ? (
+                <button type="button" onClick={() => void stopGeneration()}
+                  disabled={isStopping || (!streamAccepted && !backgroundPending)}
+                  aria-label={currentLanguage === 'zh-CN' ? '停止生成' : 'Stop generating'}
+                  className="absolute bottom-3 right-3 flex items-center gap-1 rounded-lg bg-red-50 px-2 py-1 text-sm text-red-700 disabled:opacity-50">
+                  <Square className="h-3 w-3" fill="currentColor" />
+                  {isStopping ? (currentLanguage === 'zh-CN' ? '正在停止…' : 'Stopping…') : (currentLanguage === 'zh-CN' ? '停止生成' : 'Stop generating')}
+                </button>
+              ) : (
+                <button type="submit" disabled={!inputValue.trim()}
+                  aria-label={currentLanguage === 'zh-CN' ? '发送消息' : 'Send message'}
+                  className="absolute bottom-3 right-3 rounded-xl p-2 text-blue-600 disabled:text-gray-400">
+                  <Send className="w-4 h-4" />
+                </button>
+              )}
+
               {/* 调试开关按钮 */}
               {DEBUG_MODE && (
                 <button
@@ -1328,55 +1275,6 @@ export default function ChatLayout() {
             )}
           </div>
         </div>
-      </div>
-      
-      {/* 思考中状态弹窗 */}
-      {showStreamingAlert && (
-        <div className={`fixed top-20 right-4 px-4 py-3 rounded-xl shadow-lg z-50 transition-colors duration-300 ${
-          isDarkMode ? 'bg-yellow-600 text-white' : 'bg-yellow-100 text-yellow-800 border border-yellow-200'
-        }`}>
-          <div className="flex items-center space-x-2">
-            <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
-            <span className="text-sm font-medium">
-              {currentLanguage === 'zh-CN' ? '消息处理被中断，已重置状态' : 'Message processing interrupted, status reset'}
-            </span>
-          </div>
-        </div>
-      )}
-      
-      {/* 状态指示器和控制按钮 */}
-      <div className="fixed bottom-24 right-6 z-40 space-y-3">
-        {!streamingComplete && (
-          <div className={`px-4 py-2 rounded-xl text-sm flex items-center gap-2 shadow-lg transition-colors duration-300 ${
-            isDarkMode ? 'bg-blue-600 text-white border border-blue-500' : 'bg-blue-50 text-blue-700 border border-blue-200'
-          }`}>
-            <div className="flex space-x-1">
-              <div className={`w-2 h-2 rounded-full animate-pulse ${
-                isDarkMode ? 'bg-white' : 'bg-blue-500'
-              }`}></div>
-              <div className={`w-2 h-2 rounded-full animate-pulse ${
-                isDarkMode ? 'bg-white' : 'bg-blue-500'
-              }`} style={{ animationDelay: '0.2s' }}></div>
-              <div className={`w-2 h-2 rounded-full animate-pulse ${
-                isDarkMode ? 'bg-white' : 'bg-blue-500'
-              }`} style={{ animationDelay: '0.4s' }}></div>
-            </div>
-            <span className="font-medium">
-              {currentLanguage === 'zh-CN' ? 'AI正在思考...' : 'AI is thinking...'}
-            </span>
-          </div>
-        )}
-        <button
-          onClick={handleManualReset}
-          className={`px-3 py-2 rounded-xl text-xs shadow-lg transition-all duration-200 ${
-            isDarkMode 
-              ? 'bg-red-600 hover:bg-red-700 text-white' 
-              : 'bg-red-50 hover:bg-red-100 text-red-700 border border-red-200'
-          } opacity-70 hover:opacity-100`}
-          title={currentLanguage === 'zh-CN' ? '当AI回复卡住时，使用此按钮重置聊天状态' : 'Use this button to reset chat status when AI reply gets stuck'}
-        >
-          {currentLanguage === 'zh-CN' ? '解除锁定状态' : 'Unlock Status'}
-        </button>
       </div>
       
       {/* 调试面板 */}

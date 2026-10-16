@@ -117,7 +117,7 @@ def migrate_old_messages_to_db(db: Session, days: int = 30) -> Dict[str, Any]:
                                 role=msg_data.get('role', 'unknown'),
                                 content=msg_data.get('content', ''),
                                 timestamp=msg_timestamp,
-                                meta_data={"source": "redis_migration", "migrated_at": utc_now().isoformat()}
+                                meta_data={"source": "redis_migration", "migrated_at": utc_now().isoformat(), "session_id": msg_data.get("session_id", "legacy")}
                             )
                             
                             # 保存到数据库

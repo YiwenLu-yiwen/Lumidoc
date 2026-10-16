@@ -3,6 +3,7 @@ export interface ChatRequestPayloadInput {
   projectId?: string;
   userId?: string;
   modelId?: string;
+  conversationId?: string;
 }
 
 export interface ChatRequestPayload {
@@ -13,6 +14,7 @@ export interface ChatRequestPayload {
   use_graph: true;
   user_id: string;
   model?: string;
+  session_id: string;
 }
 
 export function createChatRequestPayload({
@@ -20,9 +22,11 @@ export function createChatRequestPayload({
   projectId,
   userId,
   modelId,
+  conversationId,
 }: ChatRequestPayloadInput): ChatRequestPayload {
   return {
     content,
+    session_id: conversationId || "legacy",
     message: content,
     project_id: projectId || 'default',
     search_mode: 'hybrid',

@@ -7,6 +7,7 @@ Ollama适配器实现
 """
 
 import logging
+import os
 import json
 import httpx
 from typing import Dict, List, Any, Optional, AsyncGenerator, Union
@@ -35,6 +36,27 @@ class OllamaAdapter(BaseLLMAdapter):
         self.timeout = timeout
         logger.info(f"初始化Ollama适配器: model={model_name}, url={base_url}")
     
+    @staticmethod
+    def _generation_parameters(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        """将统一接口参数转换为 Ollama 的运行选项。"""
+        options = dict(kwargs.get("options") or {})
+        if threads := os.getenv("OLLAMA_NUM_THREADS"):
+            options.setdefault("num_thread", int(threads))
+        aliases = {"max_tokens": "num_predict", "stop_sequences": "stop"}
+        option_keys = {"temperature", "top_p", "top_k", "seed", "repeat_penalty", "num_ctx", "num_thread"}
+        # 当前输出协议只消费正文；需要独立思考输出的调用方可显式开启。
+        params = {"think": False}
+        for key, value in kwargs.items():
+            if value is None or key == "options":
+                continue
+            if key in aliases or key in option_keys:
+                options[aliases.get(key, key)] = value
+            else:
+                params[key] = value
+        if options:
+            params["options"] = options
+        return params
+
     async def generate(self, 
                      prompt: str, 
                      system_prompt: Optional[str] = None,
@@ -62,9 +84,7 @@ class OllamaAdapter(BaseLLMAdapter):
             params["system"] = system_prompt
         
         # 添加其他参数
-        for key, value in kwargs.items():
-            if value is not None:
-                params[key] = value
+        params.update(self._generation_parameters(kwargs))
         
         # 调用API
         url = f"{self.base_url}/api/generate"
@@ -115,9 +135,7 @@ class OllamaAdapter(BaseLLMAdapter):
             params["system"] = system_prompt
         
         # 添加其他参数
-        for key, value in kwargs.items():
-            if value is not None:
-                params[key] = value
+        params.update(self._generation_parameters(kwargs))
         
         # 调用API
         url = f"{self.base_url}/api/generate"
@@ -160,9 +178,7 @@ class OllamaAdapter(BaseLLMAdapter):
         }
         
         # 添加其他参数
-        for key, value in kwargs.items():
-            if value is not None:
-                params[key] = value
+        params.update(self._generation_parameters(kwargs))
         
         # 调用API
         url = f"{self.base_url}/api/chat"
@@ -207,25 +223,23 @@ class OllamaAdapter(BaseLLMAdapter):
         Yields:
             str: 生成的回复片段
         """
-        # Ollama的chat API需要特殊处理
-        system_prompt = None
-        prompt = ""
-        
-        # 提取系统提示词和最后一条用户消息
-        for message in messages:
-            if message["role"] == "system":
-                system_prompt = message["content"]
-            elif message["role"] == "user":
-                prompt = message["content"]
-        
-        # 如果没有用户消息，使用最后一条消息
-        if not prompt and messages:
-            prompt = messages[-1]["content"]
-        
-        # 调用generate_stream方法
-        async for chunk in self.generate_stream(prompt, system_prompt, **kwargs):
-            yield chunk
-    
+        params = {"model": self.model_name, "messages": messages, "stream": True}
+        params.update(self._generation_parameters(kwargs))
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with client.stream("POST", f"{self.base_url}/api/chat", json=params) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.strip():
+                        continue
+                    data = json.loads(line)
+                    if data.get("error"):
+                        raise RuntimeError(data["error"])
+                    content = data.get("message", {}).get("content", "")
+                    if content:
+                        yield content
+                    if data.get("done"):
+                        break
+
     async def create_embedding(self, 
                              texts: Union[str, List[str]]) -> List[List[float]]:
         """
