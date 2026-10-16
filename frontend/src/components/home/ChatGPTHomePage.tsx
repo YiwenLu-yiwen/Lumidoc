@@ -5,6 +5,7 @@ import {
   Brain, 
   ArrowRight,
   LogIn,
+  Globe,
   ChevronDown,
   Shield,
   Network,
@@ -23,6 +24,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@/context/ThemeContext';
 import { useLanguage } from '@/context/LanguageContext';
+import { supportedLanguages } from '@/utils/language';
 
 interface FeatureCard {
   title: string;
@@ -39,7 +41,7 @@ export function ChatGPTHomePage() {
   const navigate = useNavigate();
   const { isDarkMode } = useTheme();
   
-  const { t } = useLanguage();
+  const { t, currentLanguage, setLanguage } = useLanguage();
 
   // 动画演示状态管理
   const [animationStep, setAnimationStep] = useState(0);
@@ -317,7 +319,7 @@ export function ChatGPTHomePage() {
         isDarkMode ? 'border-gray-800 bg-[#171717]' : 'border-gray-200 bg-white'
       }`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex h-16 items-center justify-between gap-2">
+          <div className="flex min-h-16 flex-wrap items-center justify-between gap-3 py-3 sm:flex-nowrap sm:py-0">
             {/* 左侧：Logo和品牌 */}
             <div className="flex items-center space-x-3">
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
@@ -330,8 +332,23 @@ export function ChatGPTHomePage() {
               </h1>
             </div>
 
-            {/* 右侧：登录注册按钮 */}
-            <div className="flex items-center space-x-2 sm:space-x-4">
+            {/* 右侧：语言选择和账号入口 */}
+            <div className="ml-auto flex items-center space-x-2 sm:space-x-4">
+              <div className="relative">
+                <Globe aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2" />
+                <select
+                  aria-label={t('language')}
+                  value={currentLanguage}
+                  onChange={event => setLanguage(event.target.value)}
+                  className={`h-10 rounded-md border py-2 pl-8 pr-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    isDarkMode ? 'border-gray-600 bg-[#171717] text-gray-100' : 'border-gray-300 bg-white text-gray-900'
+                  }`}
+                >
+                  {supportedLanguages.map(language => (
+                    <option key={language.code} value={language.code}>{language.name}</option>
+                  ))}
+                </select>
+              </div>
               {!user ? (
                 <>
                   <Button
