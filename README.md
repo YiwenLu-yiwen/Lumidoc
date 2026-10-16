@@ -1,71 +1,151 @@
 # Lumidoc
 
-Language: **English** | [简体中文](./README.zh-CN.md)
+**Turn documents into searchable knowledge and conversations.**
 
-Lumidoc is a modular intelligent document platform built around RAG, graph knowledge, and multi-service processing. It supports file ingestion, semantic retrieval, document-grounded chat, QA workflows, and service-level observability.
+**English** · [简体中文](./README.zh-CN.md)
 
-## Features
+Lumidoc is a self-hosted document workspace. Upload files, extract readable text
+(including scanned PDF pages), organize them by project, and ask questions using
+local AI models. The default Docker stack runs Ollama, storage, databases, and
+application services on your own machine.
 
-- Multi-service architecture for file, chat, graph, auth, RAG, and monitoring modules
-- Support for local storage and S3/MinIO object storage
-- PostgreSQL (`pgvector`) + Redis + Neo4j integration
-- Docker-only runtime, including the local chat and embedding models
-- Extensible module layout under `src/modules`
+## What can I do with it?
 
-## Repository Structure
+| Your task | How Lumidoc helps |
+| --- | --- |
+| Find an answer buried in several files | Import processed documents into a project's knowledge base, then query it with LightRAG. |
+| Read a scanned PDF | Extract its text with local OCR; preview and download the processed Markdown. |
+| Keep work for different topics separate | Create projects with their own documents, knowledge bases, and conversations. |
+| Ask follow-up questions | Continue a saved conversation; stop generation when needed. Replies can finish while you visit another page. |
+| Explore connections between documents | Import documents into the knowledge base and inspect the extracted graph. Results depend on the document content and extraction quality. |
+| Write something without using your files | Use chat for drafting and general questions, with or without document references. |
 
-```text
-.
-├── src/                    # Core backend modules and shared libraries
-├── frontend/               # Frontend application
-├── scripts/                # Setup, diagnostics, and maintenance scripts
-├── docs/                   # Architecture and analysis documents
-├── docker-compose.yml      # Containerized deployment
-├── start_services.sh       # Portable one-command Docker startup
-└── stop_services.sh        # Portable one-command Docker shutdown
+The interface supports English and Simplified Chinese. Conversation deletion is
+synchronized between the sidebar and chat view. Document lists persist across
+refreshes, and preview/download use the processed content rather than the original
+upload.
+
+## How it works
+
+```mermaid
+flowchart LR
+    A[Upload to a project] --> B[File processing]
+    B --> C[Text extraction / local PDF OCR]
+    C --> D[Preview and download processed text]
+    C --> E[Import into knowledge base]
+    E --> F[LightRAG index and graph]
+    F --> G[Retrieve relevant context]
+    G --> H[Local Ollama model]
+    Q[Your question and conversation] --> H
+    H --> I[Stream and save the answer]
 ```
 
-## Quick Start
+Uploading and knowledge-base import are separate steps. Chat retrieves document
+context through LightRAG and generates a response through the LLM service.
+The knowledge-base query panel uses hybrid retrieval. Model files are downloaded
+on first startup; default PDF extraction and inference run locally afterward.
+Optional model providers can be configured separately.
 
-### 1. Prerequisites
+## Quick start
 
-- Docker with Docker Compose support
+### Requirements
 
-### 2. Configure Environment
+- Docker Engine or Docker Desktop, with Docker Compose v2 and a POSIX shell
+  (Linux/macOS; use WSL2 on Windows).
+- Internet access for the first image build, dependencies, and model downloads.
+- Enough Docker memory and disk for the full stack. A practical starting point is
+  **16 GB RAM and 30 GB free disk**; this is guidance, not a tested minimum.
 
-```bash
-cp .env.example .env
-```
+### Start
 
-Update `.env` values as needed. The default model runtime is the CPU-compatible
-Ollama container; no host model server or hardware-specific runtime is required.
+From the repository directory:
 
-### 3. Start Services
-
-```bash
+```sh
 ./start_services.sh
 ```
 
-The script validates the Compose configuration, builds every application module,
-starts the complete stack, provisions the configured models, and waits for health
-checks. The same script is used on every Docker-supported host.
+On first run, the script creates a private `.env` with random credentials, builds
+missing images, starts the services, downloads the configured models, and waits
+for service health checks. It preserves an existing `.env` and existing data.
+The first run can take several minutes, especially while downloading models.
+MinIO is built from a pinned source release.
 
-### 4. Stop Services
+Open **[http://localhost:3000](http://localhost:3000)**, register an account, and:
 
-```bash
-./stop_services.sh
+1. Create a project.
+2. Upload a document and wait for processing to complete.
+3. Open the preview or download the processed text.
+4. Import the document into the project's knowledge base.
+5. Ask a question in chat or the knowledge-base query panel.
+
+Default models: `qwen3:1.7b` for chat and `nomic-embed-text` for embeddings.
+No host Python, Node.js, GPU, API key, or separate Ollama installation is required.
+
+### Update, inspect, and stop
+
+```sh
+./start_services.sh --build             # Rebuild after changing source code
+docker compose ps                     # Check service state
+docker compose logs --tail=100 fileproc_service
+./stop_services.sh                     # Stop while preserving data volumes
 ```
 
-This removes containers and the Compose network while preserving database, object
-storage, and model volumes.
+If Docker is not running, start it first. For a failed first build, check network
+access and free disk space, then rerun the startup command. `--wait` checks service
+readiness; it does not prove every document or model response will succeed.
 
-## Module Docs
+## Configuration and deployment scope
 
-- Backend modules overview: [src/README.md](./src/README.md)
-- Script usage guide: [scripts/README.md](./scripts/README.md)
-- Frontend guide: [frontend/README.md](./frontend/README.md)
+The generated `.env` follows [`.env.example`](./.env.example). Edit it for your
+installation; never commit it. Existing installations with example/default
+passwords should replace them deliberately—changing a database password in `.env`
+alone does not migrate an existing database volume.
 
-## Notes
+| Setting | Purpose |
+| --- | --- |
+| `OLLAMA_CHAT_MODEL` | Local chat and document post-processing model. |
+| `OLLAMA_EMBEDDING_MODEL`, `OLLAMA_EMBEDDING_DIM` | Embedding model and dimension; rebuild knowledge indexes if these change. |
+| `FILEPROC_CPU_LIMIT`, `FILEPROC_MEMORY_LIMIT` | File-processing limits, defaulting to 2 CPUs and 4 GB. |
+| `LIGHTRAG_QUERY_MAX_TOKENS` | Knowledge-query answer budget, default 384. |
+| `LIGHTRAG_QUERY_CONTEXT_TOKENS` | Knowledge-query context budget, default 4096. |
+| `BIND_HOST` | Published port binding, default `127.0.0.1`. |
 
-- Keep secrets in `.env` and do not commit private credentials.
-- Do not start individual modules on the host; the supported runtime is Docker Compose.
+**The quick start is for local use.** Public access needs a separate deployment
+review, TLS/reverse proxy, browser API address/CORS configuration, and restricted
+infrastructure ports. Changing `BIND_HOST` alone is not a production deployment.
+The frontend currently defaults to the local API gateway at port 8888.
+
+## Current limitations
+
+- OCR produces readable text; it does not preserve every table, formula, or page layout.
+- Small local models can be slow or inaccurate. Check important answers against the source.
+- Knowledge queries have a 120-second frontend timeout; large documents and CPU-only inference can exceed it.
+- Graph completeness depends on indexing and extraction. Uploading alone does not build a knowledge graph.
+- Background answers survive page navigation while services are running; worker/container crash recovery is not guaranteed.
+- A successful local deployment is not a guarantee for every platform or network. Some base images and dependencies are not fully pinned.
+
+## Repository map
+
+```text
+frontend/           React + TypeScript interface
+src/modules/        Auth, projects, files, processing, chat, RAG, graph, gateway
+src/shared/         Shared configuration, storage, service clients, model adapters
+libs/LightRAG/      Vendored retrieval implementation
+scripts/            Container setup and diagnostics
+tests/             Backend regression tests
+docker-compose.yml Full local stack
+```
+
+[Backend guide](./src/README.md) · [Frontend guide](./frontend/README.md) ·
+[Scripts](./scripts/README.md) · [Publication audit](./docs/PUBLICATION_AUDIT.md)
+
+## Privacy and license
+
+Local credentials, uploads, database files, OCR overrides, and assistant settings
+are excluded from commits/build contexts. The default workflow uses local models;
+configuring an external provider changes where document content may be sent.
+Review logs before sharing them, as they can contain document or request details.
+
+This repository uses a **[non-commercial license](./LICENSE)**. A public repository
+does not grant unrestricted commercial use. Copyright notices and Git author
+metadata remain part of the repository history.
