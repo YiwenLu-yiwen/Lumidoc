@@ -172,10 +172,10 @@ export default function ProjectOverview() {
         <div className={`${isDarkMode ? 'bg-[#343541]' : 'bg-white'} rounded-lg p-6 border ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
           <h2 className={`text-xl font-semibold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{t('quickActions')}</h2>
           <div className="flex flex-wrap gap-2">
-            <button className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white text-sm">
+            <button onClick={() => navigate(`/project/${projectId}/documents`)} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white text-sm">
               {t('addFile')}
             </button>
-            <button className={`px-4 py-2 ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-600 hover:bg-gray-700'} rounded text-white text-sm`}>
+            <button onClick={() => navigate(`/project/${projectId}/rag`)} className={`px-4 py-2 ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-600 hover:bg-gray-700'} rounded text-white text-sm`}>
               {t('createAnalysis')}
             </button>
           </div>

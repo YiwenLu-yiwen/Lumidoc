@@ -36,13 +36,7 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({
 
   // 从路径中提取项目ID (如果有)
   const getProjectIdFromPath = useCallback((): string | null => {
-    // 检查会话存储中是否已有导航状态，优先使用
-    const navigatingToProject = sessionStorage.getItem('navigating_to_project');
-    if (navigatingToProject) {
-      console.log(`[AuthGuard] 使用导航状态中的项目ID: ${navigatingToProject}`);
-      return navigatingToProject;
-    }
-
+    // 当前路由是项目身份的唯一来源，避免旧导航状态覆盖新项目。
     // 否则从URL中提取
     const matches = location.pathname.match(/\/project\/([^/]+)/);
     const projectId = matches ? matches[1] : null;
@@ -203,8 +197,8 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({
       return;
     }
 
-    // 验证项目ID格式是否正确（应该是数字）
-    if (!/^\d+$/.test(projectId)) {
+    // 项目使用 UUID，兼容已有的数字编号。
+    if (!/^(?:\d+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.test(projectId)) {
       setVerified(false);
       setIsLoading(false);
       showErrorAndRedirect('项目ID格式无效');
@@ -297,8 +291,8 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({
   // 如果路由需要认证但用户未登录
   if (requireAuth && !isAuthenticated) {
     // 保存当前URL，以便登录后重定向回来
-    const returnUrl = encodeURIComponent(location.pathname);
-    return <Navigate to={`/login?returnUrl=${returnUrl}`} replace />;
+    const returnUrl = encodeURIComponent(location.pathname + location.search);
+    return <Navigate to={`/auth?returnUrl=${returnUrl}`} replace />;
   }
 
   // 如果正在加载中

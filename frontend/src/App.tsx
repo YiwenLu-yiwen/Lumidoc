@@ -11,6 +11,7 @@ import './index.css' // 确保全局样式生效
 import { Toaster } from 'react-hot-toast'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 
+const ProjectOverview = lazy(() => import('./features/project/ProjectOverview'))
 const ProjectSelect = lazy(() => import('./features/project/ProjectSelect'))
 const ChatGPTHomePage = lazy(() =>
   import('./components/home/ChatGPTHomePage').then((module) => ({
@@ -179,9 +180,18 @@ const router = createBrowserRouter([
         <MainApp />
       </AuthGuard>
     ),
-    errorElement: <ErrorPage />
+    errorElement: <ErrorPage />,
+    children: [
+      { index: true, element: <ProjectOverview /> },
+      { path: "dashboard", element: <ProjectOverview /> },
+      { path: "documents", element: <DocumentAnalysis /> },
+      { path: "files", element: <Navigate to="../documents" replace /> },
+      { path: "chat", element: <ChatLayout /> },
+      { path: "rag", element: <RagManager /> },
+      { path: "*", element: <ErrorPage /> },
+    ],
   },
-  
+
   // 专门的错误页面路由
   {
     path: "/error",

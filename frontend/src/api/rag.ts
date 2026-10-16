@@ -21,6 +21,8 @@ export interface RagFilesResponse {
 }
 
 export interface RagFileInfo {
+  file_id?: string;
+  status?: string;
   filename?: string;
   name?: string;
   originalName?: string;
@@ -320,48 +322,17 @@ export const ragApi = {
   // 查询RAG
   queryRag: async (projectId: string, query: string, mode?: string): Promise<RagQueryResponse> => {
     try {
-      console.log(`[RagApi] 查询RAG, 项目ID: ${projectId}, 查询内容: ${query}`);
-
-      // 支持多个可能的API路径
-      const apiPaths = [
-        `/api/lightrag/rag/search`,          // 企业级LightRAG搜索端点
-        `/lightrag/rag/search`,              // 直接LightRAG搜索端点
-        `/rag/search`,                       // 简化搜索端点
-        `/rag/query`                         // 兼容旧端点
-      ];
-
-      let lastError: unknown = null;
-      for (const apiPath of apiPaths) {
-        try {
-          console.log(`[RagApi] 尝试RAG搜索API路径: ${apiPath}`);
-          const response = await apiClient.post<RagQueryResponse>(apiPath, {
-            query,
-            project_id: projectId,
-            mode: mode || 'hybrid'
-          });
-
-          if (response.data && response.data.success) {
-            console.log(`[RagApi] RAG搜索成功:`, response.data);
-            return response.data;
-          }
-
-          console.warn(`[RagApi] API路径 ${apiPath} 搜索响应无效:`, response.data);
-          lastError = { message: 'RAG搜索服务响应格式无效' };
-        } catch (e: unknown) {
-          console.warn(`[RagApi] API路径 ${apiPath} 搜索请求失败:`, e);
-          lastError = e;
-        }
-      }
-
-      // 所有API路径都失败
-      throw lastError || new Error('所有RAG搜索API路径都请求失败');
-
+      const response = await apiClient.post<RagQueryResponse>('/api/lightrag/rag/search', {
+        query, project_id: projectId, mode: mode || 'hybrid', top_k: 5,
+      }, { timeout: 120000 });
+      if (!response.data?.success) throw new Error(response.data?.result || '知识库查询失败');
+      return response.data;
     } catch (error: unknown) {
-      console.error('[RagApi] RAG查询失败:', error);
-      return {
-        success: false,
-        result: `搜索失败：${getErrorMessage(error, '知识库服务不可用')}`
-      };
+      const timedOut = isAxiosError(error) && error.code === 'ECONNABORTED';
+      const detail = timedOut
+        ? '查询超时，本地模型仍在处理，请稍后重试或缩短问题'
+        : getApiErrorDetail(error) || getErrorMessage(error, '知识库查询失败');
+      return { success: false, result: `搜索失败：${detail}` };
     }
   },
 

@@ -10,6 +10,7 @@ import sys
 import logging
 import asyncio
 import re
+from functools import partial
 from pathlib import Path
 from typing import Dict, Optional, Any, List
 from datetime import datetime
@@ -408,7 +409,8 @@ class EnterpriseLightRAGService:
                 client = LLMServiceClient()
                 response = await client.chat_generate(
                     messages=messages,
-                    max_tokens=llm_call_max_tokens,
+                    model=llm_model_name,
+                    max_tokens=min(int(kwargs.get("max_tokens", llm_call_max_tokens)), llm_call_max_tokens),
                     temperature=llm_call_temperature
                 )
 
@@ -728,12 +730,27 @@ class EnterpriseLightRAGService:
 
             # 执行查询
             if QueryParam:
-                param = QueryParam(mode=mode)
+                context_only = kwargs.pop("only_need_context", False)
+                top_k = max(1, min(int(kwargs.pop("top_k", 5)), 20))
+                param = QueryParam(
+                    mode=mode, only_need_context=context_only,
+                    top_k=top_k, chunk_top_k=top_k,
+                    max_entity_tokens=1024, max_relation_tokens=1024,
+                    max_total_tokens=int(os.getenv("LIGHTRAG_QUERY_CONTEXT_TOKENS", "4096")),
+                    response_type="Single Paragraph",
+                    enable_rerank=kwargs.pop("rerank", False),
+                )
+                if not context_only:
+                    # 限制查询回答长度，不影响文档导入时的实体抽取。
+                    param.model_func = partial(
+                        rag.llm_model_func,
+                        max_tokens=int(os.getenv("LIGHTRAG_QUERY_MAX_TOKENS", "384")),
+                    )
                 result = await rag.aquery(query, param, **kwargs)
             else:
                 result = await rag.aquery(query, **kwargs)
 
-            result_text = self._postprocess_query_result(project_id, query, result)
+            result_text = (result or "") if QueryParam and param.only_need_context else self._postprocess_query_result(project_id, query, result)
 
             # 计算耗时
             duration = (datetime.now() - start_time).total_seconds()

@@ -170,7 +170,10 @@ apiClient.interceptors.request.use((config) => {
   const url = config.url || '';
 
   // 为不同类型的请求设置不同的超时时间
-  if (url.includes('/user_permissions/projects')) {
+  if (url.endsWith('/lightrag/rag/search')) {
+    // 本地模型问答需要独立超时，不能被通用的 15 秒超时覆盖。
+    config.timeout = 120000;
+  } else if (url.includes('/user_permissions/projects')) {
     // 项目权限请求 - 缩短超时时间，避免用户等待过长
     console.log(`[API Client] 设置项目权限请求超时时间: 5000ms`);
     config.timeout = 5000; // 5秒

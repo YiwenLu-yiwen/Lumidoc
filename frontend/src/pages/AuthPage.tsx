@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { isAxiosError } from 'axios';
 import { Sparkles, CheckCircle, XCircle } from 'lucide-react';
 import { LoginInterface } from '@/components/auth/LoginInterface';
@@ -10,6 +10,10 @@ import { useLanguage } from '@/context/LanguageContext';
 
 export function AuthPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const returnUrl = searchParams.get('returnUrl');
+  // 仅接受应用内的项目或功能页，保留分享链接中的文件标识。
+  const destination = returnUrl && /^\/(?:project\/|app(?:\/|\?|$))/.test(returnUrl) ? returnUrl : '/app';
   const { user, login } = useAuth();
   
   const { t } = useLanguage();
@@ -28,9 +32,9 @@ export function AuthPage() {
   // 如果用户已登录，重定向到应用
   useEffect(() => {
     if (user) {
-      navigate('/app');
+      navigate(destination, { replace: true });
     }
-  }, [user, navigate]);
+  }, [user, navigate, destination]);
 
   // 处理登录
   const handleLogin = async (credentials: { email: string; password: string }) => {

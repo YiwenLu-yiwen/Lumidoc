@@ -167,7 +167,8 @@ class RAGStorageAdapter:
     async def sync_from_s3(self):
         """从S3同步项目数据到本地临时目录"""
         try:
-            project_prefix = f"rag_storage/project_{self.project_id}/project_{self.project_id}/"
+            # 存储对象负责添加配置前缀，读写都使用相同的相对路径。
+            project_prefix = f"project_{self.project_id}/project_{self.project_id}/"
             
             # 获取项目目录下的所有文件
             files = await self._list_s3_files(project_prefix)

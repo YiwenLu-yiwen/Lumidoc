@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { toast } from 'sonner';
+import { toast } from 'react-hot-toast';
 import { isAxiosError } from 'axios';
 import { ragApi, RagFile, RagFileStatusResponse } from '../../api/rag';
 import { fileApi } from '../../api/file';
@@ -33,14 +33,11 @@ const STATUS_TEXT: { [key: string]: { 'zh-CN': string; 'en-US': string } } = {
   error: { 'zh-CN': '处理失败', 'en-US': 'Error' }
 };
 
-const ragFileMatches = (ragFile: RagFile, fileName: string): boolean => {
-  if (typeof ragFile === 'string') {
-    return ragFile === fileName;
-  }
-  return ragFile.filename === fileName ||
-    ragFile.name === fileName ||
-    ragFile.originalName === fileName ||
-    ragFile.displayName === fileName;
+const ragFileMatches = (ragFile: RagFile, fileId: string, filename?: string): boolean => {
+  if (typeof ragFile === 'string') return ragFile === fileId || ragFile === filename;
+  if (ragFile.status === 'failed' || ragFile.status === 'error') return false;
+  return ragFile.file_id === fileId || [ragFile.filename, ragFile.name, ragFile.originalName, ragFile.displayName]
+    .some(name => !!name && (name === filename || name === fileId));
 };
 
 const getApiErrorDetail = (error: unknown): string | undefined => {
@@ -66,6 +63,7 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
   };
   
   const [fileList, setFileList] = useState<string[]>([]);
+  const [fileNames, setFileNames] = useState<Record<string, string>>({});
   const [ragFileList, setRagFileList] = useState<RagFile[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [isImporting, setIsImporting] = useState(false);
@@ -77,12 +75,21 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
   const [fileStatuses, setFileStatuses] = useState<RagFileStatusResponse['statuses']>({});
   const [isLoadingStatuses, setIsLoadingStatuses] = useState(false);
 
+  useEffect(() => {
+    setSelectedFiles([]);
+    setFileList([]);
+    setFileNames({});
+    setRagFileList([]);
+    setFileStatuses({});
+  }, [projectId]);
+
   // 文件列表获取
   const fetchFileList = useCallback(async () => {
     if (!projectId) return;
     try {
       const files = await fileApi.listFiles(projectId);
-      setFileList(files.map(f => f.filename));
+      setFileList(files.map(file => file.file_hash));
+      setFileNames(Object.fromEntries(files.map(file => [file.file_hash, file.filename])));
     } catch (err) {
       console.error('Failed to fetch file list:', err);
       toast.error(currentLanguage === 'zh-CN' ? '获取文件列表失败' : 'Failed to fetch file list');
@@ -204,7 +211,7 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
               : `Knowledge base built successfully, ${succeeded} files processed`
             );
           } else {
-            toast.warning(currentLanguage === 'zh-CN' 
+            toast(currentLanguage === 'zh-CN'
               ? `知识库构建部分完成，${succeeded}个成功，${failed}个失败`
               : `Knowledge base partially built, ${succeeded} successful, ${failed} failed`
             );
@@ -254,11 +261,11 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
   const getSelectableFiles = () => {
     return fileList.filter(fileName => {
       // 检查是否已在RAG文件列表中（按文件名匹配）
-      const isInRag = ragFileList.some(ragFile => ragFileMatches(ragFile, fileName));
+      const isInRag = ragFileList.some(ragFile => ragFileMatches(ragFile, fileName, fileNames[fileName]));
       
       // 检查文件状态中是否已完成RAG处理
       const fileStatus = Object.values(fileStatuses).find(status => 
-        status.file_name === fileName
+        status.file_name === fileNames[fileName]
       );
       const isProcessedInRag = fileStatus?.status === 'processed';
       
@@ -296,7 +303,7 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
         selectedFiles.forEach(file => {
           newStatuses[file] = { 
             status: 'processing', 
-            file_name: file,
+            file_name: fileNames[file],
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           };
@@ -353,7 +360,7 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
       setIsQuerying(true);
       const result = await ragApi.queryRag(projectId, queryText);
       setQueryResult(result.result);
-      if (onQueryComplete) {
+      if (result.success && onQueryComplete) {
         onQueryComplete(result.result);
       }
     } catch (err: unknown) {
@@ -509,10 +516,10 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
                 ) : (
                 fileList.map(file => {
                   // 检查文件是否已在知识库中或正在处理
-                  const isInRag = ragFileList.some(ragFile => ragFileMatches(ragFile, file));
+                  const isInRag = ragFileList.some(ragFile => ragFileMatches(ragFile, file, fileNames[file]));
                   
                   const fileStatus = Object.values(fileStatuses).find(status => 
-                    status.file_name === file
+                    status.file_name === fileNames[file]
                   );
                   const isProcessedInRag = fileStatus?.status === 'processed';
                   const isProcessingRag = fileStatus?.status === 'processing';
@@ -539,8 +546,8 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
                         disabled={disabled}
                         className="mr-3 rounded"
                       />
-                      <span className="truncate flex-1" title={file}>
-                        {file}
+                      <span className="truncate flex-1" title={fileNames[file] || file}>
+                        {fileNames[file] || file}
                         <span className="text-xs opacity-75">{statusText}</span>
                       </span>
                     </div>

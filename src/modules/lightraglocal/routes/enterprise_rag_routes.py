@@ -37,8 +37,12 @@ async def fix_unknown_source_references(result_text: str, project_id: str) -> st
         return result_text
 
     try:
-        # 获取项目的文件信息
-        project_dir = Path(f"./rag_storage/project_{project_id}/project_{project_id}")
+        # 引用文件名也从当前项目实际工作区读取。
+        service = await get_enterprise_lightrag_service()
+        await service._get_project_rag(project_id)
+        adapter = service._project_adapters.get(project_id)
+        working_dir = adapter.get_working_dir() if adapter else str(Path(service.base_storage_dir) / f"project_{project_id}")
+        project_dir = Path(working_dir) / f"project_{project_id}"
         chunks_file = project_dir / "vdb_chunks.json"
 
         # 构建文件名映射
@@ -530,7 +534,7 @@ async def get_rag_files(project_id: str, http_request: Request):
                 logger.info(f"📁 使用存储适配器路径: {working_dir}")
 
                 # 查找chunks文件 - 直接在工作目录根目录查找
-                chunks_file = Path(working_dir) / "vdb_chunks.json"
+                chunks_file = Path(working_dir) / f"project_{project_id}" / "vdb_chunks.json"
                 logger.info(f"📁 查找chunks文件: {chunks_file}")
 
                 if chunks_file.exists():
@@ -927,8 +931,11 @@ async def get_file_status(project_id: str, http_request: Request):
         # 获取项目统计信息
         stats = service.get_project_stats(project_id)
 
-        # 获取实际文档状态
-        project_dir = Path(f"./rag_storage/project_{project_id}/project_{project_id}")
+        # 从实际工作区读取状态，S3 模式的索引位于本地缓存目录。
+        await service._get_project_rag(project_id)
+        adapter = service._project_adapters.get(project_id)
+        working_dir = adapter.get_working_dir() if adapter else str(Path(service.base_storage_dir) / f"project_{project_id}")
+        project_dir = Path(working_dir) / f"project_{project_id}"
 
         statuses = {}
         entities_count = 0
@@ -1015,7 +1022,8 @@ async def search_rag(
     project_id: str = Body(...),
     mode: str = Body("hybrid"),
     top_k: int = Body(5),
-    rerank: bool = Body(False)
+    rerank: bool = Body(False),
+    only_need_context: bool = Body(False)
 ):
     """
     RAG搜索 - 前端兼容接口
@@ -1027,12 +1035,14 @@ async def search_rag(
         result = await service.query_project(
             project_id=project_id,
             query=query,
-            mode=mode
+            mode=mode,
+            only_need_context=only_need_context,
+            top_k=top_k, rerank=rerank
         )
 
         if result["success"]:
             # 修复结果中的unknown_source引用
-            fixed_result = await fix_unknown_source_references(result["result"], project_id)
+            fixed_result = result["result"] if only_need_context else await fix_unknown_source_references(result["result"], project_id)
 
             return {
                 "success": True,
