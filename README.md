@@ -81,6 +81,29 @@ Open **[http://localhost:3000](http://localhost:3000)**, register an account, an
 Default models: `qwen3:1.7b` for chat and `nomic-embed-text` for embeddings.
 No host Python, Node.js, GPU, API key, or separate Ollama installation is required.
 
+### Automatic GPU / CPU selection
+
+`./start_services.sh` prefers a reachable native GPU Ollama, then a working Docker
+NVIDIA GPU runtime, and otherwise starts Docker Ollama on CPU. On Apple Silicon,
+install and start native Ollama to use Metal; an unavailable native server falls
+back to CPU. On other hosts, native GPU use is detected from loaded models; Docker
+NVIDIA acceleration requires the NVIDIA Container Toolkit.
+
+Use `--native`, `--gpu`, or `--cpu` to force a mode (explicit choices do not silently
+fall back). `--build` can be combined with any mode. Export `NATIVE_OLLAMA_URL` or
+set it in `.env` to customize the native endpoint. The model initializer prepares
+the configured models in the selected runtime. `./stop_services.sh` remembers the
+last successful startup mode and preserves data volumes.
+
+Native mode requires Compose support for `!reset`. Model requests keep models
+loaded for 15 minutes (`OLLAMA_KEEP_ALIVE`) for faster subsequent requests.
+
+Chat skips retrieval for greetings and independent writing requests, retains it for
+document and ambiguous questions, and bounds recent history to 6,000 characters.
+`CHAT_RETRIEVAL_TIMEOUT` defaults to 8 seconds; `CHAT_MAX_TOKENS` defaults to 512.
+Increase these budgets if your documents or requested answers need more time/length.
+Knowledge-base queries display a live answer stream and can be stopped.
+
 ### Update, inspect, and stop
 
 ```sh

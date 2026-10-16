@@ -22,7 +22,7 @@ if sys.argv[1] == 'run':
 ''')
     docker.chmod(0o755)
     env = {**os.environ, 'PATH': str(tmp_path) + os.pathsep + os.environ['PATH']}
-    command = ['sh', str(tmp_path / 'start_services.sh')]
+    command = ['sh', str(tmp_path / 'start_services.sh'), '--cpu']
     subprocess.run(command, env={**env, 'FAIL_BOOTSTRAP': '1'}, check=False, capture_output=True)
     assert not (tmp_path / '.env').exists()
     assert not (tmp_path / '.env.bootstrap.tmp').exists()

@@ -245,3 +245,6 @@ agentRules.md
 *.db
 *.sqlite
 *.sqlite3
+
+# Local startup mode
+.lumidoc-model-mode

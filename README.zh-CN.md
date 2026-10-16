@@ -74,6 +74,25 @@ PDF 提取和模型推理在本地运行。也可另外配置外部模型供应�
 默认对话模型为 `qwen3:1.7b`，嵌入模型为 `nomic-embed-text`。
 宿主机无需额外安装 Python、Node.js、Ollama，也不要求 GPU 或付费 API key。
 
+### 自动选择 GPU / CPU
+
+直接运行 `./start_services.sh`：优先使用可连接的原生 GPU Ollama，其次使用通过检测的
+Docker NVIDIA GPU，均不可用时自动回退到 Docker CPU。
+Apple Silicon Mac 需要安装并启动原生 Ollama 才能使用 Metal；原生服务不可用时回退到 CPU。
+其他主机通过已加载模型检测原生 GPU；Docker NVIDIA 模式需要 NVIDIA Container Toolkit。
+
+可用 `--native`、`--gpu` 或 `--cpu` 强制指定模式（显式指定时不会静默回退），
+并可搭配 `--build`。通过环境变量或 `.env` 中的 `NATIVE_OLLAMA_URL` 自定义原生服务地址。
+模型初始化服务会在选定的运行环境中准备模型。
+`./stop_services.sh` 自动使用上次成功启动的模式，保留全部数据卷。
+原生模式要求 Compose 支持 `!reset` 覆盖标签。
+
+默认将模型保留在内存 15 分钟（`OLLAMA_KEEP_ALIVE`），以增加内存占用换取后续响应速度。
+普通问候和独立写作请求跳过检索，文档问题和不明确的问题仍会检索。
+历史上下文限制为最近 6 条、总计 6,000 字符；检索等待默认 8 秒（`CHAT_RETRIEVAL_TIMEOUT`），
+回答预算默认 512 token（`CHAT_MAX_TOKENS`）。需要长回答或较慢检索时可提高这些配置。
+知识库查询支持流式显示和停止生成。
+
 ### 更新、查看状态与关闭
 
 ```sh

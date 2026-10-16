@@ -350,9 +350,7 @@ def test_one_command_scripts_only_orchestrate_docker_compose() -> None:
         for forbidden in (
             "conda",
             "sw_vers",
-            "darwin",
             "macos",
-            "host.docker.internal",
             "npm run",
             "python -m src.modules",
         ):
