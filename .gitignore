@@ -20,7 +20,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+/lib/
 lib64/
 parts/
 sdist/
@@ -174,7 +174,8 @@ uploads/
 content/
 rag_storage/
 rag_cache/
-models/
+/models/
+/src/models/
 data/
 temp/
 tmp/
@@ -237,3 +238,10 @@ secrets/
 .cursor/
 .cursorrules
 CLAUDE.md
+
+# Local assistant configuration and database snapshots
+agentRules.md
+.codex/
+*.db
+*.sqlite
+*.sqlite3
