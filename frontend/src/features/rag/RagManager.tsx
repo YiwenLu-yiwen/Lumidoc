@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { isAxiosError } from 'axios';
 import { ragApi, RagFile, RagFileStatusResponse } from '../../api/rag';
+import { streamRagQuery } from '@/api/ragStream';
 import { fileApi } from '../../api/file';
 import { useTheme } from '@/context/ThemeContext';
 import { Database } from 'lucide-react';
@@ -70,6 +71,15 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
   const [queryText, setQueryText] = useState('');
   const [queryResult, setQueryResult] = useState('');
   const [isQuerying, setIsQuerying] = useState(false);
+  const queryController = useRef<AbortController | null>(null);
+  useEffect(() => {
+    setQueryResult('');
+    setIsQuerying(false);
+    return () => {
+      queryController.current?.abort();
+      queryController.current = null;
+    };
+  }, [projectId]);
   
   // 添加文件状态状态
   const [fileStatuses, setFileStatuses] = useState<RagFileStatusResponse['statuses']>({});
@@ -356,21 +366,34 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
       return;
     }
     
+    queryController.current?.abort();
+    const controller = new AbortController();
+    queryController.current = controller;
+    const timeout = setTimeout(() => controller.abort(), 125000);
     try {
       setIsQuerying(true);
-      const result = await ragApi.queryRag(projectId, queryText);
-      setQueryResult(result.result);
-      if (result.success && onQueryComplete) {
-        onQueryComplete(result.result);
-      }
+      setQueryResult('');
+      const answer = await streamRagQuery(projectId, queryText, event => {
+        if (queryController.current !== controller) return;
+        if (event.content) setQueryResult(previous => previous + event.content);
+      }, controller.signal);
+      if (queryController.current === controller) onQueryComplete?.(answer);
     } catch (err: unknown) {
-      console.error('Query error:', err);
-      toast.error(getApiErrorDetail(err) || (currentLanguage === 'zh-CN' ? '查询失败' : 'Query failed'));
+      if (queryController.current === controller) {
+        const detail = controller.signal.aborted
+          ? (currentLanguage === 'zh-CN' ? '查询已超时或停止' : 'Query timed out or stopped')
+          : (err instanceof Error ? err.message : 'Query failed');
+        toast.error(detail);
+      }
     } finally {
-      setIsQuerying(false);
+      clearTimeout(timeout);
+      if (queryController.current === controller) {
+        queryController.current = null;
+        setIsQuerying(false);
+      }
     }
   };
-  
+
   // 删除RAG文件
   const handleDeleteRagFile = async (fileId: string, fileName: string) => {
     if (!projectId) return;
@@ -576,11 +599,11 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
                 className="mr-2 min-w-0 flex-1 rounded border border-input bg-background p-2 text-foreground"
               />
               <button
-                onClick={handleQuery}
-                disabled={!queryText.trim() || isQuerying}
+                onClick={isQuerying ? () => queryController.current?.abort() : handleQuery}
+                disabled={!isQuerying && !queryText.trim()}
                 className="px-3 py-1 bg-blue-600 rounded text-white disabled:bg-gray-500 disabled:opacity-50"
               >
-                {isQuerying ? t('querying') : t('query')}
+                {isQuerying ? (currentLanguage === 'zh-CN' ? '停止' : 'Stop') : t('query')}
               </button>
             </div>
             

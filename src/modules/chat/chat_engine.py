@@ -9,6 +9,8 @@ import httpx
 import json
 import asyncio
 import re
+from time import perf_counter
+from .retrieval_policy import should_retrieve, bounded_history
 
 # 处理循环导入问题
 logger = logging.getLogger(__name__)
@@ -281,7 +283,8 @@ class ChatEngine:
                         user_id: Optional[str] = None,
                         auth_header: Optional[str] = None,
                         model: Optional[str] = None,
-                        conversation_id: str = "legacy") -> AsyncGenerator[str, None]:
+                        conversation_id: str = "legacy",
+                        retrieval_mode: str = "auto") -> AsyncGenerator[str, None]:
         """
         流式处理聊天消息 - 真正的LLM流式响应
         
@@ -296,6 +299,7 @@ class ChatEngine:
         try:
             logger.info(f"流式RAG查询，项目ID: {project_id}, 用户: {user_id}, 查询: {message[:50]}...")
             
+            started = perf_counter()
             # 1. 获取历史会话（最近5条）
             chat_history = []
             if project_id and user_id:
@@ -352,8 +356,7 @@ class ChatEngine:
                     # 本轮用户消息已保存，不能再次作为历史传给模型。
                     if recent_messages and recent_messages[-1].get('role') == 'user' and recent_messages[-1].get('content') == message:
                         recent_messages.pop()
-                    chat_history = [{"role": msg['role'], "content": msg.get('content', '')[:3000]}
-                                    for msg in recent_messages if msg.get('role') in ('user', 'assistant')]
+                    chat_history = bounded_history(recent_messages)
 
                 except Exception as history_error:
                     logger.warning(f"获取历史会话失败: {history_error}")
@@ -364,45 +367,51 @@ class ChatEngine:
             
             # 开始RAG搜索，但不输出调试信息
             
-            try:
-                rag_url = ensure_url_protocol(os.getenv('RAG_SERVICE_URL', 'http://localhost:8006'))
-                search_url = f"{rag_url}/rag/search"
+            retrieve = bool(project_id) and should_retrieve(message, chat_history, retrieval_mode)
+            retrieval_started = perf_counter()
+            if retrieve:
+                try:
+                    rag_url = ensure_url_protocol(os.getenv('RAG_SERVICE_URL', 'http://localhost:8006'))
+                    search_url = f"{rag_url}/rag/search"
                 
-                search_payload = {
-                    "query": message,
-                    "project_id": project_id,
-                    "mode": "naive",
-                    "only_need_context": True
-                }
-                headers = {}
-                if auth_header:
-                    headers["Authorization"] = auth_header
+                    search_payload = {
+                        "query": message,
+                        "project_id": project_id,
+                        "mode": "naive",
+                        "only_need_context": True
+                    }
+                    headers = {}
+                    if auth_header:
+                        headers["Authorization"] = auth_header
                 
-                # 执行RAG搜索
+                    # 执行RAG搜索
                 
-                # 获取RAG上下文
-                async with httpx.AsyncClient() as client:
-                    response = await client.post(
-                        search_url,
-                        json=search_payload,
-                        headers=headers if headers else None,
-                        timeout=30.0
-                    )
-                    response.raise_for_status()
-                    search_result = response.json()
+                    # 获取RAG上下文
+                    async with httpx.AsyncClient() as client:
+                        response = await client.post(
+                            search_url,
+                            json=search_payload,
+                            headers=headers if headers else None,
+                            timeout=float(os.getenv("CHAT_RETRIEVAL_TIMEOUT", "8"))
+                        )
+                        response.raise_for_status()
+                        search_result = response.json()
                 
-                if search_result and search_result.get("success") and search_result.get("result"):
-                    context = search_result.get("result", "")
-                    logger.info(f"获取到RAG上下文，长度: {len(context)}")
-                    # 不输出检索完成消息，直接进入生成流程
-                else:
-                    # 不输出未找到知识的消息，静默处理
+                    if search_result and search_result.get("success") and search_result.get("result"):
+                        context = search_result.get("result", "")
+                        logger.info(f"获取到RAG上下文，长度: {len(context)}")
+                        # 不输出检索完成消息，直接进入生成流程
+                    else:
+                        # 不输出未找到知识的消息，静默处理
+                        context = ""
+                except Exception as rag_error:
+                    logger.warning(f"RAG搜索失败，将使用纯LLM回复: {rag_error}")
+                    # 不输出错误消息，静默处理
                     context = ""
-            except Exception as rag_error:
-                logger.warning(f"RAG搜索失败，将使用纯LLM回复: {rag_error}")
-                # 不输出错误消息，静默处理
-                context = ""
             
+            retrieval_ms = round((perf_counter() - retrieval_started) * 1000)
+            logger.info("chat_retrieval requested=%s duration_ms=%s history_chars=%s",
+                        retrieve, retrieval_ms, sum(len(item['content']) for item in chat_history))
             system_prompt = f"""你是 Lumidoc 助手，直接完成用户当前的请求，默认用中文。
 对于写作、模板、改写和一般知识问题，直接提供可用的内容，不要求知识库资料，不重复用户的问题充当答案。
 用户要求不引用时，不添加参考资料。只有问题明确涉及上传的文件，才根据相关检索资料回答；资料缺失时如实说明。
@@ -411,12 +420,17 @@ class ChatEngine:
 检索资料：
 {context or '(无相关资料)'}"""
             # 逐块返回生成结果，不再等完整答案生成后才发送。
+            first_token = True
             async with asyncio.timeout(float(os.getenv("CHAT_RESPONSE_TIMEOUT", "120"))):
                 async for chunk in self.llm_service.stream_generate(
                     prompt=message, history=chat_history, system_prompt=system_prompt,
-                    model=model, max_tokens=1024, temperature=0.2
+                    model=model, max_tokens=int(os.getenv("CHAT_MAX_TOKENS", "512")), temperature=0.2
                 ):
+                    if first_token and chunk:
+                        logger.info("chat_first_token duration_ms=%s", round((perf_counter() - started) * 1000))
+                        first_token = False
                     yield chunk
+            logger.info("chat_complete duration_ms=%s", round((perf_counter() - started) * 1000))
 
         except Exception as e:
             logger.error(f"聊天流式处理失败: {str(e)}")

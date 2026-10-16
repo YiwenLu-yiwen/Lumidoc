@@ -158,6 +158,7 @@ class ChatManager:
                 auth_header=auth_header,
                 model=model,
                 conversation_id=conversation_id,
+                retrieval_mode="off" if use_graph is False else "auto",
             )
             
             # chat_stream总是返回异步生成器，逐块生成

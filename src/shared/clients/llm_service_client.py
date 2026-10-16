@@ -264,6 +264,8 @@ class LLMServiceClient:
 
                                     # 提取内容
                                     if isinstance(chunk_data, dict):
+                                        if chunk_data.get("error"):
+                                            raise RuntimeError(str(chunk_data["error"]))
                                         if "content" in chunk_data:
                                             yield chunk_data["content"]
                                         elif "text" in chunk_data:
@@ -281,14 +283,20 @@ class LLMServiceClient:
                                         yield line.strip()
                                 except Exception as e:
                                     logger.error(f"处理流式响应块失败: {str(e)}")
+                                    if kwargs.get("raise_on_error"):
+                                        raise
                                     continue
                     else:
+                        if kwargs.get("raise_on_error"):
+                            response.raise_for_status()
                         error_text = await response.aread()
                         logger.error(f"流式请求失败 - 状态: {response.status_code}, 响应: {error_text}")
                         yield f"流式请求失败: {response.status_code} - {error_text.decode()}"
 
         except Exception as e:
             logger.error(f"流式生成失败: {str(e)}")
+            if kwargs.get("raise_on_error"):
+                raise
             yield f"流式生成失败: {str(e)}"
 
     async def _call_service(self, endpoint: str, data: Dict[str, Any]) -> Dict[str, Any]:

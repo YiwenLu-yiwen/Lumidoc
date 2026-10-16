@@ -402,6 +402,7 @@ services:
       - LLM_SERVICE_PORT=${LLM_SERVICE_PORT:-8080}
       - LLM_MODEL_TYPE=ollama
       - OLLAMA_NUM_THREADS=${OLLAMA_NUM_THREADS:-4}
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-15m}
       - LLM_MODEL_NAME=${OLLAMA_CHAT_MODEL:-qwen3:1.7b}
       - OLLAMA_API_URL=http://ollama:11434
       - OLLAMA_URL=http://ollama:11434

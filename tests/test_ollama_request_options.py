@@ -33,4 +33,5 @@ async def test_generation_parameters_reach_ollama_options(method, threads, monke
         expected['num_thread'] = int(threads)
     assert requests[0]['options'] == expected
     assert requests[0]['think'] is False
+    assert requests[0]['keep_alive'] == '15m'
     assert 'max_tokens' not in requests[0]

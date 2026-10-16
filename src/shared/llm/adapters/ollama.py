@@ -45,7 +45,7 @@ class OllamaAdapter(BaseLLMAdapter):
         aliases = {"max_tokens": "num_predict", "stop_sequences": "stop"}
         option_keys = {"temperature", "top_p", "top_k", "seed", "repeat_penalty", "num_ctx", "num_thread"}
         # 当前输出协议只消费正文；需要独立思考输出的调用方可显式开启。
-        params = {"think": False}
+        params = {"think": False, "keep_alive": os.getenv("OLLAMA_KEEP_ALIVE", "15m")}
         for key, value in kwargs.items():
             if value is None or key == "options":
                 continue
@@ -263,7 +263,8 @@ class OllamaAdapter(BaseLLMAdapter):
                 for text in texts:
                     params = {
                         "model": self.model_name,
-                        "prompt": text
+                        "prompt": text,
+                        "keep_alive": os.getenv("OLLAMA_KEEP_ALIVE", "15m"),
                     }
                     
                     response = await client.post(

@@ -9,6 +9,7 @@ import os
 import sys
 import logging
 import asyncio
+from time import perf_counter
 import re
 from functools import partial
 from pathlib import Path
@@ -407,6 +408,12 @@ class EnterpriseLightRAGService:
 
                 # 调用 LLM 服务
                 client = LLMServiceClient()
+                if kwargs.get("stream"):
+                    return client.stream_generate(
+                        prompt=prompt, messages=messages, model=llm_model_name,
+                        max_tokens=min(int(kwargs.get("max_tokens", llm_call_max_tokens)), llm_call_max_tokens),
+                        temperature=llm_call_temperature, raise_on_error=True,
+                    )
                 response = await client.chat_generate(
                     messages=messages,
                     model=llm_model_name,
@@ -702,6 +709,49 @@ class EnterpriseLightRAGService:
                 "traceback": full_traceback,
                 "timestamp": datetime.now().isoformat()
             }
+
+    async def stream_query_project(self, project_id: str, query: str, mode: str = "hybrid"):
+        """Stream the actual LightRAG answer; never buffer and replay a complete answer."""
+        started = perf_counter()
+        rag = await self._get_project_rag(project_id)
+        param = QueryParam(
+            mode=mode, stream=True, top_k=5, chunk_top_k=5,
+            max_entity_tokens=1024, max_relation_tokens=1024,
+            max_total_tokens=int(os.getenv("LIGHTRAG_QUERY_CONTEXT_TOKENS", "4096")),
+            response_type="Single Paragraph", enable_rerank=False,
+        )
+        param.model_func = partial(
+            rag.llm_model_func,
+            max_tokens=int(os.getenv("LIGHTRAG_QUERY_MAX_TOKENS", "384")),
+        )
+        result = await rag.aquery(query, param)
+        prepared_ms = round((perf_counter() - started) * 1000)
+        yield {"stage": "generating", "retrieval_ms": prepared_ms}
+        first_token_ms = None
+        content = ""
+        if isinstance(result, str):
+            # Cache hits and empty-knowledge responses can be immediate strings.
+            content = result
+            first_token_ms = round((perf_counter() - started) * 1000)
+            yield {"content": result}
+        else:
+            try:
+                async for chunk in result:
+                    if not chunk:
+                        continue
+                    if first_token_ms is None:
+                        first_token_ms = round((perf_counter() - started) * 1000)
+                    content += chunk
+                    yield {"content": chunk}
+            finally:
+                if hasattr(result, "aclose"):
+                    await result.aclose()
+        if not content.strip():
+            raise RuntimeError("The model returned an empty answer")
+        timings = {"retrieval_ms": prepared_ms, "first_token_ms": first_token_ms,
+                   "total_ms": round((perf_counter() - started) * 1000)}
+        logger.info("rag_query_complete timings=%s", timings)
+        yield {"done": True, "timings": timings}
 
     async def query_project(
         self,

@@ -24,3 +24,13 @@ async def test_stream_preserves_request_and_ignores_heartbeat(monkeypatch):
     assert payload['model'] == 'chosen-model'
     assert payload['max_tokens'] == 128
     assert payload['messages'][-1]['content'] == '职位是什么？'
+
+@pytest.mark.asyncio
+async def test_strict_stream_propagates_upstream_error(monkeypatch):
+    monkeypatch.setenv('SERVICE_AUTH_TOKEN', 'unit-test')
+    original = httpx.AsyncClient
+    transport = httpx.MockTransport(lambda req: httpx.Response(200, text='data: {"error":"model unavailable"}\n\n'))
+    with patch('src.shared.clients.llm_service_client.httpx.AsyncClient', side_effect=lambda **kw: original(transport=transport, **kw)):
+        client = LLMServiceClient()
+        with pytest.raises(RuntimeError, match='model unavailable'):
+            _ = [item async for item in client.stream_generate('q', raise_on_error=True)]

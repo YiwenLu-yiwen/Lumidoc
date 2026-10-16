@@ -6,7 +6,7 @@
 """
 
 from fastapi import APIRouter, Body, HTTPException, BackgroundTasks, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 import logging
@@ -1014,6 +1014,33 @@ async def get_file_status(project_id: str, http_request: Request):
     except Exception as e:
         logger.error(f"获取状态失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/search/stream")
+async def stream_search_rag(
+    http_request: Request,
+    query: str = Body(..., min_length=1, max_length=10000),
+    project_id: str = Body(...),
+    mode: str = Body("hybrid", pattern="^(naive|local|global|hybrid)$"),
+):
+    # Authorize before sending HTTP 200 or any knowledge content.
+    await _require_project_access(http_request, project_id)
+    service = await get_enterprise_lightrag_service()
+
+    async def events():
+        yield 'data: {"stage": "retrieving"}\n\n'
+        try:
+            async with asyncio.timeout(120):
+                async for event in service.stream_query_project(project_id, query, mode):
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except asyncio.TimeoutError:
+            yield 'data: {"error": "Knowledge query timed out"}\n\n'
+        except Exception:
+            logger.exception("Knowledge query stream failed")
+            yield 'data: {"error": "Knowledge query failed; please retry"}\n\n'
+
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
 
 @router.post("/search")
 async def search_rag(
