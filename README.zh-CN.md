@@ -126,7 +126,7 @@ docker-compose.yml 完整本地服务栈
 ```
 
 [后端说明](./src/README.md) · [前端说明](./frontend/README.md) ·
-[脚本说明](./scripts/README.md) · [公开仓库检查记录](./docs/PUBLICATION_AUDIT.md)
+[脚本说明](./scripts/README.md) · [开发指南](./docs/DEVELOPMENT.md)
 
 ## 隐私与许可证
 

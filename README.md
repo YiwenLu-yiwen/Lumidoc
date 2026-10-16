@@ -137,7 +137,7 @@ docker-compose.yml Full local stack
 ```
 
 [Backend guide](./src/README.md) · [Frontend guide](./frontend/README.md) ·
-[Scripts](./scripts/README.md) · [Publication audit](./docs/PUBLICATION_AUDIT.md)
+[Scripts](./scripts/README.md) · [Development guide](./docs/DEVELOPMENT.md)
 
 ## Privacy and license
 
