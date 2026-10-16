@@ -18,6 +18,7 @@ interface RawFileInfo {
   path?: string;
   size?: number;
   file_type?: string;
+  type?: string;
   content_type?: string;
   created_at?: string;
   updated_at?: string;
@@ -38,7 +39,7 @@ console.log('[File API] 通过Gateway访问文件服务:', gatewayURL);
 // 从后端响应数据转换为前端使用的FileInfo对象
 const convertToFileInfo = (file: RawFileInfo): FileInfo => {
   // 确保文件名正确解码
-  const filename = file.filename || '';
+  const filename = file.filename || file.name || '';
   let displayName = '';
   
   try {
@@ -69,8 +70,8 @@ const convertToFileInfo = (file: RawFileInfo): FileInfo => {
     filename: filename,
     path: file.path || '',
     size: file.size || 0,
-    file_type: file.file_type || 'application/octet-stream',
-    content_type: file.content_type || file.file_type || 'application/octet-stream',
+    file_type: file.file_type || file.type || 'application/octet-stream',
+    content_type: file.content_type || file.file_type || file.type || 'application/octet-stream',
     created_at: file.created_at || new Date().toISOString(),
     updated_at: file.updated_at || new Date().toISOString(),
     metadata: file.metadata || '',
@@ -124,6 +125,15 @@ export interface FileProcessingStatus {
 }
 
 export const fileApi = {
+  getFileBlob: async (projectId: string, fileHash: string): Promise<Blob> => {
+    const response = await apiClient.get<Blob>(`/api/file/projects/${encodeURIComponent(projectId)}/files/download/${encodeURIComponent(fileHash)}`, { responseType: 'blob', validateStatus: status => status >= 200 && status < 300 });
+    return response.data;
+  },
+
+  getFileContent: async (projectId: string, fileHash: string): Promise<string> => {
+    const response = await apiClient.get<{ content: string }>(`/api/file/projects/${encodeURIComponent(projectId)}/files/content/${encodeURIComponent(fileHash)}`, { params: { processed_only: true }, validateStatus: status => status >= 200 && status < 300 });
+    return response.data.content;
+  },
   // 上传文件（带进度回调）
   uploadFiles: async (
     projectId: string, 

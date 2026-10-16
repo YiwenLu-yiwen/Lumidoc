@@ -1,4 +1,9 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useProjects } from '@/context/ProjectContext';
+import { fileApi, type FileInfo } from '@/api/file';
 import {
   Upload,
   FileText,
@@ -11,7 +16,7 @@ import {
   Eye,
   Download,
   Search,
-  MoreHorizontal,
+  Trash2,
   Zap,
   Brain,
   BarChart3,
@@ -72,6 +77,10 @@ const DOCUMENT_TYPES = new Set<DocumentFile['type']>([
 
 function getDocumentType(filename: string): DocumentFile['type'] {
   const extension = filename.split('.').pop()?.toLowerCase();
+  if (extension && ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(extension)) return 'image';
+  if (extension === 'doc') return 'docx';
+  if (extension === 'xls') return 'xlsx';
+  if (extension === 'ppt') return 'pptx';
   return extension && DOCUMENT_TYPES.has(extension as DocumentFile['type'])
     ? extension as DocumentFile['type']
     : 'txt';
@@ -82,12 +91,125 @@ export function DocumentAnalysis() {
   const { isDarkMode } = useTheme();
   const { currentLanguage, t } = useLanguage();
 
+  const { projectId: routeProjectId } = useParams<{ projectId: string }>();
+  const { projects, loading: projectsLoading } = useProjects();
+  const projectId = routeProjectId || projects[0]?.id;
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const sharedFile = searchParams.get('file');
+  const activeProject = useRef<string | undefined>(projectId);
+  activeProject.current = projectId;
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [preview, setPreview] = useState<{ text: string } | null>(null);
+  const [shareLink, setShareLink] = useState('');
+
   const [documents, setDocuments] = useState<DocumentFile[]>([]);
 
   const [selectedDocument, setSelectedDocument] = useState<DocumentFile | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'completed' | 'processing' | 'error'>('all');
   const [dragActive, setDragActive] = useState(false);
+
+  const loadDocuments = useCallback(async () => {
+    if (!projectId) return;
+    setLoading(true);
+    try {
+      const files = await fileApi.listFiles(projectId);
+      if (activeProject.current !== projectId) return;
+      const records = files.map((file: FileInfo): DocumentFile => ({
+        id: file.file_hash,
+        name: file.display_name || file.filename,
+        type: getDocumentType(file.filename),
+        size: file.size,
+        uploadTime: new Date(file.created_at),
+        status: ['completed', 'processed', 'imported'].includes(file.status || '')
+          ? 'completed' : ['failed', 'error'].includes(file.status || '') ? 'error' : 'processing',
+      }));
+      setDocuments(records);
+      setSelectedDocument(previous => records.find(doc => doc.id === (sharedFile || previous?.id)) || null);
+      setError(null);
+    } catch (err) {
+      if (activeProject.current === projectId) setError(err instanceof Error ? err.message : 'Failed to load documents');
+    } finally {
+      if (activeProject.current === projectId) setLoading(false);
+    }
+  }, [projectId, sharedFile]);
+
+  useEffect(() => {
+    setDocuments([]);
+    setSelectedDocument(null);
+    setPreview(null);
+    setShareLink('');
+    activeProject.current = projectId;
+    void loadDocuments();
+    return () => { activeProject.current = undefined; };
+  }, [loadDocuments, projectId]);
+
+  useEffect(() => {
+    if (!documents.some(doc => doc.status === 'processing')) return;
+    const timer = setInterval(() => void loadDocuments(), 3000);
+    return () => clearInterval(timer);
+  }, [documents, loadDocuments]);
+
+  const handleDelete = async (doc: DocumentFile) => {
+    if (!projectId || deletingId) return;
+    const confirmed = window.confirm(currentLanguage === 'zh-CN'
+      ? `确定从当前项目删除“${doc.name}”吗？`
+      : `Delete “${doc.name}” from this project?`);
+    if (!confirmed) return;
+    setDeletingId(doc.id);
+    setError(null);
+    try {
+      const result = await fileApi.deleteFile(projectId, doc.id);
+      if (!result.success) throw new Error(result.message || (currentLanguage === 'zh-CN' ? '删除失败，请重试' : 'Deletion failed. Please retry.'));
+      if (activeProject.current !== projectId) return;
+      if (selectedDocument?.id === doc.id) {
+        setSelectedDocument(null);
+        setPreview(null);
+        setShareLink('');
+      }
+      await loadDocuments();
+    } catch (error) {
+      if (activeProject.current === projectId) setError(error instanceof Error ? error.message : 'Deletion failed');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleDocumentAction = async (action: 'preview' | 'download' | 'share') => {
+    if (!selectedDocument || !projectId) return;
+    setError(null);
+    try {
+      if (action === 'share') {
+        const link = new URL(`/project/${projectId}/documents`, window.location.origin);
+        link.searchParams.set('file', selectedDocument.id);
+        setShareLink(link.toString());
+        // 链接不包含凭据，接收者仍需登录并具备项目权限。
+        await navigator.clipboard?.writeText(link.toString()).catch(() => undefined);
+      } else {
+        const text = await fileApi.getFileContent(projectId, selectedDocument.id);
+        if (activeProject.current !== projectId) return;
+        if (action === 'preview') setPreview({ text });
+        else {
+          const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `${selectedDocument.name.replace(/\.[^.]+$/, '')}.processed.md`;
+          link.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+      }
+    } catch {
+      setError(currentLanguage === 'zh-CN'
+        ? '处理结果暂不可用，请等待 OCR/文档处理完成；处理失败的文件请重新上传。'
+        : 'Processed content is unavailable. Wait for OCR/document processing to finish, or re-upload failed files.');
+    }
+  };
 
   const stats: AnalysisStats = {
     totalDocuments: documents.length,
@@ -160,47 +282,32 @@ export function DocumentAnalysis() {
     }
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-    
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFiles(e.dataTransfer.files);
+  const handleFiles = async (files: FileList) => {
+    if (!projectId || uploading) return;
+    setUploading(true);
+    setUploadProgress(0);
+    setError(null);
+    try {
+      const result = await fileApi.uploadFiles(projectId, Array.from(files), progress => {
+        setUploadProgress(progress.percentage);
+      });
+      await loadDocuments();
+      const failures = result.files.filter(file => !file.success);
+      if (!result.success || failures.length) {
+        throw new Error(failures.map(file => file.message).join('; ') || 'Upload failed');
+      }
+    } catch (err) {
+      if (activeProject.current === projectId) setError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setUploading(false);
     }
-  }, []);
+  };
 
-  const handleFiles = (files: FileList) => {
-    Array.from(files).forEach(file => {
-      const newDoc: DocumentFile = {
-        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-        name: file.name,
-        type: getDocumentType(file.name),
-        size: file.size,
-        uploadTime: new Date(),
-        status: 'uploading',
-        progress: 0
-      };
-
-      setDocuments(prev => [...prev, newDoc]);
-
-      // 模拟上传和处理过程
-      setTimeout(() => {
-        setDocuments(prev => prev.map(doc => 
-          doc.id === newDoc.id 
-            ? { ...doc, status: 'processing', progress: 30 }
-            : doc
-        ));
-      }, 1000);
-
-      setTimeout(() => {
-        setDocuments(prev => prev.map(doc => 
-          doc.id === newDoc.id 
-            ? { ...doc, status: 'completed', progress: 100 }
-            : doc
-        ));
-      }, 5000);
-    });
+  const handleDrop = (event: React.DragEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setDragActive(false);
+    if (event.dataTransfer.files.length) void handleFiles(event.dataTransfer.files);
   };
 
   const filteredDocuments = documents.filter(doc => {
@@ -221,16 +328,28 @@ export function DocumentAnalysis() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <Button variant="outline" className={`${isDarkMode ? 'border-gray-600 text-gray-300 hover:bg-gray-700' : ''}`}>
+            <Button variant="outline" onClick={() => void loadDocuments()} disabled={!projectId || loading} className={`${isDarkMode ? 'border-gray-600 text-gray-300 hover:bg-gray-700' : ''}`}>
               <RefreshCw className="w-4 h-4 mr-2" />
               {currentLanguage === 'zh-CN' ? '刷新状态' : 'Refresh Status'}
             </Button>
-            <Button className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0">
+            <Button onClick={() => document.getElementById('file-input')?.click()} disabled={!projectId || uploading} className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0">
               <Upload className="w-4 h-4 mr-2" />
               {t('uploadDocument')}
             </Button>
           </div>
         </div>
+
+        <div className="flex items-center gap-3">
+          <label htmlFor="document-project">{currentLanguage === 'zh-CN' ? '项目' : 'Project'}</label>
+          <select id="document-project" value={projectId || ''} onChange={event => navigate(`/project/${event.target.value}/documents`)} className="rounded border bg-background p-2">
+            {!projectId && <option value="">{projectsLoading ? 'Loading...' : 'Select a project'}</option>}
+            {projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
+          </select>
+          {!projectId && !projectsLoading && <Button onClick={() => navigate('/app/projects')}>{currentLanguage === 'zh-CN' ? '创建项目后上传文件' : 'Create a project to upload files'}</Button>}
+        </div>
+        {error && <p role="alert" className="text-red-600">{error}</p>}
+        {uploading && <p role="status">{currentLanguage === 'zh-CN' ? '正在上传' : 'Uploading'} {uploadProgress}%</p>}
+        {loading && <p role="status">{currentLanguage === 'zh-CN' ? '正在读取文件' : 'Loading documents...'}</p>}
 
         {/* 统计概览 */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -348,6 +467,7 @@ export function DocumentAnalysis() {
               <Button 
                 className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0"
                 onClick={() => document.getElementById('file-input')?.click()}
+                disabled={!projectId || uploading}
               >
                 <Upload className="w-4 h-4 mr-2" />
 {currentLanguage === 'zh-CN' ? '选择文件' : 'Select Files'}
@@ -357,7 +477,8 @@ export function DocumentAnalysis() {
                 type="file"
                 multiple
                 className="hidden"
-                onChange={(e) => e.target.files && handleFiles(e.target.files)}
+                disabled={!projectId || uploading}
+                onChange={event => { if (event.target.files) void handleFiles(event.target.files); event.target.value = ''; }}
                 accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.jpg,.jpeg,.png,.gif"
               />
             </div>
@@ -485,8 +606,12 @@ export function DocumentAnalysis() {
                       
                       <div className="flex items-center space-x-3">
                         {getStatusIcon(doc.status)}
-                        <Button variant="ghost" size="sm" className="p-1">
-                          <MoreHorizontal className="w-4 h-4" />
+                        <Button variant="ghost" size="sm" className="p-1 text-red-600 hover:text-red-700"
+                          disabled={deletingId !== null}
+                          aria-label={currentLanguage === 'zh-CN' ? `删除 ${doc.name}` : `Delete ${doc.name}`}
+                          title={currentLanguage === 'zh-CN' ? '删除文档' : 'Delete document'}
+                          onClick={event => { event.stopPropagation(); void handleDelete(doc); }}>
+                          <Trash2 className="w-4 h-4" />
                         </Button>
                       </div>
                     </div>
@@ -553,21 +678,30 @@ export function DocumentAnalysis() {
                     )}
                     
                     <div className="flex items-center space-x-2">
-                      <Button size="sm" variant="outline">
+                      <Button size="sm" variant="outline" onClick={() => void handleDocumentAction('preview')}>
                         <Eye className="w-4 h-4 mr-1" />
 {currentLanguage === 'zh-CN' ? '预览' : 'Preview'}
                       </Button>
-                      <Button size="sm" variant="outline">
+                      <Button size="sm" variant="outline" onClick={() => void handleDocumentAction('download')}>
                         <Download className="w-4 h-4 mr-1" />
 {currentLanguage === 'zh-CN' ? '下载' : 'Download'}
                       </Button>
-                      <Button size="sm" variant="outline">
+                      <Button size="sm" variant="outline" onClick={() => void handleDocumentAction('share')}>
                         <Share2 className="w-4 h-4 mr-1" />
 {currentLanguage === 'zh-CN' ? '分享' : 'Share'}
                       </Button>
                     </div>
                   </div>
                 </div>
+
+                {shareLink && <div className="space-y-2"><p>{currentLanguage === 'zh-CN' ? '项目成员登录后可通过此链接查看文件' : 'Project members can open this link after signing in'}</p><Input aria-label="Share link" readOnly value={shareLink} /></div>}
+                {preview && <section aria-label="Document preview" className="space-y-2">
+                  <Button variant="outline" onClick={() => setPreview(null)}>{currentLanguage === 'zh-CN' ? '关闭预览' : 'Close preview'}</Button>
+                  <h3 className="font-medium">{currentLanguage === 'zh-CN' ? '处理结果 / OCR 识别内容' : 'Processed document / OCR text'}</h3>
+                  <div className="prose dark:prose-invert max-w-none max-h-[600px] overflow-auto break-words rounded border p-4">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{preview.text}</ReactMarkdown>
+                  </div>
+                </section>}
 
                 {/* 智能分析结果 */}
                 {selectedDocument.analysis && (

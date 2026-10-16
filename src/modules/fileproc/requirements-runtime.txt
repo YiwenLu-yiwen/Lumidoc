@@ -1,3 +1,8 @@
 aiohttp>=3.11.0
 asyncpg>=0.30.0
 psycopg[binary]>=3.1.0
+rapidocr-onnxruntime==1.4.4
+onnxruntime==1.22.0
+# 与文档处理依赖保持一致，避免 OCR 安装时升级到 NumPy 2。
+numpy==1.26.4
+opencv-python==4.11.0.86

@@ -10,6 +10,10 @@ RUN pip install --no-cache-dir --timeout 120 --retries 5 -r requirements.txt
 COPY src/modules/fileproc/requirements-runtime.txt .
 RUN pip install --no-cache-dir -r requirements-runtime.txt
 
+# OCR 的 OpenCV 运行库。
+RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
 # 创建上传和临时目录
 RUN mkdir -p /app/uploads /app/temp
 

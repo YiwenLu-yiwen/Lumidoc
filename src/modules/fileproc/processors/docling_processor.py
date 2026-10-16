@@ -110,7 +110,12 @@ class DoclingProcessor:
             logger.info(f"已创建临时文件副本: {temp_file}")
             
             # 根据OCR设置选择处理方式
-            if enable_ocr or self.enable_ocr:
+            if os.environ.get('PDF_PROCESSOR', 'docling') == 'local':
+                from .local_pdf import extract_pdf_locally
+                result = await asyncio.to_thread(
+                    extract_pdf_locally, temp_file, self.rapidocr_models_path
+                )
+            elif enable_ocr or self.enable_ocr:
                 logger.info(f"使用OCR方式处理PDF: {temp_file}")
                 result = await self._process_pdf_with_ocr(temp_file)
             else:

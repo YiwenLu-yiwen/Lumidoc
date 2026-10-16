@@ -696,13 +696,7 @@ class FileProcessorService:
         try:
             logger.info(f"开始删除文件，文件哈希: {file_hash}, 项目ID: {project_id}")
 
-            # 确保project_id是整数
-            try:
-                project_id_int = int(project_id)
-                logger.info(f"项目ID转换为整数: {project_id_int}")
-            except ValueError:
-                logger.error(f"项目ID格式错误，无法转换为整数: {project_id}")
-                return False
+            project_id_value = str(project_id)
 
             # 首先从数据库删除关联记录
             pool = await FileServiceDatabase.get_pool()
@@ -711,9 +705,9 @@ class FileProcessorService:
                 file_exists = await conn.fetchrow(
                     """
                     SELECT 1 FROM project_files
-                    WHERE (file_hash = $1 OR name = $1) AND project_id = $2
+                    WHERE (file_hash = $1 OR name = $1) AND project_id::text = $2::text
                     """,
-                    file_hash, project_id_int
+                    file_hash, project_id_value
                 )
 
                 if not file_exists:
@@ -725,9 +719,9 @@ class FileProcessorService:
                     file_record = await conn.fetchrow(
                         """
                         SELECT name, file_hash, path FROM project_files
-                        WHERE (file_hash = $1 OR name = $1) AND project_id = $2
+                        WHERE (file_hash = $1 OR name = $1) AND project_id::text = $2::text
                         """,
-                        file_hash, project_id_int
+                        file_hash, project_id_value
                     )
 
                     if file_record:
@@ -750,10 +744,10 @@ class FileProcessorService:
                     result = await conn.execute(
                         """
                         DELETE FROM project_files
-                        WHERE (file_hash = $1 OR name = $1) AND project_id = $2
+                        WHERE (file_hash = $1 OR name = $1) AND project_id::text = $2::text
                         RETURNING id
                         """,
-                        file_hash, project_id_int
+                        file_hash, project_id_value
                     )
                     logger.info(f"已从project_files表删除文件关联记录，结果: {result}")
                 except Exception as e:
@@ -772,7 +766,7 @@ class FileProcessorService:
                     )
                 except Exception as e:
                     logger.error(f"检查文件引用失败: {str(e)}")
-                    # 继续执行，假设没有其他引用
+                    raise
 
                 # 🔧 修改删除逻辑：删除项目记录但保留content内容，避免用户在不同project上传同一文件的问题
                 if other_refs == 0:
@@ -799,10 +793,10 @@ class FileProcessorService:
 
                         if storage_type == 's3':
                             # S3/MinIO存储删除逻辑（不删除content目录）
-                            await self._delete_files_from_s3_storage_keep_content(conn, file_hash, project_id_int)
+                            await self._delete_files_from_s3_storage_keep_content(conn, file_hash, project_id_value)
                         else:
                             # 本地存储删除逻辑（不删除content目录）
-                            await self._delete_files_from_local_storage_keep_content(conn, file_hash, project_id_int)
+                            await self._delete_files_from_local_storage_keep_content(conn, file_hash, project_id_value)
 
                         logger.info(f"物理文件删除操作完成（保留content内容）, 哈希: {file_hash}")
                     except Exception as e:
@@ -818,8 +812,7 @@ class FileProcessorService:
         except Exception as e:
             logger.error(f"删除文件失败: {str(e)}")
             logger.error(traceback.format_exc())
-            # 返回False而不是抛出异常，让Web层可以更优雅地处理
-            return False
+            raise
 
     async def _delete_files_from_s3_storage(self, conn, file_hash: str, project_id_int: int):
         """从S3/MinIO存储删除文件"""
@@ -1059,14 +1052,14 @@ class FileProcessorService:
             logger.error(f"本地存储删除过程出错: {str(e)}")
             raise
 
-    async def _delete_files_from_s3_storage_keep_content(self, conn, file_hash: str, project_id_int: int):
+    async def _delete_files_from_s3_storage_keep_content(self, conn, file_hash: str, project_id_int: str):
         """从S3/MinIO存储删除文件但保留content内容"""
         try:
             # 获取数据库中的文件信息
             file_record = await conn.fetchrow(
                 """
                 SELECT name, path, id FROM project_files
-                WHERE file_hash = $1 AND project_id = $2
+                WHERE file_hash = $1 AND project_id::text = $2::text
                 """,
                 file_hash, project_id_int
             )
@@ -1136,14 +1129,14 @@ class FileProcessorService:
             logger.error(f"S3存储删除过程出错: {str(e)}")
             raise
 
-    async def _delete_files_from_local_storage_keep_content(self, conn, file_hash: str, project_id_int: int):
+    async def _delete_files_from_local_storage_keep_content(self, conn, file_hash: str, project_id_int: str):
         """从本地存储删除文件但保留content内容"""
         try:
             # 获取数据库中的文件信息
             file_record = await conn.fetchrow(
                 """
                 SELECT name, path, id FROM project_files
-                WHERE file_hash = $1 AND project_id = $2
+                WHERE file_hash = $1 AND project_id::text = $2::text
                 """,
                 file_hash, project_id_int
             )

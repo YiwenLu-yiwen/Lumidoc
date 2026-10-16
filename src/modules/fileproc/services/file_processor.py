@@ -1246,7 +1246,7 @@ class FileProcessor:
             content = None
             storage_type = os.environ.get("STORAGE_TYPE", "").lower()
 
-            if storage_type == "local":
+            if storage_type == "local" or os.path.isfile(file_path):
                 # 本地存储模式
                 local_storage_path = os.environ.get("UPLOAD_DIR", "./uploads")
 
@@ -1390,37 +1390,14 @@ class FileProcessor:
                 message="文本文件处理完成，准备返回结果"
             )
 
-            # 注册到文件服务（保存到数据库）
-            register_result = await call_service(
-                service_name="file",
-                endpoint="api/file/register/content",
-                method="POST",
-                json_data={
-                    "file_hash": file_id,
-                    "markdown_content": txt_content,  # 使用txt内容而非markdown
-                    "metadata": {"processed": True, "source": "text_processor", "format": "txt"},
-                    "file_type": "text/plain",  # 修改为txt类型
-                    "page_count": 1
-                },
-                use_service_auth=True
-            )
-
-            if register_result and register_result.get("success", False):
-                logger.info(f"处理完成并注册: file_id={file_id}, 保存路径={saved_path}")
-                return {
-                    "success": True,
-                    "message": "文件处理成功",
-                    "file_path": saved_path,
-                    "content_type": "text/plain"
-                }
-            else:
-                logger.warning(f"文件处理成功但注册失败: file_id={file_id}, 保存路径={saved_path}")
-                return {
-                    "success": True,
-                    "message": "文件处理成功但注册失败",
-                    "file_path": saved_path,
-                    "content_type": "text/plain"
-                }
+            # 保留提取内容，由统一登记步骤保存内容并更新项目文件状态。
+            return {
+                "success": True,
+                "content": txt_content,
+                "metadata": metadata,
+                "file_path": saved_path,
+                "content_type": "text/plain"
+            }
 
         except Exception as e:
             logger.error(f"处理文本文件失败: {file_path}, 错误: {str(e)}")

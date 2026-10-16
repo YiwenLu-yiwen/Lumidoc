@@ -645,11 +645,7 @@ async def delete_file(project_id: str, file_hash: str):
     except Exception as e:
         logger.error(f"删除文件时发生错误: {str(e)}")
         logger.error(traceback.format_exc())
-        # 返回成功，避免前端显示错误
-        return ApiResponse(
-            success=True,
-            message=f"文件删除过程中出现问题，但操作已完成: {file_hash}"
-        )
+        raise HTTPException(status_code=500, detail="删除文件失败，请重试") from e
 
 # 添加以项目文件路径格式直接删除文件的路由
 @router.delete(
@@ -1398,11 +1394,11 @@ async def download_file(
             file_record = await conn.fetchrow(
                 """
                 SELECT * FROM project_files 
-                WHERE project_id = $1 AND (name = $2 OR name = $3 OR file_hash = $4 OR file_hash = $5)
+                WHERE project_id::text = $1::text AND (name = $2 OR name = $3 OR file_hash = $4 OR file_hash = $5)
                 ORDER BY created_at DESC
                 LIMIT 1
                 """,
-                int(project_id), file_name, decoded_file_name, file_name, decoded_file_name
+                project_id, file_name, decoded_file_name, file_name, decoded_file_name
             )
             
             if not file_record:
@@ -1562,7 +1558,8 @@ async def get_file_content(
     project_id: str, 
     file_name: str,
     token: Optional[str] = Query(None),
-    current_user: User = Depends(get_current_user_or_service_with_query)
+    current_user: User = Depends(get_current_user_or_service_with_query),
+    processed_only: bool = False
 ):
     """
     获取项目文件的处理后内容（支持MinIO存储）
@@ -1586,11 +1583,11 @@ async def get_file_content(
             file_record = await conn.fetchrow(
                 """
                 SELECT * FROM project_files 
-                WHERE project_id = $1 AND (name = $2 OR name = $3 OR file_hash = $4 OR file_hash = $5)
+                WHERE project_id::text = $1::text AND (name = $2 OR name = $3 OR file_hash = $4 OR file_hash = $5)
                 ORDER BY created_at DESC
                 LIMIT 1
                 """,
-                int(project_id), file_name, decoded_file_name, file_name, decoded_file_name
+                project_id, file_name, decoded_file_name, file_name, decoded_file_name
             )
             
             if not file_record:
@@ -1631,6 +1628,8 @@ async def get_file_content(
                     
                     if await content_storage.file_exists(content_path):
                         content = await content_storage.get_file(content_path)
+                        if isinstance(content, bytes):
+                            content = content.decode("utf-8")
                         return {
                             "success": True,
                             "content": content,
@@ -1639,6 +1638,9 @@ async def get_file_content(
                             "status": "processed"
                         }
                     
+                    if processed_only:
+                        raise HTTPException(status_code=409, detail="文档处理结果尚未生成，请等待处理完成或重新上传失败文件")
+
                     # 如果没有处理后的内容，尝试获取原始文件
                     upload_storage = await get_storage(directory_type="upload")
                     
@@ -1683,11 +1685,15 @@ async def get_file_content(
                     else:
                         raise HTTPException(status_code=404, detail="文件在存储中不存在")
                         
+                except HTTPException:
+                    raise
                 except Exception as storage_error:
                     logger.error(f"从存储系统获取文件内容失败: {str(storage_error)}")
                     raise HTTPException(status_code=500, detail=f"获取文件内容失败: {str(storage_error)}")
             
             else:
+                if processed_only:
+                    raise HTTPException(status_code=409, detail="文档处理结果尚未生成，请等待处理完成或重新上传失败文件")
                 # 使用本地文件系统（原有逻辑）
                 file_path = file_record.get('path')
                 if file_path and os.path.exists(file_path):
