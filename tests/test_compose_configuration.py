@@ -156,14 +156,14 @@ def test_compose_requires_credentials_instead_of_shipping_password_defaults() ->
     assert (REPO_ROOT / ".env.example").is_file()
 
 
-def test_ocr_models_are_scoped_to_the_file_processor_image() -> None:
+def test_local_ocr_models_are_excluded_from_build_contexts() -> None:
     dockerignore = (REPO_ROOT / ".dockerignore").read_text(encoding="utf-8")
     fileproc_ignore = (
         REPO_ROOT / "src/modules/fileproc/Dockerfile.dockerignore"
     ).read_text(encoding="utf-8")
 
     assert "src/models" in dockerignore.splitlines()
-    assert "src/models" not in fileproc_ignore.splitlines()
+    assert "src/models" in fileproc_ignore.splitlines()
 
 
 def test_root_requirements_containers_can_build_native_dependencies() -> None:
@@ -265,6 +265,7 @@ def test_compose_uses_container_network_addresses() -> None:
 
     chat_environment = set(services["chat_service"]["environment"])
     assert "GRAPH_SERVICE_URL=http://graph_service:8003" in chat_environment
+    assert "GATEWAY_URL=http://gateway_service:8888" in chat_environment
 
     auth_environment = set(services["auth_service"]["environment"])
     assert "POSTGRES_HOST=db" in auth_environment
@@ -390,3 +391,37 @@ def test_file_service_images_include_shared_runtime_dependencies() -> None:
     ).read_text(encoding="utf-8")
     assert "--timeout 120" in fileproc_dockerfile
     assert "--retries 5" in fileproc_dockerfile
+
+
+def test_fileproc_uses_local_llm_and_has_ocr_runtime() -> None:
+    service = load_services()['fileproc_service']
+    env = dict(value.split('=', 1) for value in service['environment'])
+    assert env['LLM_SERVICE_URL'] == 'http://llm_service:8080'
+    assert env['LLM_POST_PROCESSING_MODEL'] == '${OLLAMA_CHAT_MODEL:-qwen3:1.7b}'
+    assert env['LLM_CONCURRENT_LIMIT'] == '1'
+    runtime = (REPO_ROOT / 'src/modules/fileproc/requirements-runtime.txt').read_text()
+    assert 'rapidocr-onnxruntime==1.4.4' in runtime
+    assert 'onnxruntime==1.22.0' in runtime
+
+
+def test_internal_services_do_not_publish_host_ports():
+    services = load_services()
+    assert {name for name, service in services.items() if service.get('ports')} == {
+        'frontend', 'gateway_service'
+    }
+    for name in ('frontend', 'gateway_service'):
+        assert all(port.startswith('${BIND_HOST:-127.0.0.1}:') for port in services[name]['ports'])
+    assert 'REDIS_HOST=redis' in services['graph_service']['environment']
+
+
+def test_source_directories_are_not_ignored_as_runtime_assets():
+    import subprocess
+    paths = ['frontend/src/lib/utils.ts', 'src/shared/models/api_models.py',
+             'src/modules/chat/models/chat_history.py']
+    for path in paths:
+        assert (REPO_ROOT / path).is_file()
+    # Run only in a Git checkout; exported source trees have no Git metadata.
+    if (REPO_ROOT / '.git').exists():
+        result = subprocess.run(['git', 'check-ignore', '--no-index', *paths],
+                                cwd=REPO_ROOT, capture_output=True, text=True)
+        assert result.returncode == 1, result.stdout

@@ -86,7 +86,7 @@ describeSmoke('frontend smoke e2e api flow', () => {
     'should pass login/project/upload/chat and GraphRAG isolation checks',
     async () => {
       const gateway = process.env.LUMIDOC_GATEWAY_URL || process.env.VITE_API_GATEWAY_URL || 'http://localhost:8888';
-      const lightrag = process.env.LUMIDOC_LIGHTRAG_URL || 'http://localhost:8006';
+      const lightrag = process.env.LUMIDOC_LIGHTRAG_URL || `${gateway}/api/lightrag`;
       const suffix = `${Date.now()}`;
       const u1 = `vitest_u1_${suffix}`;
       const u2 = `vitest_u2_${suffix}`;
@@ -256,7 +256,12 @@ describeSmoke('frontend smoke e2e api flow', () => {
       expect(chat.status).toBeGreaterThanOrEqual(200);
       expect(chat.status).toBeLessThan(300);
       expect(chat.text.length).toBeGreaterThan(0);
-      expect(chat.text).toContain(secret1);
+      const answer = chat.text.split('\n')
+        .filter(line => line.startsWith('data: '))
+        .map(line => asString(asRecord(parseJson(line.slice(6)))?.content) || '')
+        .join('');
+      expect(answer).toContain(secret1);
+      expect(answer).not.toContain(secret2);
 
       const noTokenQuery = await postJson(`${lightrag}/rag/query`, {
         project_id: projectId1,

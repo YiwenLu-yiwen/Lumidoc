@@ -53,8 +53,6 @@ services:
     build:
       context: .
       dockerfile: src/modules/file/Dockerfile
-    ports:
-      - "${FILE_SERVICE_PORT:-8004}:8004"
     volumes:
       - ./uploads:/app/uploads
       - ./temp:/app/temp
@@ -92,8 +90,6 @@ services:
     build:
       context: .
       dockerfile: src/modules/lightraglocal/Dockerfile
-    ports:
-      - "${RAG_SERVICE_PORT:-8006}:8006"
     volumes:
       - ./data:/app/data
     environment:
@@ -140,10 +136,10 @@ services:
     build:
       context: .
       dockerfile: src/modules/graph/Dockerfile
-    ports:
-      - "${GRAPH_SERVICE_PORT:-8003}:8003"
     environment:
       - PYTHONPATH=/app
+      - REDIS_HOST=redis
+      - POSTGRES_HOST=db
       - GRAPH_DB_URI=neo4j://neo4j:7687
       - GRAPH_DB_USER=neo4j
       - GRAPH_DB_PASSWORD=${NEO4J_PASSWORD:?NEO4J_PASSWORD is required}
@@ -162,8 +158,6 @@ services:
     build:
       context: .
       dockerfile: src/modules/auth/Dockerfile
-    ports:
-      - "${AUTH_SERVICE_PORT:-8007}:8007"
     environment:
       - PYTHONPATH=/app
       - DB_HOST=db
@@ -186,8 +180,6 @@ services:
     build:
       context: .
       dockerfile: src/modules/project/Dockerfile
-    ports:
-      - "${PROJECT_SERVICE_PORT:-8020}:8020"
     <<: *env-file
     environment:
       - PYTHONPATH=/app
@@ -209,8 +201,6 @@ services:
     build:
       context: .
       dockerfile: src/modules/chat/Dockerfile
-    ports:
-      - "${CHAT_SERVICE_PORT:-8001}:8001"
     volumes:
       - ./data:/app/data
     environment:
@@ -219,7 +209,10 @@ services:
       - REDIS_HOST=redis
       - RAG_SERVICE_URL=http://rag_service:8006
       - LLM_SERVICE_URL=http://llm_service:8080
+      - GATEWAY_URL=http://gateway_service:8888
       - GRAPH_SERVICE_URL=http://graph_service:8003
+      - AUTH_SERVICE_URL=http://auth_service:8007
+      - PROJECT_SERVICE_URL=http://project_service:8020
       - POSTGRES_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-lumidoc}
     <<: *env-file
     networks:
@@ -240,8 +233,6 @@ services:
     build:
       context: .
       dockerfile: src/modules/question/Dockerfile
-    ports:
-      - "${QUESTION_SERVICE_PORT:-8002}:8002"
     volumes:
       - ./data:/app/data
     environment:
@@ -262,8 +253,6 @@ services:
     build:
       context: .
       dockerfile: src/modules/monitoring/Dockerfile
-    ports:
-      - "${MONITORING_SERVICE_PORT:-8008}:8008"
     environment:
       - PYTHONPATH=/app
       - REDIS_HOST=redis
@@ -279,7 +268,7 @@ services:
       context: .
       dockerfile: src/modules/gateway/Dockerfile
     ports:
-      - "${GATEWAY_PORT:-8888}:8888"
+      - "${BIND_HOST:-127.0.0.1}:${GATEWAY_PORT:-8888}:8888"
     environment:
       - PYTHONPATH=/app
       - GATEWAY_PORT=8888
@@ -320,7 +309,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
+      - "${BIND_HOST:-127.0.0.1}:${FRONTEND_PORT:-3000}:3000"
     <<: *env-file
     environment:
       - API_GATEWAY_URL=http://localhost:${GATEWAY_PORT:-8888}
@@ -334,8 +323,6 @@ services:
     build:
       context: .
       dockerfile: src/modules/fileproc/Dockerfile
-    ports:
-      - "${FILEPROC_SERVICE_PORT:-8005}:8005"
     volumes:
       - ./uploads:/app/uploads
       - ./temp:/app/temp
@@ -351,6 +338,11 @@ services:
       - POSTGRES_PORT=5432
       - POSTGRES_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-lumidoc}
       - FILE_SERVICE_URL=http://file_service:8004
+      - LLM_SERVICE_URL=http://llm_service:8080
+      - GATEWAY_URL=http://gateway_service:8888
+      - LLM_POST_PROCESSING_MODEL=${OLLAMA_CHAT_MODEL:-qwen3:1.7b}
+      - LLM_CONCURRENT_LIMIT=1
+      - PDF_PROCESSOR=local
     <<: *env-file
     networks:
       - lumidoc_network
@@ -361,15 +353,13 @@ services:
       replicas: 1
       resources:
         limits:
-          cpus: '0.5'
-          memory: 512M
+          cpus: '${FILEPROC_CPU_LIMIT:-2}'
+          memory: ${FILEPROC_MEMORY_LIMIT:-4G}
       restart_policy:
         condition: on-failure
 
   redis:
     image: redis:7
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
@@ -380,21 +370,15 @@ services:
     image: neo4j:5
     environment:
       - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:?NEO4J_PASSWORD is required}
-    ports:
-      - "7474:7474"
-      - "7687:7687"
     volumes:
       - neo4j_data:/data
     networks:
       - lumidoc_network
 
   minio:
-    image: minio/minio:latest
-    container_name: lumidoc_minio
+    build:
+      context: ./scripts/minio
     command: server /data --console-address ":9001"
-    ports:
-      - "9000:9000"
-      - "9001:9001"
     environment:
       - MINIO_ROOT_USER=${S3_ACCESS_KEY:?S3_ACCESS_KEY is required}
       - MINIO_ROOT_PASSWORD=${S3_SECRET_KEY:?S3_SECRET_KEY is required}
@@ -412,13 +396,12 @@ services:
     build:
       context: .
       dockerfile: src/modules/llm/Dockerfile
-    ports:
-      - "${LLM_SERVICE_PORT:-8080}:8080"
     environment:
       - PYTHONPATH=/app
       - REDIS_HOST=redis
       - LLM_SERVICE_PORT=${LLM_SERVICE_PORT:-8080}
       - LLM_MODEL_TYPE=ollama
+      - OLLAMA_NUM_THREADS=${OLLAMA_NUM_THREADS:-4}
       - LLM_MODEL_NAME=${OLLAMA_CHAT_MODEL:-qwen3:1.7b}
       - OLLAMA_API_URL=http://ollama:11434
       - OLLAMA_URL=http://ollama:11434

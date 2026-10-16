@@ -18,6 +18,19 @@ rag_cache
 uploads
 temp
 
-# RapidOCR assets are only needed by the file-processing image. That Dockerfile
-# has its own ignore file so these models do not leak into every service image.
+# Never include local data or assistant state in build contexts.
 src/models
+**/.env
+**/.env.*
+**/logs
+**/data
+**/uploads
+**/content
+**/rag_storage
+**/rag_cache
+**/*.db
+**/*.sqlite*
+.claude
+.cursor
+.codex
+agentRules.md

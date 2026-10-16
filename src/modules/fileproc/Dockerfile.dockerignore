@@ -17,3 +17,20 @@ logs
 rag_cache
 uploads
 temp
+
+# Never include local data or assistant state in build contexts.
+src/models
+**/.env
+**/.env.*
+**/logs
+**/data
+**/uploads
+**/content
+**/rag_storage
+**/rag_cache
+**/*.db
+**/*.sqlite*
+.claude
+.cursor
+.codex
+agentRules.md
