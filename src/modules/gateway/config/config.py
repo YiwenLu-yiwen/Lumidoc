@@ -27,7 +27,6 @@ class GatewaySettings:
         "http://127.0.0.1:3000",
         "https://localhost:3000",
         "https://127.0.0.1:3000",
-        "http://115.29.191.36:3000"
     ]
     cors_methods: List[str] = ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]
     cors_headers: List[str] = ["*"]

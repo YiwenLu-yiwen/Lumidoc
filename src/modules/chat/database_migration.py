@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 def create_database_engine():
     """创建数据库引擎"""
     connection_string = settings.postgres_url
-    logger.info(f"创建数据库连接: {connection_string}")
+    logger.info("创建数据库连接")
     return create_engine(connection_string)
 
 def check_table_exists(engine, table_name):

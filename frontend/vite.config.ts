@@ -35,7 +35,7 @@ export default defineConfig(({ mode }) => {
   const deploymentMode = env.DEPLOYMENT_MODE || 'localhost';
   
   // 配置服务器URL映射（当DEPLOYMENT_MODE=server时使用）
-  const serverIP = env.SERVER_IP || '115.29.191.36'; // 默认IP，可在.env中配置
+  const serverIP = env.SERVER_IP || 'localhost'; // 默认IP，可在.env中配置
   const serverConfig = {
     API_GATEWAY_URL: env.API_GATEWAY_URL?.replace('localhost', serverIP),
     CHAT_SERVICE_URL: env.CHAT_SERVICE_URL?.replace('localhost', serverIP),

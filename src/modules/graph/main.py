@@ -86,7 +86,7 @@ try:
     # 设置CORS（如果原有app没有设置的话）
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://115.29.191.36:3000", "http://localhost:3000"],
+        allow_origins=["http://localhost:3000"],
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["*"],
@@ -119,7 +119,7 @@ except ImportError:
     # 设置CORS
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://115.29.191.36:3000", "http://localhost:3000"],
+        allow_origins=["http://localhost:3000"],
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["*"],

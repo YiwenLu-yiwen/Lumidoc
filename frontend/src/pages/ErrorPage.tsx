@@ -1,5 +1,5 @@
 import { useNavigate, useRouteError, useLocation } from 'react-router-dom';
-import { AlertTriangle, Home, RefreshCw, ArrowLeft, Mail, Bug, Clock } from 'lucide-react';
+import { AlertTriangle, Home, RefreshCw, ArrowLeft, Bug, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { detectAutoTheme } from '@/utils/language';
 
@@ -154,38 +154,6 @@ export function ErrorPage() {
     window.location.reload();
   };
 
-  // 发送技术支持邮件
-  const handleContactSupport = () => {
-    const subject = encodeURIComponent(`Lumidoc Intelligence 错误报告 - ${errorInfo.details.errorCode}`);
-    const body = encodeURIComponent(`
-亲爱的技术支持团队，
-
-我在使用 Lumidoc Intelligence 时遇到了以下错误：
-
-错误信息：
-- 错误代码：${errorInfo.details.errorCode}
-- 错误标题：${errorInfo.title}
-- 错误描述：${errorInfo.description}
-- 访问路径：${errorInfo.details.requestedPath}
-- 发生时间：${errorInfo.details.timestamp}
-
-可能原因：
-${errorInfo.details.possibleCauses.map(cause => `- ${cause}`).join('\n')}
-
-用户环境：
-- 浏览器：${navigator.userAgent}
-- 当前URL：${window.location.href}
-- 来源页面：${document.referrer || '直接访问'}
-
-${errorInfo.details.errorStack ? `错误堆栈：\n${errorInfo.details.errorStack}` : ''}
-
-请协助解决此问题，谢谢！
-
-此邮件由 Lumidoc Intelligence 错误页面自动生成。
-    `);
-    
-    window.location.href = `mailto:wil.yiwen.lu@gmail.com?subject=${subject}&body=${body}`;
-  };
 
   return (
     <div className={`min-h-screen flex items-center justify-center px-4 py-8 ${
@@ -316,42 +284,6 @@ ${errorInfo.details.errorStack ? `错误堆栈：\n${errorInfo.details.errorStac
                 ))}
               </ul>
             </div>
-          </div>
-        </div>
-
-        {/* 技术支持联系 */}
-        <div className={`p-6 rounded-2xl border text-center ${
-          isDarkMode ? 'bg-[#2a2a2a] border-gray-700' : 'bg-white border-gray-200'
-        } shadow-xl`}>
-          <div className="space-y-4">
-            <div className="flex justify-center">
-              <div className={`p-4 rounded-full ${
-                isDarkMode ? 'bg-blue-900/30' : 'bg-blue-100'
-              }`}>
-                <Mail className={`w-8 h-8 ${
-                  isDarkMode ? 'text-blue-400' : 'text-blue-600'
-                }`} />
-              </div>
-            </div>
-            
-            <div className="space-y-2">
-              <h3 className="text-xl font-semibold">需要技术支持？</h3>
-              <p className={`text-sm max-w-md mx-auto ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                如果问题持续存在，请点击下方按钮联系我们的技术支持团队。我们会自动为您生成包含错误详情的邮件。
-              </p>
-            </div>
-
-            <Button
-              onClick={handleContactSupport}
-              className="flex items-center space-x-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white border-0"
-            >
-              <Mail className="w-4 h-4" />
-              <span>联系技术支持</span>
-            </Button>
-            
-            <p className={`text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-              支持邮箱：wil.yiwen.lu@gmail.com
-            </p>
           </div>
         </div>
 

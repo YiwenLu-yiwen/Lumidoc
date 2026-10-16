@@ -160,7 +160,7 @@ app = FastAPI(
 # 添加CORS中间件，解决跨域问题
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://115.29.191.36:3000", "http://localhost:3000"],
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],  # 允许所有HTTP方法
     allow_headers=["*"],  # 允许所有头部

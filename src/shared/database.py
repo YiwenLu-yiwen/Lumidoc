@@ -46,7 +46,7 @@ async def get_db_pool() -> asyncpg.Pool:
         # 检查环境变量是否有更高优先级的设置
         if os.environ.get("POSTGRES_URL"):
             database_url = os.environ.get("POSTGRES_URL")
-            logger.info(f"使用环境变量POSTGRES_URL: {database_url}")
+            logger.info("使用环境变量 POSTGRES_URL 配置数据库连接")
             
         # 创建连接池
         logger.info("创建数据库连接池...")
@@ -88,7 +88,7 @@ async def get_db() -> AsyncGenerator[asyncpg.Connection, None]:
         # 检查环境变量是否有更高优先级的设置
         if os.environ.get("POSTGRES_URL"):
             database_url = os.environ.get("POSTGRES_URL")
-            logger.info(f"使用环境变量POSTGRES_URL: {database_url}")
+            logger.info("使用环境变量 POSTGRES_URL 配置数据库连接")
         
         # 创建连接
         conn = await asyncpg.connect(database_url)
@@ -154,7 +154,7 @@ def get_database_url() -> str:
     # 优先使用环境变量
     if os.environ.get("POSTGRES_URL"):
         database_url = os.environ.get("POSTGRES_URL")
-        logger.info(f"使用环境变量POSTGRES_URL: {database_url}")
+        logger.info("使用环境变量 POSTGRES_URL 配置数据库连接")
         return database_url
 
 # 关闭数据库连接池

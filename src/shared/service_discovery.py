@@ -92,7 +92,7 @@ class ServiceRegistry:
         try:
             # 使用通用连接URL生成函数
             redis_url = _get_redis_url()
-            logger.info(f"连接到Redis: {redis_url.replace('redis://:', 'redis://***:')}")
+            logger.info("连接到配置的 Redis 服务")
             
             # 添加连接选项提高可靠性
             self._redis = await aioredis.from_url(
