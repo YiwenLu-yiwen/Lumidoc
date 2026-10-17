@@ -7,8 +7,6 @@ import TextareaAutosize from 'react-textarea-autosize';
 import { 
   Copy, 
   Edit3, 
-  Trash2, 
-  History, 
   Send,
   Square,
   MessageSquare, 
@@ -22,7 +20,6 @@ import { useTheme } from '@/context/ThemeContext';
 import { useLanguage } from '@/context/LanguageContext';
 import { useProjects } from '@/context/ProjectContext';
 import { useSelectedModel } from '@/hooks/useModel';
-import { deleteConversation } from '@/api/conversations';
 import { createChatRequestPayload } from './chatRequest';
 
 // 导入迁移按钮组件
@@ -162,9 +159,8 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
   const [lastError, setLastError] = useState<string | null>(null);
   const [, setIsHistoryLoaded] = useState(false);
   const loadedRef = useRef(false);
+  const historyPagination = useRef({page: 0, more: false, loading: false});
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const [showHistorySelector, setShowHistorySelector] = useState(false);
-  const [historyPage, setHistoryPage] = useState(0);
   const [collapsedThinking, setCollapsedThinking] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -289,6 +285,7 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
         const data = await response.json();
         // 丢弃项目切换或发送新消息之前发起的历史请求。
         if (requestId !== historyRequest.current) return;
+        historyPagination.current = {page, more: Array.isArray(data) && data.length === 50, loading: false};
         if (data && Array.isArray(data) && data.length > 0) {
           // 转换历史消息格式并加载
           const historyMessages = (data as ChatHistoryMessage[]).map((msg) => ({
@@ -333,28 +330,16 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
     }
   }, [projectId, conversationId]);
 
-  // 加载更多历史消息
-  const loadMoreHistory = () => {
-    const nextPage = historyPage + 1;
-    setHistoryPage(nextPage);
-    loadChatHistory(true, nextPage);
-  };
-
-  // 切换是否包含归档消息
-
-
-  // 清除聊天历史
-  const [isDeleting, setIsDeleting] = useState(false);
-  const clearChatHistory = async () => {
-    if (!projectId || isDeleting) return;
-    if (!confirm(currentLanguage === 'zh-CN' ? '确定要删除当前会话吗？' : 'Delete this conversation?')) return;
-    setIsDeleting(true);
-    try {
-      await deleteConversation(projectId, conversationId);
-    } catch (error) {
-      setLastError(error instanceof Error ? error.message : '会话删除失败');
-      setIsDeleting(false);
-    }
+  const loadEarlierOnScroll = async () => {
+    const container = messagesContainerRef.current;
+    const pagination = historyPagination.current;
+    if (!container || container.scrollTop > 24 || !pagination.more || pagination.loading || isLoading) return;
+    pagination.loading = true;
+    followBottom.current = false;
+    const height = container.scrollHeight;
+    await loadChatHistory(true, pagination.page + 1);
+    historyPagination.current.loading = false;
+    requestAnimationFrame(() => { if (messagesContainerRef.current === container) container.scrollTop += container.scrollHeight - height; });
   };
 
   // 在组件挂载时确保状态正确初始化
@@ -817,77 +802,12 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
     <div className={`h-full min-h-0 flex flex-col transition-colors duration-300 ${
       isDarkMode ? 'bg-[#212121] text-gray-100' : 'bg-white text-gray-900'
     }`}>
-      {/* 顶部导航栏 */}
-      <div className={`w-full py-2 px-4 border-b flex justify-center items-center transition-colors duration-300 ${
-        isDarkMode ? 'border-gray-800 bg-[#171717]' : 'border-gray-200 bg-white'
-      }`}>
-        <div className="flex-1 flex justify-end space-x-3">
-          <button 
-            onClick={() => setShowHistorySelector(!showHistorySelector)}
-            className={`p-2 rounded-lg transition-colors ${
-              isDarkMode ? 'text-gray-400 hover:text-white hover:bg-gray-700' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-            }`}
-            title={currentLanguage === 'zh-CN' ? '查看历史消息' : 'View History Messages'}
-          >
-            <History className="w-5 h-5" />
-          </button>
-          <button 
-            onClick={clearChatHistory}
-            disabled={isDeleting}
-            className={`p-2 rounded-lg transition-colors ${
-              isDarkMode ? 'text-gray-400 hover:text-white hover:bg-gray-700' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-            }`}
-            title={currentLanguage === 'zh-CN' ? '删除当前会话' : 'Delete current conversation'}
-            aria-label={currentLanguage === 'zh-CN' ? '删除当前会话' : 'Delete current conversation'}
-          >
-            <Trash2 className="w-5 h-5" />
-          </button>
-        </div>
-      </div>
-      
-      {/* 历史消息选择器 */}
-      {showHistorySelector && (
-        <div className={`border-b p-4 transition-colors duration-300 ${
-          isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'
-        }`}>
-          <div className="flex justify-between items-center mb-3">
-            <div className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-              {currentLanguage === 'zh-CN' ? '历史消息' : 'History Messages'}
-            </div>
-            <button 
-              onClick={() => setShowHistorySelector(false)}
-              className={`px-3 py-1 text-sm rounded-lg transition-colors ${
-                isDarkMode ? 'text-gray-400 hover:text-white hover:bg-gray-700' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              {currentLanguage === 'zh-CN' ? '关闭' : 'Close'}
-            </button>
-          </div>
-          <div className="space-y-3">
-            <p className="text-sm text-gray-500">{currentLanguage === 'zh-CN'
-              ? '30天未活动的会话自动归档，完整对话仍可随时打开。'
-              : 'Conversations inactive for 30 days are archived automatically. Full conversations remain available.'}</p>
-            <div className="flex flex-wrap gap-3">
-              <button 
-                onClick={loadMoreHistory}
-                className={`px-3 py-1 text-sm rounded-lg transition-colors ${
-                  isDarkMode ? 'text-blue-400 hover:text-blue-300 bg-blue-900/20 hover:bg-blue-900/30' : 'text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100'
-                }`}
-              >
-                {currentLanguage === 'zh-CN' ? '加载更多历史消息' : 'Load More History Messages'}
-              </button>
-
-            </div>
-          </div>
-          
-        </div>
-      )}
-      
       {/* 主要聊天区域 - 使用相对定位和灵活布局 */}
       <div className="relative min-h-0 flex-1 flex flex-col overflow-hidden">
         {/* 滚动消息区域 - 填充可用空间 */}
         <div 
           ref={messagesContainerRef}
+          onScroll={() => void loadEarlierOnScroll()}
           aria-label="Chat messages"
           className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-6 px-6 pb-6 md:pb-8"
         >

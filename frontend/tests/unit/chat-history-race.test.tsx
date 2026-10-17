@@ -106,19 +106,12 @@ it('clears the active conversation when it is deleted from the sidebar', async (
   expect(screen.queryByText('Selected conversation')).toBeNull();
 });
 
-it('deletes the current conversation and notifies the sidebar', async () => {
-  const fetchMock = vi.fn((url: string) => Promise.resolve(new Response(url.includes('/history/') ? '[]' : '{"success":true}')));
-  vi.stubGlobal('fetch', fetchMock);
-  vi.stubGlobal('confirm', vi.fn(() => true));
-  const changed = vi.fn();
-  window.addEventListener('chat-updated', changed);
-  render(<MemoryRouter initialEntries={['/chat?conversation=delete-me']}><ChatLayout /></MemoryRouter>);
-  fireEvent.click(screen.getByRole('button', { name: 'Delete current conversation' }));
-  await waitFor(() => expect(changed).toHaveBeenCalledTimes(1));
-  expect(fetchMock.mock.calls.some(([url]) => url.endsWith('/chat/conversations/project-1/delete-me'))).toBe(true);
-  window.removeEventListener('chat-updated', changed);
+it('keeps history and deletion controls in the sidebar, without a chat toolbar', () => {
+  vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response('[]'))));
+  render(<MemoryRouter><ChatLayout /></MemoryRouter>);
+  expect(screen.queryByRole('button', {name: 'Delete current conversation'})).toBeNull();
+  expect(screen.queryByTitle('View History Messages')).toBeNull();
 });
-
 
 it('shows native thinking before the answer and sends an explicit mode', async () => {
   let controller!: ReadableStreamDefaultController<Uint8Array>;
@@ -151,4 +144,19 @@ it('shows native thinking before the answer and sends an explicit mode', async (
   });
   expect(await screen.findByText('Final answer')).toBeTruthy();
   expect(document.querySelector('.prose')?.textContent).toBe('Final answer');
+});
+
+it('loads earlier messages by scrolling without restoring the history toolbar', async()=>{
+ const recent=Array.from({length:50},(_,i)=>({id:`recent-${i}`,role:'user',content:`Recent ${i}`}));
+ const fetchMock=vi.fn((url:string)=>Promise.resolve(new Response(JSON.stringify(url.includes('/history/') ? (url.includes('offset=50') ? [{id:'older',role:'user',content:'Earlier message'}] : recent) : {}))));
+ vi.stubGlobal('fetch',fetchMock);
+ render(<MemoryRouter><ChatLayout/></MemoryRouter>);
+ await screen.findByText('Recent 49');
+ const messages=screen.getByLabelText('Chat messages');
+ Object.defineProperty(messages,'scrollHeight',{configurable:true,value:1000});
+ Object.defineProperty(messages,'clientHeight',{configurable:true,value:200});
+ messages.scrollTop=0;fireEvent.scroll(messages);
+ await screen.findByText('Earlier message');
+ await waitFor(()=>expect(fetchMock.mock.calls.filter(([url])=>url.includes('offset=50'))).toHaveLength(1));
+ expect(screen.getByText('Recent 49')).toBeTruthy();
 });
