@@ -67,6 +67,14 @@ class LLMPostProcessor:
                     "reason": "LLM后处理未启用"
                 }
             
+            # A PDF text layer is already source text, not OCR output. Rewriting it
+            # adds model latency and can change facts because headers repeat.
+            if (metadata.get("processor") == "local_pdf"
+                    and metadata.get("ocr_enabled") is False
+                    and os.getenv("LLM_POST_PROCESS_TEXT_PDF", "false").lower() != "true"):
+                return {"success": True, "content": content, "metadata": metadata,
+                        "processed": False, "reason": "PDF text layer requires no OCR cleanup"}
+
             # 检查内容质量
             quality_assessment = self._assess_content_quality(content)
             

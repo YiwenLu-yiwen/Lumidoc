@@ -1,3 +1,4 @@
+import { ThinkingElapsed } from './ThinkingElapsed';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
@@ -25,7 +26,6 @@ import { deleteConversation } from '@/api/conversations';
 import { createChatRequestPayload } from './chatRequest';
 
 // 导入迁移按钮组件
-import MigrationButton from './components/MigrationButton';
 
 // 是否开启调试模式
 const DEBUG_MODE = import.meta.env.VITE_DEBUG_MODE === 'true';
@@ -92,55 +92,6 @@ const processSpecialFormat = (content: string): string => {
   return processed;
 };
 
-// 解析思考模型的输出格式（支持 deepseek-r1 和传统格式）
-const parseThinkingModelOutput = (content: string): { thinking: string; answer: string } => {
-  if (!content) return { thinking: "", answer: "" };
-  
-  // 首先移除连接前缀
-  const cleanedContent = removeConnectionPrefix(content);
-  
-  // 1. 检查 deepseek-r1 的 <think>...</think> 格式
-  const deepseekThinkPattern = /<think>([\s\S]*?)<\/think>([\s\S]*)/;
-  const deepseekMatch = cleanedContent.match(deepseekThinkPattern);
-  
-  if (deepseekMatch) {
-    const thinking = deepseekMatch[1].trim();
-    const answer = deepseekMatch[2].trim();
-    return {
-      thinking,
-      answer: answer || thinking // 如果没有answer部分，使用thinking作为答案
-    };
-  }
-  
-  // 2. 检查传统的思考标记格式
-  const thinkingPattern = /🤔 \*\*思考过程：\*\*\n(.*?)\n\n\*\*回答：\*\*\n(.*)/s;
-  const match = cleanedContent.match(thinkingPattern);
-  
-  if (match) {
-    return {
-      thinking: match[1].trim(),
-      answer: match[2].trim()
-    };
-  }
-  
-  // 3. 检查是否只有思考内容（传统格式）
-  const thinkingOnlyPattern = /🤔 \*\*思考过程：\*\*\n(.*)/s;
-  const thinkingOnlyMatch = cleanedContent.match(thinkingOnlyPattern);
-  
-  if (thinkingOnlyMatch) {
-    return {
-      thinking: thinkingOnlyMatch[1].trim(),
-      answer: ""
-    };
-  }
-  
-  // 4. 没有思考标记，直接返回为答案
-  return {
-    thinking: "",
-    answer: cleanedContent
-  };
-};
-
 // 消息类型定义
 interface Message {
   id: string;
@@ -148,19 +99,16 @@ interface Message {
   isUser: boolean;
   timestamp: string;
   thinking?: string; // 添加思考内容字段
+  thinkingStartedAt?: number;
+  thinkingFinishedAt?: number;
 }
 
 interface ChatHistoryMessage {
+  thinking?: string;
   id?: string;
   content?: string;
   role?: string;
   timestamp?: string;
-}
-
-interface MigrationResult {
-  projects_processed: number;
-  messages_migrated: number;
-  errors: number;
 }
 
 const MAX_MESSAGES = 500;
@@ -189,6 +137,8 @@ export default function ChatLayout() {
 
 function ChatConversation({ projectId, conversationId }: { projectId?: string; conversationId: string }) {
   const { selectedModel } = useSelectedModel();
+  const [thinkingEnabled, setThinkingEnabled] = useState(false);
+  const useThinking = thinkingEnabled && selectedModel?.supportsThinking === true;
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -214,11 +164,17 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
   const loadedRef = useRef(false);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [showHistorySelector, setShowHistorySelector] = useState(false);
-  const [includeArchived, setIncludeArchived] = useState(false);
   const [historyPage, setHistoryPage] = useState(0);
-  const [isMigrating, setIsMigrating] = useState(false);
-  const [migrationResult, setMigrationResult] = useState<MigrationResult | null>(null);
   const [collapsedThinking, setCollapsedThinking] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!isLoading) {
+      const finishedAt = Date.now();
+      setMessages(previous => previous.map(message =>
+        message.thinkingStartedAt !== undefined && message.thinkingFinishedAt === undefined
+          ? {...message, thinkingFinishedAt: finishedAt} : message));
+    }
+  }, [isLoading]);
 
   // 主题模式和语言检测
   const { isDarkMode } = useTheme();
@@ -242,13 +198,16 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
   const CollapsibleThinking: React.FC<{
     thinking: string;
     messageId: string;
+    startedAt?: number;
+    finishedAt?: number;
     isCollapsed: boolean;
     onToggle: () => void;
-  }> = ({ thinking, isCollapsed, onToggle }) => (
+  }> = ({ thinking, startedAt, finishedAt, isCollapsed, onToggle }) => (
     <div className={`mb-4 border-l-2 border-purple-500 pl-4 rounded-lg ${
       isDarkMode ? 'bg-purple-900/10' : 'bg-purple-50'
     }`}>
       <button
+        aria-expanded={!isCollapsed}
         onClick={onToggle}
         className={`flex items-center text-sm font-medium mb-2 transition-colors ${
           isDarkMode ? 'text-purple-400 hover:text-purple-300' : 'text-purple-600 hover:text-purple-700'
@@ -261,6 +220,7 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
         )}
         <Brain className="w-4 h-4 mr-2" />
         {currentLanguage === 'zh-CN' ? '思考过程' : 'Thinking Process'}
+        <ThinkingElapsed startedAt={startedAt} finishedAt={finishedAt} language={currentLanguage} />
       </button>
       {!isCollapsed && (
         <div className={`text-sm whitespace-pre-wrap leading-relaxed p-3 rounded-lg ${
@@ -304,7 +264,7 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
   }, []);
 
   // 加载聊天历史 - 修改为支持存档消息和分页
-  const loadChatHistory = useCallback(async (includeArchivedMessages = false, page = 0) => {
+  const loadChatHistory = useCallback(async (includeArchivedMessages = true, page = 0) => {
     if (loadedRef.current && !includeArchivedMessages && page === 0) return;
     const requestId = ++historyRequest.current;
     
@@ -334,6 +294,7 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
           const historyMessages = (data as ChatHistoryMessage[]).map((msg) => ({
             id: msg.id || Date.now().toString() + Math.random().toString(),
             content: processSpecialFormat(msg.content || ''),
+            thinking: msg.thinking,
             isUser: msg.role === 'user',
             timestamp: msg.timestamp || new Date().toISOString()
           }));
@@ -348,7 +309,7 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
           }
           
           setIsHistoryLoaded(true);
-        } else if (page === 0 && !includeArchivedMessages) {
+        } else if (page === 0) {
           // 如果是首次加载且没有消息，则清空消息列表
           console.log('没有聊天历史记录');
           setMessages([]);
@@ -376,17 +337,11 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
   const loadMoreHistory = () => {
     const nextPage = historyPage + 1;
     setHistoryPage(nextPage);
-    loadChatHistory(includeArchived, nextPage);
+    loadChatHistory(true, nextPage);
   };
 
   // 切换是否包含归档消息
-  const toggleArchivedMessages = () => {
-    const newValue = !includeArchived;
-    setIncludeArchived(newValue);
-    setHistoryPage(0); // 重置分页
-    loadedRef.current = false;
-    void loadChatHistory(newValue, 0); // 重新加载消息
-  };
+
 
   // 清除聊天历史
   const [isDeleting, setIsDeleting] = useState(false);
@@ -465,7 +420,7 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
           loadedRef.current = false;
           await loadChatHistory();
         }
-        wasPending = data.pending;
+        wasPending = data.pending && !abortControllerRef.current;
       } catch {
         // 暂时的网络错误不影响当前对话，下一次继续检查。
       } finally {
@@ -478,6 +433,7 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
 
   const stopGeneration = async () => {
     if (isStopping) return;
+    const hadActiveStream = Boolean(abortControllerRef.current);
     setIsStopping(true);
     setLastError(null);
     try {
@@ -490,8 +446,10 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
       // 等待已取消的流退出，避免上一请求的清理影响下一条消息。
       await streamFinished.current;
       setBackgroundPending(false);
-      loadedRef.current = false;
-      await loadChatHistory();
+      if (!hadActiveStream) {
+        loadedRef.current = false;
+        await loadChatHistory();
+      }
       window.dispatchEvent(new Event('chat-updated'));
     } catch (error) {
       setLastError(error instanceof Error ? error.message : String(error));
@@ -614,6 +572,7 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
       const thinkingMessage: Message = {
             id: (Date.now() + 1).toString(),
             content: '',
+            thinkingStartedAt: useThinking ? Date.now() : undefined,
             isUser: false,
             timestamp: new Date().toISOString(),
           };
@@ -662,6 +621,7 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
             userId: JSON.parse(localStorage.getItem('lumidoc_user') || '{}').id,
             modelId: selectedModel?.id,
             conversationId,
+            thinkingEnabled: useThinking,
           })),
             signal: controller.signal,
           });
@@ -680,6 +640,7 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
           const decoder = new TextDecoder('utf-8');
           let buffer = '';
           let aiReply = '';
+          let aiThinking = '';
           let done = false;
           
         // 不断读取流式数据
@@ -725,25 +686,9 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
                       continue;
                     }
                     
-                    // 累积回复内容
-                    if (data.content) {
-                      // 处理特殊标记
-                      const processedContent = data.content;
-                      aiReply += processedContent;
-                      
-                      // 解析思考模型的输出
-                      const { thinking, answer } = parseThinkingModelOutput(aiReply);
-                      
-                      // 检查是否含有完成标记
-                      if (data.content.includes("<COMPLETE>") || 
-                          data.content.includes("<|COMPLETE|>")) {
-                        console.log('在内容中检测到完成标记');
-                        done = true;
-                        setStreamingComplete(true);
-                        setIsLoading(false);
-                        setIsProcessing(false);
-                      }
-                      
+                    if (data.content || data.thinking) {
+                      aiReply += data.content || '';
+                      aiThinking += data.thinking || '';
                     // 更新思考中消息内容
                       setMessages(prev => {
                         const arr = [...prev];
@@ -752,8 +697,9 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
                         if (!arr[i].isUser) {
                           arr[i] = { 
                             ...arr[i], 
-                            content: answer || aiReply, 
-                            thinking: thinking || undefined 
+                            content: aiReply,
+                            thinking: aiThinking || undefined,
+                            thinkingFinishedAt: arr[i].thinkingFinishedAt ?? (data.content ? Date.now() : undefined)
                           };
                           break;
                         }
@@ -866,66 +812,15 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
     }
   };
     
-  // 添加手动触发迁移消息的函数
-  const triggerMigration = async (days: number = 30) => {
-    if (!confirm(`确定要将${days}天前的聊天历史迁移到数据库吗？`)) return;
-    
-    try {
-      setIsMigrating(true);
-      
-      const token = localStorage.getItem('lumidoc_token');
-      const gatewayUrl = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8888';
-      const url = `${gatewayUrl}/chat/api/chat/migrate?days=${days}`;
-      
-      console.log('通过Gateway触发聊天历史迁移，请求URL:', url);
-      
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (response.ok) {
-        const result = await response.json();
-        console.log('迁移结果:', result);
-        setMigrationResult(result.data);
-        alert(`迁移完成: 已迁移 ${result.data.messages_migrated} 条消息`);
-      } else {
-        console.error('迁移请求失败:', response.statusText);
-        const errorText = await response.text();
-        console.error('错误详情:', errorText);
-        alert('迁移失败: ' + response.statusText);
-      }
-    } catch (error) {
-      console.error('触发迁移时出错:', error);
-      setLastError(error instanceof Error ? error.message : '触发迁移时出错');
-      alert('迁移请求出错，请查看控制台日志');
-    } finally {
-      setIsMigrating(false);
-    }
-  };
-
   // 渲染UI
   return (
     <div className={`h-full min-h-0 flex flex-col transition-colors duration-300 ${
       isDarkMode ? 'bg-[#212121] text-gray-100' : 'bg-white text-gray-900'
     }`}>
       {/* 顶部导航栏 */}
-      <div className={`w-full py-4 px-6 border-b flex justify-center items-center transition-colors duration-300 ${
+      <div className={`w-full py-2 px-4 border-b flex justify-center items-center transition-colors duration-300 ${
         isDarkMode ? 'border-gray-800 bg-[#171717]' : 'border-gray-200 bg-white'
       }`}>
-        <div className="flex-1"></div>
-        <div className="flex items-center space-x-3">
-          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-            isDarkMode ? 'bg-gradient-to-r from-blue-600 to-purple-600' : 'bg-gradient-to-r from-blue-500 to-purple-500'
-          }`}>
-            <MessageSquare className="w-4 h-4 text-white" />
-          </div>
-          <div className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-            {currentLanguage === 'zh-CN' ? 'Lumidoc Intelligence 聊天' : 'Lumidoc Intelligence Chat'}
-          </div>
-        </div>
         <div className="flex-1 flex justify-end space-x-3">
           <button 
             onClick={() => setShowHistorySelector(!showHistorySelector)}
@@ -969,15 +864,9 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
             </button>
           </div>
           <div className="space-y-3">
-            <label className="flex items-center text-sm">
-              <input 
-                type="checkbox" 
-                checked={includeArchived} 
-                onChange={toggleArchivedMessages}
-                className="mr-3 rounded"
-              />
-              {currentLanguage === 'zh-CN' ? '包含归档消息（30天前）' : 'Include archived messages (30 days ago)'}
-            </label>
+            <p className="text-sm text-gray-500">{currentLanguage === 'zh-CN'
+              ? '30天未活动的会话自动归档，完整对话仍可随时打开。'
+              : 'Conversations inactive for 30 days are archived automatically. Full conversations remain available.'}</p>
             <div className="flex flex-wrap gap-3">
               <button 
                 onClick={loadMoreHistory}
@@ -987,47 +876,10 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
               >
                 {currentLanguage === 'zh-CN' ? '加载更多历史消息' : 'Load More History Messages'}
               </button>
-              <button 
-                onClick={() => triggerMigration(30)}
-                disabled={isMigrating}
-                className={`px-3 py-1 text-sm rounded-lg transition-colors ${
-                  isMigrating 
-                    ? 'text-gray-500 cursor-not-allowed' 
-                    : isDarkMode 
-                      ? 'text-green-400 hover:text-green-300 bg-green-900/20 hover:bg-green-900/30' 
-                      : 'text-green-600 hover:text-green-700 bg-green-50 hover:bg-green-100'
-                }`}
-                title={currentLanguage === 'zh-CN' ? '将30天前的消息迁移到数据库存档' : 'Migrate messages older than 30 days to database archive'}
-              >
-                {isMigrating 
-                  ? (currentLanguage === 'zh-CN' ? '迁移中...' : 'Migrating...')
-                  : (currentLanguage === 'zh-CN' ? '归档旧消息' : 'Archive Old Messages')
-                }
-              </button>
+
             </div>
           </div>
           
-          {/* 显示迁移结果 */}
-          {migrationResult && (
-            <div className={`mt-3 text-sm p-3 rounded-lg ${
-              isDarkMode ? 'text-gray-300 bg-gray-700' : 'text-gray-700 bg-white border border-gray-200'
-            }`}>
-              <div>
-                {currentLanguage === 'zh-CN' 
-                  ? `迁移结果: 处理${migrationResult.projects_processed}个项目，迁移${migrationResult.messages_migrated}条消息`
-                  : `Migration result: Processed ${migrationResult.projects_processed} projects, migrated ${migrationResult.messages_migrated} messages`
-                }
-              </div>
-              {migrationResult.errors > 0 && (
-                <div className="text-red-500 mt-1">
-                  {currentLanguage === 'zh-CN' 
-                    ? `发生${migrationResult.errors}个错误`
-                    : `${migrationResult.errors} errors occurred`
-                  }
-                </div>
-              )}
-            </div>
-          )}
         </div>
       )}
       
@@ -1128,16 +980,24 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
                       ) : (
                         <>
                           {/* AI消息 */}
-                          {message.content ? (
+                          {(message.content || message.thinking) ? (
                             <>
                               {/* 显示思考内容（使用可折叠组件） */}
                               {message.thinking && (
                                 <CollapsibleThinking
                                   thinking={message.thinking}
                                   messageId={message.id}
+                                  startedAt={message.thinkingStartedAt}
+                                  finishedAt={message.thinkingFinishedAt}
                                   isCollapsed={collapsedThinking.has(message.id)}
                                   onToggle={() => toggleThinkingCollapse(message.id)}
                                 />
+                              )}
+                              {!message.thinking && message.thinkingStartedAt !== undefined && (
+                                <div className="mb-2 text-xs text-gray-500">
+                                  {currentLanguage === 'zh-CN' ? '思考用时' : 'Thinking time'}
+                                  <ThinkingElapsed startedAt={message.thinkingStartedAt} finishedAt={message.thinkingFinishedAt} language={currentLanguage} />
+                                </div>
                               )}
                               
                               {/* 显示回答内容 */}
@@ -1185,7 +1045,8 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
                                 }`} style={{ animationDelay: '0.4s' }}></div>
                               </div>
                               <span className="text-sm">
-                                {currentLanguage === 'zh-CN' ? 'AI正在思考中...' : 'AI is thinking...'}
+                                {useThinking ? (currentLanguage === 'zh-CN' ? '正在思考…' : 'Thinking…') : (currentLanguage === 'zh-CN' ? '正在生成…' : 'Generating…')}
+                                <ThinkingElapsed startedAt={message.thinkingStartedAt} finishedAt={message.thinkingFinishedAt} language={currentLanguage} />
                               </span>
                             </div>
                           )}
@@ -1205,6 +1066,14 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
           isDarkMode ? 'border-gray-800 bg-[#212121]' : 'border-gray-200 bg-white'
         }`}>
           <div className="max-w-4xl mx-auto">
+            <button type="button" role="switch" aria-checked={useThinking}
+              disabled={!selectedModel?.supportsThinking || isLoading || backgroundPending}
+              onClick={() => setThinkingEnabled(value => !value)}
+              className={`mb-2 flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm disabled:opacity-40 ${useThinking ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'}`}>
+              <Brain className="h-4 w-4" />
+              {currentLanguage === 'zh-CN' ? '思考模式' : 'Thinking mode'}
+              <span>{useThinking ? 'ON' : 'OFF'}</span>
+            </button>
             {backgroundPending && !isLoading && (
               <p role="status" className="mb-2 text-sm text-blue-600">
                 {currentLanguage === 'zh-CN' ? '回复正在后台生成，离开页面后仍会继续' : 'Reply continues in the background'}
@@ -1319,12 +1188,7 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
         </div>
       )}
       
-      {/* 将迁移按钮添加到界面中 */}
-      <MigrationButton 
-        onTriggerMigration={triggerMigration}
-        isMigrating={isMigrating}
-        days={30}
-      />
+
     </div>
   );
 }

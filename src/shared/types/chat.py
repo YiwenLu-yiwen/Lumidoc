@@ -9,6 +9,7 @@ class ChatMessage(BaseModel):
     session_id: str = "legacy"
     role: str
     content: str
+    thinking: str = ""
     timestamp: Optional[Union[float, str, datetime]] = None
 
     @field_validator('timestamp', mode='before')

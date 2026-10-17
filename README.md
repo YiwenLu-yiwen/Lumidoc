@@ -25,6 +25,12 @@ synchronized between the sidebar and chat view. Document lists persist across
 refreshes, and preview/download use the processed content rather than the original
 upload.
 
+Conversations inactive for 30 days are archived automatically as whole conversations
+and remain accessible from the sidebar. No manual archive action is required.
+You can add more processed documents to a knowledge base or delete an indexed
+document from its file-status list. Removing it from the knowledge base preserves
+the source file, so it can be imported again later.
+
 ## How it works
 
 ```mermaid

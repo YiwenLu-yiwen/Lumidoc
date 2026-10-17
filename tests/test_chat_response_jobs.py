@@ -82,3 +82,27 @@ async def test_stop_before_first_token_is_saved_and_other_conversations_continue
     assert saved == ['已停止生成。']
     assert jobs.pending(('p','u','b'))
     await jobs.stop(('p','u','b'))
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('stop', [True, False])
+async def test_thinking_is_persisted_separately_after_disconnect_or_stop(stop):
+    jobs = ResponseJobs()
+    release = asyncio.Event()
+    saved = []
+    async def generate():
+        yield {'thinking': 'reasoning'}
+        await release.wait()
+        yield {'content': 'answer'}
+    async def persist(text, thinking=''):
+        saved.append((text, thinking))
+    key = ('p', 'u', 'thinking')
+    job = jobs.start(key, generate(), persist)
+    events = job.events()
+    assert await anext(events) == {'thinking':'reasoning'}
+    await events.aclose()
+    if stop:
+        await jobs.stop(key)
+    else:
+        release.set()
+        await job.task
+    assert saved == [('已停止生成。' if stop else 'answer', 'reasoning')]

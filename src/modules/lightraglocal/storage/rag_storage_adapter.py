@@ -255,7 +255,7 @@ class RAGStorageAdapter:
             logger.debug(f"列出S3文件失败: {e} (项目可能是新项目)")
             return []
     
-    async def sync_to_s3(self):
+    async def sync_to_s3(self, strict: bool = False):
         """将本地更改同步到S3"""
         if self.storage_type != 's3' or not self.storage:
             return
@@ -281,11 +281,15 @@ class RAGStorageAdapter:
                         
                     except Exception as e:
                         logger.warning(f"上传文件失败: {local_path} - {e}")
+                        if strict:
+                            raise
             
             logger.info(f"📤 项目 {self.project_id} 数据已同步到S3")
             
         except Exception as e:
             logger.error(f"同步到S3失败: {e}")
+            if strict:
+                raise
     
     def get_working_dir(self) -> str:
         """获取LightRAG的工作目录"""

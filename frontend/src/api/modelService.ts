@@ -9,6 +9,8 @@ export interface ModelInfo {
   description?: string;
   contextLength?: number;
   isAvailable: boolean;
+  supportsThinking?: boolean;
+  isDefault?: boolean;
 }
 
 export interface ModelResponse {
@@ -25,50 +27,8 @@ interface RawModel {
   context_length?: number;
   max_tokens?: number;
   available?: boolean;
-}
-
-/**
- * 根据模型名称自动识别模型类型
- * @param modelName 模型名称
- * @returns 'thinking' | 'fast'
- */
-export function detectModelType(modelName: string): 'thinking' | 'fast' {
-  const lowerName = modelName.toLowerCase();
-  
-  // 思考模型关键词
-  const thinkingKeywords = [
-    'thinking', 'think', 'reason', 'reasoning', 'step', 'cot', 'chain-of-thought',
-    'o1', 'o2', 'deepthink', 'reflect', 'analysis', 'slow', 'careful'
-  ];
-  
-  // 快速模型关键词
-  const fastKeywords = [
-    'fast', 'quick', 'turbo', 'instant', 'speed', 'light', 'rapid',
-    'gpt-3.5', 'claude-instant', 'haiku', 'flash'
-  ];
-  
-  // 检查思考模型关键词
-  for (const keyword of thinkingKeywords) {
-    if (lowerName.includes(keyword)) {
-      return 'thinking';
-    }
-  }
-  
-  // 检查快速模型关键词
-  for (const keyword of fastKeywords) {
-    if (lowerName.includes(keyword)) {
-      return 'fast';
-    }
-  }
-  
-  // 默认情况下，根据模型名称长度和复杂度判断
-  // 通常更复杂的模型名称或包含版本号较高的倾向于是思考模型
-  if (lowerName.includes('4') || lowerName.includes('large') || lowerName.includes('max')) {
-    return 'thinking';
-  }
-  
-  // 默认为快速模型
-  return 'fast';
+  supports_thinking?: boolean;
+  is_default?: boolean;
 }
 
 /**
@@ -81,7 +41,7 @@ export async function getAvailableModels(): Promise<ModelResponse> {
     
     // 处理模型数据并自动识别类型
     const models: ModelInfo[] = rawModels.map((model) => {
-      const modelType = detectModelType(model.name || model.id);
+      const modelType = model.supports_thinking ? 'thinking' : 'fast';
       
       return {
         id: model.id,
@@ -91,6 +51,8 @@ export async function getAvailableModels(): Promise<ModelResponse> {
         type: modelType,
         description: model.description,
         contextLength: model.context_length || model.max_tokens,
+        supportsThinking: model.supports_thinking === true,
+        isDefault: model.is_default === true,
         isAvailable: model.available !== false
       };
     });
@@ -133,10 +95,12 @@ export async function getModelInfo(modelId: string): Promise<ModelInfo | null> {
       name: model.name || model.id,
       displayName: model.display_name || model.name || model.id,
       provider: model.provider || 'local',
-      type: detectModelType(model.name || model.id),
+      type: model.supports_thinking ? 'thinking' : 'fast',
       description: model.description,
       contextLength: model.context_length || model.max_tokens,
-      isAvailable: model.available !== false
+      supportsThinking: model.supports_thinking === true,
+        isDefault: model.is_default === true,
+        isAvailable: model.available !== false
     };
   } catch (error) {
     console.error(`获取模型 ${modelId} 信息失败:`, error);

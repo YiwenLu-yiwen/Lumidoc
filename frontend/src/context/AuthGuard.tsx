@@ -308,7 +308,13 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({
   }
 
   // 如果权限验证通过，显示内容
-  return verified ? <>{children}</> : null;
+  return verified ? <>{children}</> : (
+    <div role="alert" className="min-h-screen flex flex-col items-center justify-center gap-4 bg-background text-foreground">
+      <p>无法打开项目 / Unable to open project</p>
+      <button onClick={() => window.location.reload()} className="underline">重试 / Retry</button>
+      <button onClick={() => navigate('/app/projects')} className="underline">返回项目列表 / All projects</button>
+    </div>
+  );
 };
 
 export default AuthGuard;

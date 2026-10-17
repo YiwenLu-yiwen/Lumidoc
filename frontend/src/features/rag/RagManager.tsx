@@ -6,6 +6,7 @@ import { ragApi, RagFile, RagFileStatusResponse } from '../../api/rag';
 import { streamRagQuery } from '@/api/ragStream';
 import { fileApi } from '../../api/file';
 import { useTheme } from '@/context/ThemeContext';
+import { ImportProgress } from './ImportProgress';
 import { Database } from 'lucide-react';
 import { useProjects } from '@/context/ProjectContext';
 import { useLanguage } from '@/context/LanguageContext';
@@ -68,6 +69,9 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
   const [ragFileList, setRagFileList] = useState<RagFile[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [isImporting, setIsImporting] = useState(false);
+  const [selectedDeletes, setSelectedDeletes] = useState<string[]>([]);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteSummary, setDeleteSummary] = useState('');
   const [queryText, setQueryText] = useState('');
   const [queryResult, setQueryResult] = useState('');
   const [isQuerying, setIsQuerying] = useState(false);
@@ -84,13 +88,17 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
   // 添加文件状态状态
   const [fileStatuses, setFileStatuses] = useState<RagFileStatusResponse['statuses']>({});
   const [isLoadingStatuses, setIsLoadingStatuses] = useState(false);
+  const [importProgress, setImportProgress] = useState<RagFileStatusResponse['progress']>(null);
 
   useEffect(() => {
     setSelectedFiles([]);
+    setSelectedDeletes([]);
+    setDeleteSummary('');
     setFileList([]);
     setFileNames({});
     setRagFileList([]);
     setFileStatuses({});
+    setImportProgress(null);
   }, [projectId]);
 
   // 文件列表获取
@@ -126,6 +134,7 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
       const response = await ragApi.getRagFileStatus(projectId);
       if (response.success) {
         setFileStatuses(response.statuses);
+        setImportProgress(response.progress || null);
       } else {
         console.warn('Failed to fetch file statuses:', response.error);
       }
@@ -145,118 +154,29 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
     }
     void fetchFileList();
     void fetchRagFileList();
-    void fetchFileStatuses();
-  }, [fetchFileList, fetchFileStatuses, fetchRagFileList, projectId]);
+  }, [fetchFileList, fetchRagFileList, projectId]);
 
-  // 智能轮询进度和状态（优化间隔）
-  const startPolling = () => {
-    if (!projectId) return () => undefined;
-    let pollingInterval = 3000; // 起始间隔：3秒，更快响应
-    let pollTimeoutId: NodeJS.Timeout | null = null;
-    
+  // Resume polling from server state after refresh. Keep exactly one timer per project.
+  useEffect(() => {
+    if (!projectId) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
-      try {
-        const previousStatuses = { ...fileStatuses };
-        console.log('[RagManager] 开始轮询检查状态...');
-        
-        // 同时获取状态和文件列表，避免竞态条件
-        const [statusResult, fileListResult] = await Promise.all([
-          (async () => {
-            try {
-              const response = await ragApi.getRagFileStatus(projectId);
-              if (response.success) {
-                setFileStatuses(response.statuses);
-                return response.statuses;
-              }
-              return {};
-            } catch (err) {
-              console.error('[RagManager] 获取状态失败:', err);
-              return {};
-            }
-          })(),
-          (async () => {
-            try {
-              await fetchRagFileList();
-              return true;
-            } catch (err) {
-              console.error('[RagManager] 刷新文件列表失败:', err);
-              return false;
-            }
-          })()
-        ]);
-        
-        // 使用最新获取的状态进行比较
-        const currentStatuses = statusResult;
-        const hasChanges = JSON.stringify(previousStatuses) !== JSON.stringify(currentStatuses);
-        
-        console.log('[RagManager] 轮询结果:', {
-          hasChanges,
-          statusCount: Object.keys(currentStatuses).length,
-          fileListRefreshed: fileListResult
-        });
-        
-        if (hasChanges) {
-          pollingInterval = Math.max(pollingInterval / 1.2, 2000); // 有变化时减少间隔，最少2秒
-          console.log(`[RagManager] 检测到状态变化，间隔调整为${pollingInterval}ms`);
-        } else {
-          pollingInterval = Math.min(pollingInterval * 1.3, 30000); // 无变化时增加间隔，最多30秒
-        }
-        
-        // 检查是否所有文件都已完成处理（处理成功或失败）
-        const allFinished = Object.values(currentStatuses).every(
-          status => status.status === 'processed' || status.status === 'failed'
-        );
-        
-        if (allFinished && Object.keys(currentStatuses).length > 0) {
-          console.log('[RagManager] 所有文件处理完成，停止轮询');
-          setIsImporting(false);
-          
-          // 计算成功和失败数量
-          const succeeded = Object.values(currentStatuses).filter(s => s.status === 'processed').length;
-          const failed = Object.values(currentStatuses).filter(s => s.status === 'failed').length;
-          
-          if (failed === 0) {
-            toast.success(currentLanguage === 'zh-CN' 
-              ? `知识库构建完成，${succeeded}个文件处理成功`
-              : `Knowledge base built successfully, ${succeeded} files processed`
-            );
-          } else {
-            toast(currentLanguage === 'zh-CN'
-              ? `知识库构建部分完成，${succeeded}个成功，${failed}个失败`
-              : `Knowledge base partially built, ${succeeded} successful, ${failed} failed`
-            );
-          }
-          
-          // 最终刷新所有数据
-          await Promise.all([
-            fetchFileList(),
-            fetchRagFileList(),
-            fetchFileStatuses()
-          ]);
-          console.log('[RagManager] 最终数据刷新完成');
-          return; // 结束轮询
-        }
-        
-        // 继续轮询，使用动态间隔
-        pollTimeoutId = setTimeout(poll, pollingInterval);
-        
-      } catch (err) {
-        console.error('Failed during polling:', err);
-        pollingInterval = Math.min(pollingInterval * 2, 30000); // 出错时增加间隔
-        pollTimeoutId = setTimeout(poll, pollingInterval);
+      const response = await ragApi.getRagFileStatus(projectId);
+      if (cancelled) return;
+      if (response.success) {
+        setFileStatuses(response.statuses);
+        setImportProgress(response.progress || null);
+        const active = Object.values(response.statuses).some(item =>
+          item.status === 'pending' || item.status === 'processing');
+        setIsImporting(active);
       }
+      // Poll status only: no repeated vector downloads or full file-list refresh.
+      timer = setTimeout(poll, 3000);
     };
-    
-    // 开始首次轮询
-    poll();
-    
-    // 返回清理函数
-    return () => {
-      if (pollTimeoutId) {
-        clearTimeout(pollTimeoutId);
-      }
-    };
-  };
+    void poll();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [projectId]);
 
   // 选择/取消选择文件
   const handleSelect = (file: string) => {
@@ -274,7 +194,7 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
       const isInRag = ragFileList.some(ragFile => ragFileMatches(ragFile, fileName, fileNames[fileName]));
       
       // 检查文件状态中是否已完成RAG处理
-      const fileStatus = Object.values(fileStatuses).find(status => 
+      const fileStatus = fileStatuses[fileName] || Object.values(fileStatuses).find(status =>
         status.file_name === fileNames[fileName]
       );
       const isProcessedInRag = fileStatus?.status === 'processed';
@@ -332,17 +252,6 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
           console.error('[RagManager] 导入后刷新失败:', refreshErr);
         }
         
-        // 然后开始轮询监控
-        const cleanupPolling = startPolling();
-        
-        // 5分钟后自动停止轮询
-        setTimeout(() => {
-          if (cleanupPolling) {
-            cleanupPolling();
-          }
-          setIsImporting(false);
-        }, 5 * 60 * 1000);
-        
         setSelectedFiles([]);
       } else {
         toast.error(currentLanguage === 'zh-CN' 
@@ -391,6 +300,29 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
         queryController.current = null;
         setIsQuerying(false);
       }
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (!projectId || !selectedDeletes.length) return;
+    if (!confirm(currentLanguage === 'zh-CN'
+      ? `从知识库删除选中的 ${selectedDeletes.length} 份文档？原始文件将保留。`
+      : `Remove ${selectedDeletes.length} selected documents from the knowledge base? Source files will be kept.`)) return;
+    setIsDeleting(true);
+    setDeleteSummary('');
+    try {
+      const result = await ragApi.deleteRagFiles(projectId, selectedDeletes);
+      const failed = result.results.filter(item => !item.success);
+      setSelectedDeletes(failed.map(item => item.file_id));
+      setDeleteSummary(currentLanguage === 'zh-CN'
+        ? `删除成功 ${result.results.length - failed.length}，失败 ${failed.length}，耗时 ${result.duration_seconds.toFixed(2)} 秒`
+        : `Deleted ${result.results.length - failed.length}, failed ${failed.length}, ${result.duration_seconds.toFixed(2)} seconds`);
+      if (failed.length) toast.error(failed.map(item => item.message).join('; '));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Batch deletion failed');
+    } finally {
+      await Promise.all([fetchRagFileList(), fetchFileStatuses()]);
+      setIsDeleting(false);
     }
   };
 
@@ -503,6 +435,7 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
             <h3 className={`text-lg font-semibold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
               {t('importFilesToKnowledgeBase')}
             </h3>
+            <ImportProgress progress={importProgress} language={currentLanguage} />
           
             <div className="mb-4">
               <div className="flex items-center justify-between mb-4">
@@ -541,11 +474,11 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
                   // 检查文件是否已在知识库中或正在处理
                   const isInRag = ragFileList.some(ragFile => ragFileMatches(ragFile, file, fileNames[file]));
                   
-                  const fileStatus = Object.values(fileStatuses).find(status => 
+                  const fileStatus = fileStatuses[file] || Object.values(fileStatuses).find(status =>
                     status.file_name === fileNames[file]
                   );
                   const isProcessedInRag = fileStatus?.status === 'processed';
-                  const isProcessingRag = fileStatus?.status === 'processing';
+                  const isProcessingRag = fileStatus?.status === 'processing' || fileStatus?.status === 'pending';
                   
                   const disabled = isInRag || isProcessedInRag;
                   let statusText = '';
@@ -620,6 +553,23 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
               {t('knowledgeBaseFileStatus')}:
               {isLoadingStatuses && <span className="ml-2 text-xs text-gray-400">({t('loading')}...)</span>}
             </h4>
+            <div className="flex items-center gap-2 mb-2 text-sm">
+              <button type="button" disabled={isDeleting}
+                onClick={() => setSelectedDeletes(Object.entries(fileStatuses)
+                  .filter(([, item]) => !['pending', 'processing'].includes(item.status)).map(([id]) => id))}>
+                {currentLanguage === 'zh-CN' ? '全选可删除文档' : 'Select all deletable documents'}
+              </button>
+              <button type="button" disabled={isDeleting || !selectedDeletes.length}
+                onClick={() => setSelectedDeletes([])}>
+                {currentLanguage === 'zh-CN' ? '取消选择' : 'Clear selection'}
+              </button>
+              <button type="button" disabled={isDeleting || !selectedDeletes.length || selectedDeletes.length > 100}
+                onClick={() => void handleBatchDelete()} className="rounded bg-red-600 px-2 py-1 text-white disabled:opacity-40">
+                {isDeleting ? (currentLanguage === 'zh-CN' ? '删除中…' : 'Deleting…')
+                  : (currentLanguage === 'zh-CN' ? `批量删除 (${selectedDeletes.length})` : `Delete selected (${selectedDeletes.length})`)}
+              </button>
+            </div>
+            {deleteSummary && <p role="status" className="mb-2 text-sm">{deleteSummary}</p>}
             <div className="max-h-48 overflow-y-auto border border-gray-700 rounded p-2">
               {Object.keys(fileStatuses).length === 0 ? (
                 <p className="text-gray-400">{t('noKnowledgeBaseFiles')}</p>
@@ -627,18 +577,26 @@ export default function RagManager({ onQueryComplete }: RagManagerProps) {
                 Object.entries(fileStatuses).map(([fileId, status]) => (
                   <div key={fileId} className={`p-1 ${STATUS_COLORS[status.status] || STATUS_COLORS[status.status?.toLowerCase()] || 'text-gray-400'}`}>
                     <div className="flex justify-between items-center">
-                      <span className="truncate flex-1" title={status.file_name || fileId}>
-                        {status.file_name || fileId}
+                      <input type="checkbox" className="mr-2" aria-label={`${currentLanguage === 'zh-CN' ? '选择删除' : 'Select for deletion'} ${fileNames[fileId] || status.file_name || fileId}`}
+                        disabled={isDeleting || ['pending', 'processing'].includes(status.status)}
+                        checked={selectedDeletes.includes(fileId)}
+                        onChange={event => setSelectedDeletes(previous => event.target.checked ? [...previous, fileId] : previous.filter(id => id !== fileId))} />
+                      <span className="truncate flex-1" title={fileNames[fileId] || status.file_name || fileId}>
+                        {fileNames[fileId] || status.file_name || fileId}
                       </span>
                       <div className="flex items-center ml-2 text-xs whitespace-nowrap">
                         <span>
                           {getStatusText(status.status)}
+                          {status.stage === 'waiting_extraction' && (currentLanguage === 'zh-CN' ? ' · 等待文档解析' : ' · Waiting for document extraction')}
+                          {status.stage === 'indexing' && (currentLanguage === 'zh-CN' ? ' · 构建索引' : ' · Building index')}
+                          {status.stage === 'reading' && (currentLanguage === 'zh-CN' ? ' · 读取文本' : ' · Reading text')}
                           {(['failed', 'error'].includes(status.status)) && status.error && (
                             <span className="ml-1" title={status.error}>❌</span>
                           )}
                         </span>
                         {status.status === 'processed' && (
                           <button
+                            disabled={isDeleting}
                             onClick={() => handleDeleteRagFile(fileId, status.file_name || fileId)}
                             className="ml-2 px-1 py-0.5 bg-red-600 hover:bg-red-700 rounded text-xs"
                             title={t('deleteFromKnowledgeBase')}

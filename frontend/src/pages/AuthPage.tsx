@@ -1,3 +1,4 @@
+import { UserRole } from '@/context/authTypes';
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { isAxiosError } from 'axios';
@@ -54,7 +55,9 @@ export function AuthPage() {
       const userData = {
         id: response.id.toString(),
         username: response.username,
-        nickname: response.nickname || response.username
+        nickname: response.nickname || response.username,
+        email: response.email,
+        role: response.is_superuser ? UserRole.ADMIN : UserRole.USER
       };
       
       // 先显示成功消息
@@ -125,7 +128,9 @@ export function AuthPage() {
       const newUser = {
         id: loginResponse.id.toString(),
         username: loginResponse.username,
-        nickname: loginResponse.nickname || loginResponse.username
+        nickname: loginResponse.nickname || loginResponse.username,
+        email: loginResponse.email,
+        role: loginResponse.is_superuser ? UserRole.ADMIN : UserRole.USER
       };
       
       // 先显示成功消息

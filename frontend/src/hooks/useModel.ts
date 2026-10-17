@@ -44,7 +44,7 @@ export function useModel() {
         availableModels,
         selectedModel:
           availableModels.find(model => model.id === prev.selectedModel?.id) ||
-          availableModels.find(model => model.isAvailable && model.type === 'thinking') ||
+          availableModels.find(model => model.isAvailable && model.isDefault) ||
           availableModels.find(model => model.isAvailable) ||
           null,
         loading: false

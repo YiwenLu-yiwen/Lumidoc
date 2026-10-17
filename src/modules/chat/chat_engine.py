@@ -284,7 +284,8 @@ class ChatEngine:
                         auth_header: Optional[str] = None,
                         model: Optional[str] = None,
                         conversation_id: str = "legacy",
-                        retrieval_mode: str = "auto") -> AsyncGenerator[str, None]:
+                        retrieval_mode: str = "auto",
+                        think: bool = False) -> AsyncGenerator[str, None]:
         """
         流式处理聊天消息 - 真正的LLM流式响应
         
@@ -424,9 +425,10 @@ class ChatEngine:
             async with asyncio.timeout(float(os.getenv("CHAT_RESPONSE_TIMEOUT", "120"))):
                 async for chunk in self.llm_service.stream_generate(
                     prompt=message, history=chat_history, system_prompt=system_prompt,
-                    model=model, max_tokens=int(os.getenv("CHAT_MAX_TOKENS", "512")), temperature=0.2
+                    model=model, max_tokens=int(os.getenv("CHAT_THINKING_MAX_TOKENS", "2048") if think else os.getenv("CHAT_MAX_TOKENS", "512")),
+                    temperature=0.2, think=think, stream_events=True
                 ):
-                    if first_token and chunk:
+                    if first_token and (chunk.get("content") if isinstance(chunk, dict) else chunk):
                         logger.info("chat_first_token duration_ms=%s", round((perf_counter() - started) * 1000))
                         first_token = False
                     yield chunk

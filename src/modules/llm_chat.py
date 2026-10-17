@@ -220,7 +220,7 @@ class LLMToolService:
             # 迭代流式输出
             async for chunk in stream_generator:
                 # 处理思考模型的输出
-                yield self._process_thinking_model_output(chunk)
+                yield chunk if isinstance(chunk, dict) else self._process_thinking_model_output(chunk)
         except Exception as e:
             logger.error(f"流式生成失败: {str(e)}")
             yield f"生成错误: {str(e)}"

@@ -113,3 +113,12 @@ async def require_project_access_dependency(
 ) -> Dict[str, Any]:
     """FastAPI dependency for routes containing a ``project_id`` path field."""
     return await require_project_access(request, project_id)
+
+
+async def require_admin(request: Request) -> Dict[str, Any]:
+    """Admin access comes from a fresh auth-service lookup, never client claims."""
+    context = await get_auth_context(request)
+    user = context.get('user', {})
+    if context['auth_type'] != 'user' or not user.get('is_active') or not user.get('is_superuser'):
+        raise HTTPException(status_code=403, detail='Administrator access required')
+    return context

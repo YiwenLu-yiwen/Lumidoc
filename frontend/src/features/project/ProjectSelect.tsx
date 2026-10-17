@@ -1,5 +1,6 @@
+import { projectDestination } from './projectNavigation';
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Folder,
   Trash2,
@@ -40,6 +41,8 @@ export default function ProjectSelect() {
   const [showAuth, setShowAuth] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const destination = (id: string) => projectDestination(id, searchParams)
   const { user, updateUserProjectAccess } = useAuth()
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [projectToDelete, setProjectToDelete] = useState<string | null>(null)
@@ -120,28 +123,8 @@ export default function ProjectSelect() {
         // 更新项目列表并等待完成
         await refreshProjects()
 
-        // 创建成功提示
-        try {
-          const toast = document.createElement('div')
-          toast.className = 'fixed bottom-4 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg'
-          toast.textContent = `项目"${projectName}"创建成功！`
-          document.body.appendChild(toast)
-          setTimeout(() => {
-            document.body.removeChild(toast)
-            // 只有在toast消失后才进行导航
-            const projectPageUrl = `/project/${response.id}`
-            console.log(`即将导航到项目页面: ${projectPageUrl}`)
-            navigate(projectPageUrl)
-          }, 2000)
-        } catch (toastError) {
-          console.error('显示提示失败:', toastError)
-          // 延时导航到项目页面，确保权限更新完成
-          setTimeout(() => {
-            const projectPageUrl = `/project/${response.id}`
-            console.log(`即将导航到项目页面: ${projectPageUrl}`)
-            navigate(projectPageUrl)
-          }, 2000)
-        }
+        navigate(destination(response.id))
+
       }
     } catch (error: unknown) {
       console.error('Failed to create project:', error)
@@ -184,7 +167,7 @@ export default function ProjectSelect() {
 
       // 使用带替换的导航，防止返回循环
       console.log(`[ProjectSelect] 导航到项目: ${projectId}`);
-      navigate(`/project/${projectId}`, { replace: false });
+      navigate(destination(projectId), { replace: false });
 
       // 清除导航状态（延迟执行，确保导航完成）
       setTimeout(() => {
@@ -276,7 +259,7 @@ export default function ProjectSelect() {
               {t('projectManagement')}
             </h1>
             <p className={`text-lg ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-              {t('createAndManageWorkspaces')}
+              {searchParams.has('section') ? (currentLanguage === 'zh-CN' ? '请选择项目，继续进入对应功能。' : 'Choose a project to continue to your workspace tool.') : t('createAndManageWorkspaces')}
             </p>
           </div>
         </div>

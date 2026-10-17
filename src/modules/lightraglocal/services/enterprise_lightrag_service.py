@@ -679,6 +679,13 @@ class EnterpriseLightRAGService:
                 logger.warning("⚠️ 未找到文件路径信息，将使用默认方式插入")
                 await rag.ainsert(content, **lightrag_kwargs)
 
+            # LightRAG can persist FAILED and return without raising. Verify the outcome.
+            from lightrag.utils import clean_text, compute_mdhash_id
+            doc_id = compute_mdhash_id(clean_text(content), prefix="doc-")
+            document = await rag.doc_status.get_by_id(doc_id)
+            if not document or document.get("status") != "processed":
+                raise RuntimeError((document or {}).get("error") or "Document indexing did not complete")
+
             # 计算耗时
             duration = (datetime.now() - start_time).total_seconds()
 
@@ -686,6 +693,7 @@ class EnterpriseLightRAGService:
                 "success": True,
                 "project_id": project_id,
                 "content_length": len(content),
+                "doc_id": doc_id,
                 "duration_seconds": duration,
                 "timestamp": datetime.now().isoformat(),
                 "metadata": metadata
@@ -845,10 +853,13 @@ class EnterpriseLightRAGService:
             删除结果
         """
         try:
-            await self._get_project_rag(project_id)
-
-            # TODO: 实现文档删除逻辑
-            # 这需要根据 LightRAG 的具体 API 来实现
+            rag = await self._get_project_rag(project_id)
+            result = await rag.adelete_by_doc_id(doc_id)
+            if result.status not in ('success', 'not_found'):
+                raise RuntimeError(result.message)
+            # Deletion must be durable before reporting success.
+            if self.storage_type == 's3' and project_id in self._project_adapters:
+                await self._project_adapters[project_id].sync_to_s3(strict=True)
 
             logger.info(f"🗑️ 项目 {project_id} 文档 {doc_id} 删除成功")
             return {

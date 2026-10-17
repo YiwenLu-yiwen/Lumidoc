@@ -197,7 +197,7 @@ class AuthService:
                     username
                 )
             
-            if not user:
+            if not user or not user['is_active']:
                 return None
             if not self.verify_password(password, user['hashed_password']):
                 return None

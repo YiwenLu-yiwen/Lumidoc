@@ -15,16 +15,15 @@ from datetime import datetime
 import asyncio
 import json
 import re
+import os
 
 from ..services.enterprise_lightrag_service import get_enterprise_lightrag_service
 from .graph_utils import build_relationship_edges
 from src.shared.project_access import (
     require_authenticated as _require_authenticated,
+    require_service_access as _require_service_access,
     require_project_access as _require_project_access,
 )
-
-# 全局文件状态管理器
-processing_files: Dict[str, Dict[str, Any]] = {}
 
 router = APIRouter(prefix="/rag", tags=["enterprise-rag"])
 logger = logging.getLogger(__name__)
@@ -239,15 +238,10 @@ async def delete_document(request: DocumentDeleteRequest, http_request: Request)
     try:
         await _require_project_access(http_request, request.project_id)
         service = await get_enterprise_lightrag_service()
-        result = await service.delete_document(
-            project_id=request.project_id,
-            doc_id=request.doc_id
-        )
-
-        if result["success"]:
-            return {"status": "success", "message": "文档删除成功", "result": result}
-        else:
-            raise HTTPException(status_code=500, detail=result.get("error", "删除失败"))
+        records = await _document_statuses(service, request.project_id)
+        file_id = next((identifier for identifier, record in records.items()
+                        if record.get('doc_id') == request.doc_id), request.doc_id)
+        return await delete_rag_file(request.project_id, file_id, http_request)
 
     except HTTPException:
 
@@ -284,7 +278,7 @@ async def get_service_stats(http_request: Request):
     获取服务级统计信息
     """
     try:
-        await _require_authenticated(http_request)
+        await _require_service_access(http_request)
         service = await get_enterprise_lightrag_service()
         stats = service.get_service_stats()
         return ServiceStatsResponse(**stats)
@@ -498,259 +492,147 @@ async def advanced_query(
 
 # ===== 前端兼容性API =====
 
+def _import_jobs(service):
+    from ..services.import_jobs import ImportJobs
+    if not hasattr(service, "import_jobs"):
+        service.import_jobs = ImportJobs(Path(os.getenv("RAG_DIR", service.base_storage_dir)) / "import_jobs")
+    return service.import_jobs
+
+
+async def _document_statuses(service, project_id):
+    from lightrag.base import DocStatus
+    rag = await service._get_project_rag(project_id)
+    statuses = {}
+    # Read the status store, not vector files or a fresh S3 download on each poll.
+    for state in DocStatus:
+        for doc_id, doc in (await rag.doc_status.get_docs_by_status(state)).items():
+            statuses[doc_id] = {
+                "status": state.value, "file_name": Path(doc.file_path).name,
+                "doc_id": doc_id, "chunks_count": doc.chunks_count or 0,
+                "created_at": doc.created_at, "updated_at": doc.updated_at,
+                "error": doc.error,
+            }
+    for file_id, job in _import_jobs(service).statuses(project_id).items():
+        # Imported files use a stable file-service ID; legacy documents keep theirs.
+        doc_id = job.get("doc_id")
+        indexed = statuses.pop(doc_id, {}) if doc_id else {}
+        statuses[file_id] = {**indexed, **job}
+    return statuses
+
+
 @router.get("/files/{project_id}")
 async def get_rag_files(project_id: str, http_request: Request):
-    """
-    获取项目RAG文件列表 - 返回已处理的文档信息
-    """
-    try:
-        await _require_project_access(http_request, project_id)
-        service = await get_enterprise_lightrag_service()
+    await _require_project_access(http_request, project_id)
+    service = await get_enterprise_lightrag_service()
+    statuses = await _document_statuses(service, project_id)
+    files = [{**record, "file_id": file_id, "filename": record["file_name"]}
+             for file_id, record in statuses.items()]
+    return {"success": True, "project_id": project_id, "files": files,
+            "total_documents": len(files), "project_exists": bool(files)}
 
-        # 直接使用存储适配器获取项目数据，不依赖get_project_stats
-        storage_adapter = None
-        project_exists = False
-        files = []
 
+@router.delete("/file/{project_id}/{file_id}")
+async def delete_rag_file(project_id: str, file_id: str, http_request: Request):
+    await _require_project_access(http_request, project_id)
+    service = await get_enterprise_lightrag_service()
+    return await _delete_rag_file(service, project_id, file_id)
+
+
+async def _delete_rag_file(service, project_id, file_id):
+    jobs = _import_jobs(service)
+    records = await _document_statuses(service, project_id)
+    record = records.get(file_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Document not found in this knowledge base")
+    if record.get('status') in ('pending', 'processing'):
+        raise HTTPException(status_code=409, detail="Document is still importing; retry deletion after it finishes")
+    async with jobs.capacity:
+        if jobs.statuses(project_id).get(file_id, {}).get('status') in ('pending', 'processing'):
+            raise HTTPException(status_code=409, detail="Document is still importing")
+        doc_id = record.get('doc_id')
+        if doc_id:
+            result = await service.delete_document(project_id, doc_id)
+            if not result.get('success'):
+                raise HTTPException(status_code=500, detail=result.get('error', 'Deletion failed'))
+        jobs.remove(project_id, file_id, doc_id)
+    return {'success': True, 'message': 'Document removed from knowledge base', 'file_id': file_id}
+
+
+@router.post("/files/delete/{project_id}")
+async def delete_rag_files(project_id: str, http_request: Request,
+                           file_ids: List[str] = Body(..., embed=True, min_length=1, max_length=100)):
+    """Authorize once, delete sequentially, and report each result independently."""
+    from time import perf_counter
+    await _require_project_access(http_request, project_id)
+    service = await get_enterprise_lightrag_service()
+    started = perf_counter()
+    results = []
+    for file_id in dict.fromkeys(file_ids):
+        item_started = perf_counter()
         try:
-            # 首先尝试获取现有的存储适配器
-            if project_id in service._project_adapters:
-                storage_adapter = service._project_adapters[project_id]
-                logger.info("📁 使用现有存储适配器")
-            else:
-                # 如果没有现有适配器，通过获取RAG实例来创建
-                logger.info("📁 创建新的存储适配器")
-                await service._get_project_rag(project_id)
-                if project_id in service._project_adapters:
-                    storage_adapter = service._project_adapters[project_id]
+            result = await _delete_rag_file(service, project_id, file_id)
+        except HTTPException as exc:
+            result = {'file_id': file_id, 'success': False, 'status_code': exc.status_code, 'message': str(exc.detail)}
+        except Exception:
+            logger.exception('Batch document deletion failed')
+            result = {'file_id': file_id, 'success': False, 'status_code': 500, 'message': 'Document deletion failed'}
+        result['duration_seconds'] = round(perf_counter() - item_started, 3)
+        results.append(result)
+    return {'success': all(item['success'] for item in results), 'results': results,
+            'duration_seconds': round(perf_counter() - started, 3)}
 
-            if storage_adapter:
-                # 如果是S3模式，先同步数据到本地
-                if storage_adapter.storage_type == 's3':
-                    logger.info("🔄 S3模式：同步数据到本地缓存")
-                    await storage_adapter.sync_from_s3()
-
-                working_dir = storage_adapter.get_working_dir()
-                logger.info(f"📁 使用存储适配器路径: {working_dir}")
-
-                # 查找chunks文件 - 直接在工作目录根目录查找
-                chunks_file = Path(working_dir) / f"project_{project_id}" / "vdb_chunks.json"
-                logger.info(f"📁 查找chunks文件: {chunks_file}")
-
-                if chunks_file.exists():
-                    project_exists = True
-                    try:
-                        with open(chunks_file, 'r', encoding='utf-8') as f:
-                            data = json.load(f)
-                            chunks = data.get('data', [])
-                            logger.info(f"📊 找到 {len(chunks)} 个数据块")
-
-                            # 从chunks中提取文档信息
-                            doc_info = {}
-                            for chunk in chunks:
-                                # 尝试多种方式获取文件路径
-                                file_path = (chunk.get('file_path') or
-                                           chunk.get('source') or
-                                           chunk.get('metadata', {}).get('file_path') or
-                                           chunk.get('metadata', {}).get('source') or
-                                           chunk.get('metadata', {}).get('filename') or
-                                           'unknown_source')
-
-                                doc_id = chunk.get('full_doc_id', chunk.get('__id__', ''))
-
-                                if file_path not in doc_info:
-                                    # 智能提取文件名
-                                    if file_path != 'unknown_source':
-                                        if file_path.startswith('http'):
-                                            # URL情况，取最后一部分
-                                            filename = Path(file_path).name or file_path.split('/')[-1]
-                                        else:
-                                            # 普通文件路径
-                                            filename = Path(file_path).name
-                                    else:
-                                        # 从chunk内容或其他字段尝试获取文件名
-                                        filename = (chunk.get('title') or
-                                                  chunk.get('metadata', {}).get('title') or
-                                                  f"文档_{doc_id[:8]}" if doc_id else 'direct_content')
-
-                                    doc_info[file_path] = {
-                                        'filename': filename,
-                                        'file_id': doc_id,
-                                        'status': 'processed',
-                                        'chunks_count': 0,
-                                        'created_at': chunk.get('__created_at__', 0)
-                                    }
-                                doc_info[file_path]['chunks_count'] += 1
-
-                            files = list(doc_info.values())
-                            logger.info(f"✅ 处理后得到 {len(files)} 个文件")
-                    except HTTPException:
-                        raise
-                    except Exception as e:
-                        logger.error(f"读取chunks文件失败: {e}")
-                else:
-                    logger.warning(f"⚠️ chunks文件不存在: {chunks_file}")
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.warning(f"⚠️ 获取存储适配器失败: {e}，使用本地路径")
-            # 回退到本地模式检查
-            project_data_dir = Path(f"./rag_storage/project_{project_id}/project_{project_id}")
-            chunks_file = project_data_dir / "vdb_chunks.json"
-            if chunks_file.exists():
-                project_exists = True
-                # 这里可以加载本地文件的逻辑，但通常S3模式不应该回退到这里
-
-        # 添加正在处理的文件
-        project_key = f"project_{project_id}"
-        if project_key in processing_files:
-            for file_id, file_info in processing_files[project_key].items():
-                # 检查是否已经在已处理文件中
-                if not any(f.get('file_id') == file_id for f in files):
-                    files.append(file_info)
-
-        return {
-            "success": True,
-            "project_id": project_id,
-            "files": files,
-            "total_documents": len(files),
-            "project_exists": project_exists,
-            "timestamp": datetime.now().isoformat()
-        }
-
-    except HTTPException:
-
-        raise
-
-    except Exception as e:
-        logger.error(f"获取文件列表失败: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/build/{project_id}")
 async def build_rag(
     project_id: str,
     selected_files: List[str] = Body([], embed=True),
-    http_request: Request = None
+    http_request: Request = None,
 ):
-    """
-    构建RAG索引 - 从选定的文件构建知识库
-    """
-    try:
-        if http_request is not None:
-            await _require_project_access(http_request, project_id)
-        logger.info(f"🔨 开始构建RAG: project_id={project_id}, selected_files={selected_files}")
+    if http_request is not None:
+        await _require_project_access(http_request, project_id)
+    service = await get_enterprise_lightrag_service()
+    jobs = _import_jobs(service)
 
-        service = await get_enterprise_lightrag_service()
+    async def import_file(file_id):
+        name = await get_file_name_from_service(project_id, file_id)
+        jobs.update(project_id, file_id, file_name=name or file_id)
+        await wait_for_file_processing(project_id, file_id, jobs)
+        content = await get_file_content_from_service(project_id, file_id)
+        if not content:
+            raise ValueError("No extracted text available; finish document processing before importing.")
+        from lightrag.utils import clean_text, compute_mdhash_id
+        doc_id = compute_mdhash_id(clean_text(content), prefix="doc-")
+        jobs.update(project_id, file_id, stage="indexing", doc_id=doc_id)
+        result = await service.insert_document(project_id=project_id, content=content,
+            metadata={"file_id": file_id, "source": "file_service", "filename": name or file_id})
+        if not result.get("success"):
+            raise RuntimeError(result.get("error", "Indexing failed"))
+        jobs.update(project_id, file_id, doc_id=result.get("doc_id", doc_id))
 
-        # 如果没有选择文件，返回当前状态
-        if not selected_files:
-            stats = service.get_project_stats(project_id)
-            return {
-                "success": True,
-                "project_id": project_id,
-                "message": "未选择文件，返回当前项目状态",
-                "status": "empty" if not stats["exists"] else "ready",
-                "project_stats": stats,
-                "timestamp": datetime.now().isoformat()
-            }
+    accepted = jobs.enqueue(project_id, selected_files, import_file)
+    return {"success": True, "project_id": project_id, "status": "accepted",
+            "message": "Import queued; poll document status for completion.",
+            "file_count": len(accepted), "accepted_files": accepted}
 
-        # 先获取所有文件名并立即添加到显示列表
-        project_key = f"project_{project_id}"
-        if project_key not in processing_files:
-            processing_files[project_key] = {}
 
-        for file_id in selected_files:
-            # 立即获取文件名并添加到处理列表，显示"处理中"状态
-            file_name = await get_file_name_from_service(project_id, file_id)
-            processing_files[project_key][file_id] = {
-                'filename': file_name or f"file_{file_id}.txt",
-                'file_id': file_id,
-                'status': 'processing',
-                'chunks_count': 0,
-                'created_at': datetime.now().timestamp()
-            }
-
-        # 处理选定的文件
-        processed_files = []
-        failed_files = []
-
-        for file_id in selected_files:
-            try:
-                logger.info(f"📄 处理文件: {file_id}")
-
-                # 尝试从文件服务获取文件内容
-                file_content = await get_file_content_from_service(project_id, file_id)
-
-                if file_content:
-                    # 文件名已经在上面获取过了
-                    file_name = processing_files[project_key][file_id]['filename']
-
-                    # 插入文档到LightRAG，传递file_path参数
-                    result = await service.insert_document(
-                        project_id=project_id,
-                        content=file_content,
-                        metadata={
-                            "file_id": file_id,
-                            "source": "file_service",
-                            "imported_at": datetime.now().isoformat(),
-                            "filename": file_name or f"file_{file_id}.txt"  # 使用filename而不是file_name
-                        }
-                    )
-
-                    if result["success"]:
-                        processed_files.append(file_id)
-                        # 更新状态为已完成
-                        processing_files[project_key][file_id]['status'] = 'completed'
-                        processing_files[project_key][file_id]['chunks_count'] = 1  # 暂时设为1，后续可以优化
-                        logger.info(f"✅ 文件处理成功: {file_id}")
-                    else:
-                        failed_files.append({"file_hash": file_id, "error": result.get("error", "处理失败")})
-                        # 更新状态为失败
-                        processing_files[project_key][file_id]['status'] = 'failed'
-                        processing_files[project_key][file_id]['error'] = result.get("error", "处理失败")
-                        logger.error(f"❌ 文档插入失败: {file_id} - {result.get('error')}")
-                else:
-                    failed_files.append({"file_hash": file_id, "error": "无法获取文件内容"})
-                    # 更新状态为失败
-                    processing_files[project_key][file_id]['status'] = 'failed'
-                    processing_files[project_key][file_id]['error'] = "无法获取文件内容"
-                    logger.error(f"❌ 无法获取文件内容: {file_id}")
-
-            except HTTPException:
-
-                raise
-
-            except Exception as e:
-                failed_files.append({"file_hash": file_id, "error": str(e)})
-                # 更新状态为失败
-                if project_key in processing_files and file_id in processing_files[project_key]:
-                    processing_files[project_key][file_id]['status'] = 'failed'
-                    processing_files[project_key][file_id]['error'] = str(e)
-                logger.error(f"❌ 处理文件异常: {file_id} - {e}")
-
-        # 返回处理结果
-        success_count = len(processed_files)
-        total_count = len(selected_files)
-
-        return {
-            "success": success_count > 0,
-            "project_id": project_id,
-            "message": f"处理完成: {success_count}/{total_count} 个文件成功",
-            "status": "completed" if success_count > 0 else "failed",
-            "file_count": total_count,
-            "processed_count": success_count,
-            "processed_files": processed_files,
-            "failed_files": failed_files,
-            "timestamp": datetime.now().isoformat()
-        }
-
-    except HTTPException:
-
-        raise
-
-    except Exception as e:
-        logger.error(f"❌ RAG构建失败: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+async def wait_for_file_processing(project_id, file_id, jobs):
+    """Do not import raw PDF bytes while the file processor is still extracting text."""
+    from src.shared.service_client import ServiceClient
+    client = ServiceClient()
+    async with asyncio.timeout(float(os.getenv("RAG_FILE_READY_TIMEOUT", "300"))):
+        while True:
+            info = await client.call_service(
+                service_name="file", endpoint=f"/api/file/info/{project_id}/{file_id}",
+                method="GET", use_service_auth=True)
+            if not info or not info.get("success"):
+                raise ValueError("File not found in this project")
+            state = (info.get("data") or info).get("status")
+            if state in ("failed", "error"):
+                raise ValueError("Document extraction failed; reprocess the file before importing")
+            if state in ("completed", "processed", "ready"):
+                return
+            jobs.update(project_id, file_id, stage="waiting_extraction")
+            await asyncio.sleep(2)
 
 
 async def get_file_content_from_service(project_id: str, file_id: str) -> Optional[str]:
@@ -921,99 +803,13 @@ async def get_file_content_from_local(project_id: str, file_id: str) -> Optional
 
 @router.get("/status/{project_id}")
 async def get_file_status(project_id: str, http_request: Request):
-    """
-    获取项目状态 - 返回实际的项目和文档状态
-    """
-    try:
-        await _require_project_access(http_request, project_id)
-        service = await get_enterprise_lightrag_service()
-
-        # 获取项目统计信息
-        stats = service.get_project_stats(project_id)
-
-        # 从实际工作区读取状态，S3 模式的索引位于本地缓存目录。
-        await service._get_project_rag(project_id)
-        adapter = service._project_adapters.get(project_id)
-        working_dir = adapter.get_working_dir() if adapter else str(Path(service.base_storage_dir) / f"project_{project_id}")
-        project_dir = Path(working_dir) / f"project_{project_id}"
-
-        statuses = {}
-        entities_count = 0
-        relationships_count = 0
-        chunks_count = 0
-
-        # 检查各个数据文件
-        for file_name, description in [
-            ("vdb_entities.json", "实体数据"),
-            ("vdb_relationships.json", "关系数据"),
-            ("vdb_chunks.json", "文档块数据")
-        ]:
-            file_path = project_dir / file_name
-            if file_path.exists():
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                        count = len(data.get('data', []))
-
-                        if 'entities' in file_name:
-                            entities_count = count
-                        elif 'relationships' in file_name:
-                            relationships_count = count
-                        elif 'chunks' in file_name:
-                            chunks_count = count
-
-                        statuses[file_name] = {
-                            "status": "ready",
-                            "count": count,
-                            "description": description
-                        }
-                except HTTPException:
-                    raise
-                except Exception as e:
-                    statuses[file_name] = {
-                        "status": "error",
-                        "error": str(e),
-                        "description": description
-                    }
-            else:
-                statuses[file_name] = {
-                    "status": "missing",
-                    "description": description
-                }
-
-        # 确定整体状态
-        if entities_count > 0 and chunks_count > 0:
-            overall_status = "ready"
-            message = f"项目就绪: {entities_count}个实体, {relationships_count}个关系, {chunks_count}个文档块"
-        elif chunks_count > 0:
-            overall_status = "processing"
-            message = f"处理中: {chunks_count}个文档块, {entities_count}个实体"
-        else:
-            overall_status = "empty"
-            message = "项目为空，尚未处理任何文档"
-
-        return {
-            "success": True,
-            "project_id": project_id,
-            "statuses": statuses,
-            "overall_status": overall_status,
-            "message": message,
-            "stats": {
-                "entities_count": entities_count,
-                "relationships_count": relationships_count,
-                "chunks_count": chunks_count
-            },
-            "project_stats": stats,
-            "timestamp": datetime.now().isoformat()
-        }
-
-    except HTTPException:
-
-        raise
-
-    except Exception as e:
-        logger.error(f"获取状态失败: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    await _require_project_access(http_request, project_id)
+    service = await get_enterprise_lightrag_service()
+    statuses = await _document_statuses(service, project_id)
+    active = any(item["status"] in ("pending", "processing") for item in statuses.values())
+    return {"success": True, "project_id": project_id, "statuses": statuses,
+            "overall_status": "processing" if active else ("ready" if statuses else "empty"),
+            "progress": _import_jobs(service).progress(project_id)}
 
 @router.post("/search/stream")
 async def stream_search_rag(
@@ -1265,3 +1061,33 @@ async def get_knowledge_graph(project_id: str, http_request: Request):
             "project_id": project_id,
             "timestamp": datetime.now().isoformat()
         }
+
+
+@router.get('/admin/tasks')
+async def admin_import_tasks(request: Request):
+    from src.shared.project_access import require_admin
+    await require_admin(request)
+    service = await get_enterprise_lightrag_service()
+    jobs = _import_jobs(service)
+    rows = []
+    for path in jobs.directory.glob('*.json'):
+        records = json.loads(path.read_text())
+        for file_id, record in records.items():
+            error = str(record.get('error', '')).lower()
+            reason = ('timeout' if 'timeout' in error or 'timed out' in error else
+                      'connection' if 'connect' in error else 'processing_failed') if error else None
+            rows.append({key: record.get(key) for key in ('project_id', 'status', 'stage', 'created_at', 'updated_at', 'duration_seconds')} | {'file_id': file_id, 'failure_reason': reason})
+    rows.sort(key=lambda row: row.get('updated_at') or row.get('created_at') or '', reverse=True)
+    return {'tasks': rows[:200], 'total': len(rows)}
+
+
+@router.post('/admin/retry/{project_id}/{file_id}')
+async def admin_retry_import(project_id: str, file_id: str, request: Request):
+    from src.shared.project_access import require_admin
+    context = await require_admin(request)
+    service = await get_enterprise_lightrag_service()
+    record = _import_jobs(service).statuses(project_id).get(file_id)
+    if not record or record.get('status') != 'failed':
+        raise HTTPException(409, 'Only failed import jobs can be retried')
+    logger.info('admin_import_retry actor=%s project=%s file=%s', context['user']['user_id'], project_id, file_id)
+    return await build_rag(project_id, [file_id], http_request=None)

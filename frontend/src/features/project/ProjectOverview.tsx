@@ -1,186 +1,267 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { projectApi } from '@/api/project';
-import type { ProjectResponse } from '@/types/api';
-import { Calendar, Clock } from 'lucide-react';
-import { customToast } from '@/utils/toast';
-import { useAuth } from '@/context/AuthContext';
-import { ProjectAccessLevel } from '@/context/authTypes';
-import { useTheme } from '@/context/ThemeContext';
-import { useLanguage } from '@/context/LanguageContext';
+import { useEffect, useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import { FileText, Network, MessageSquare, ArrowRight } from "lucide-react";
+import { projectApi } from "@/api/project";
+import { fileApi } from "@/api/file";
+import { ragApi, type RagFileStatusResponse } from "@/api/rag";
+import { apiClient } from "@/api/client";
+import type { ProjectResponse } from "@/types/api";
+import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
+import { ImportProgress } from "@/features/rag/ImportProgress";
 
+type Conversation = { id: string; title: string; timestamp: string };
 export default function ProjectOverview() {
   const { projectId } = useParams<{ projectId: string }>();
-  const [project, setProject] = useState<ProjectResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const { updateUserProjectAccess } = useAuth();
-  const navigate = useNavigate();
-  const [loadAttempts, setLoadAttempts] = useState(0);
-
-  const { isDarkMode } = useTheme();
-  const { t } = useLanguage();
-
+  const { currentLanguage } = useLanguage();
+  const { user } = useAuth();
+  const userId = user?.id;
+  const zh = currentLanguage === "zh-CN";
+  const [state, setState] = useState<{
+    id?: string;
+    project?: ProjectResponse;
+    error?: boolean;
+  }>({});
+  const [files, setFiles] = useState<number | null>(null);
+  const [rag, setRag] = useState<RagFileStatusResponse | null>(null);
+  const [sessions, setSessions] = useState<Conversation[] | null>(null);
+  const [retry, setRetry] = useState(0);
+  const [partialError, setPartialError] = useState(false);
   useEffect(() => {
-    const loadProject = async () => {
-      if (!projectId) {
-        setError(t('projectIdNotExist'));
-        setLoading(false);
-        return;
-      }
-
+    let cancelled = false;
+    setState({});
+    setFiles(null);
+    setRag(null);
+    setSessions(null);
+    setPartialError(false);
+    if (!projectId) return;
+    const load = async () => {
       try {
-        setLoading(true);
-        setError(null);
-
-        // 记录加载开始
-        console.log(`[ProjectOverview] 开始加载项目(${projectId})详情，尝试次数: ${loadAttempts + 1}...`);
-
-        // 加载项目前，确保用户对此项目有权限记录
-        try {
-          const storedPermissions = localStorage.getItem('lumidoc_project_permissions');
-          const permissions = storedPermissions ? JSON.parse(storedPermissions) : {};
-
-          // 如果在本地缓存中没有此项目的权限记录，添加基本查看权限
-          if (!permissions[projectId]) {
-            console.log(`[ProjectOverview] 项目(${projectId})在本地权限中不存在，添加查看权限`);
-            updateUserProjectAccess(projectId, ProjectAccessLevel.VIEWER);
-
-            // 更新本地存储
-            permissions[projectId] = ProjectAccessLevel.VIEWER;
-            localStorage.setItem('lumidoc_project_permissions', JSON.stringify(permissions));
-          } else {
-            console.log(`[ProjectOverview] 项目(${projectId})已有权限: ${permissions[projectId]}`);
-          }
-        } catch (e) {
-          console.error('[ProjectOverview] 检查项目权限失败:', e);
-        }
-
-        // 加载项目详情
-        try {
-          const projectData = await projectApi.getProject(projectId);
-
-          if (!projectData || !projectData.id) {
-            throw new Error('项目数据无效');
-          }
-
-          console.log(`[ProjectOverview] 成功加载项目(${projectId})详情:`, projectData);
-          setProject(projectData);
-          setLoadAttempts(0); // 重置尝试次数
-        } catch (apiError) {
-          console.error(`[ProjectOverview] 获取项目(${projectId})失败:`, apiError);
-
-          // 尝试次数增加
-          const newAttempts = loadAttempts + 1;
-          setLoadAttempts(newAttempts);
-
-          // 如果重试次数过多，返回项目列表页面
-          if (newAttempts >= 3) {
-            console.error(`[ProjectOverview] 项目(${projectId})加载失败次数过多，返回项目列表`);
-            setError(t('cannotLoadProject'));
-            customToast.error(t('projectLoadFailed'));
-
-            // 延迟返回，避免连续导航
-            setTimeout(() => {
-              navigate('/', { replace: true });
-            }, 1500);
-          } else {
-            setError(t('cannotLoadProject'));
-            customToast.error(t('loadProjectFailed'));
-          }
-        }
-      } catch (error) {
-        console.error('[ProjectOverview] 加载项目详情未知错误:', error);
-        setError(t('unknownError'));
-        customToast.error(t('unknownErrorRefresh'));
-      } finally {
-        setLoading(false);
+        const project = await projectApi.getProject(projectId);
+        if (cancelled) return;
+        setState({ id: projectId, project });
+        const results = await Promise.allSettled([
+          fileApi.listFiles(projectId),
+          ragApi.getRagFileStatus(projectId),
+          apiClient.get<Conversation[]>(
+            `${import.meta.env.VITE_API_GATEWAY_URL || "http://localhost:8888"}/chat/api/chat/conversations/${projectId}`,
+            { params: { user_id: userId } },
+          ),
+        ]);
+        if (cancelled) return;
+        const [documents, knowledge, conversations] = results;
+        if (documents.status === "fulfilled") setFiles(documents.value.length);
+        if (knowledge.status === "fulfilled" && knowledge.value.success)
+          setRag(knowledge.value);
+        const validConversations =
+          conversations.status === "fulfilled" &&
+          Array.isArray(conversations.value.data);
+        if (validConversations) setSessions(conversations.value.data);
+        setPartialError(
+          !validConversations ||
+            results.some((result) => result.status === "rejected") ||
+            (knowledge.status === "fulfilled" && !knowledge.value.success),
+        );
+      } catch {
+        if (!cancelled) setState({ id: projectId, error: true });
       }
     };
-
-    loadProject();
-  }, [projectId, updateUserProjectAccess, loadAttempts, navigate, t]);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500 mb-4"></div>
-          <p className={`${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>{t('loadingProjectInfo')}</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error || !project) {
-    return (
-      <div className={`${isDarkMode ? 'bg-[#343541]' : 'bg-white'} rounded-lg p-6 text-center border ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-        <p className={`${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>{error || t('cannotLoadProject')}</p>
-        <div className="flex justify-center mt-4 space-x-4">
-          <button
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white text-sm"
-            onClick={() => window.location.reload()}
-          >
-            {t('retry')}
-          </button>
-          <button
-            className={`px-4 py-2 ${isDarkMode ? 'bg-gray-600 hover:bg-gray-700' : 'bg-gray-500 hover:bg-gray-600'} rounded text-white text-sm`}
-            onClick={() => navigate('/', { replace: true })}
-          >
-            {t('returnToProjectList')}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, retry, userId]);
+  const base = `/project/${projectId}`;
+  const statuses = Object.values(rag?.statuses || {});
+  const indexed = rag
+    ? statuses.filter((row) => row.status === "processed").length
+    : null;
+  const processing = statuses.filter((row) =>
+    ["pending", "processing"].includes(row.status),
+  ).length;
+  const failed = statuses.filter((row) => row.status === "failed").length;
+  const actions = [
+    {
+      path: "documents",
+      icon: FileText,
+      title: zh ? "文档库" : "Documents",
+      count: files,
+      description: zh
+        ? "上传、预览 OCR 结果，下载处理后的文件。"
+        : "Upload, preview OCR results and download processed files.",
+      action: zh ? "上传文档" : "Upload documents",
+    },
+    {
+      path: "rag",
+      icon: Network,
+      title: zh ? "知识库" : "Knowledge base",
+      count: indexed,
+      description: zh
+        ? "批量导入文档，查看知识图谱，管理索引。"
+        : "Import documents in batches, explore the graph and manage indexes.",
+      action: zh ? "导入知识库" : "Import to knowledge base",
+    },
+    {
+      path: "chat",
+      icon: MessageSquare,
+      title: zh ? "项目对话" : "Conversations",
+      count: sessions?.length ?? null,
+      description: zh
+        ? "围绕项目资料提问，继续之前的完整会话。"
+        : "Ask questions about your sources and continue saved conversations.",
+      action: zh ? "开始对话" : "Start a conversation",
+    },
+  ];
   return (
-    <div className="space-y-6">
-      <div className={`${isDarkMode ? 'bg-[#343541]' : 'bg-white'} rounded-lg p-6 border ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-        <h1 className={`text-2xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{project.name}</h1>
-        <p className={`${isDarkMode ? 'text-gray-300' : 'text-gray-600'} mb-4`}>{project.description || t('noProjectDescription')}</p>
-
-        <div className={`flex items-center space-x-4 text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-          <div className="flex items-center">
-            <Calendar className="h-4 w-4 mr-1" />
-            <span>{t('createdAt')}: {new Date(project.created_at).toLocaleString()}</span>
-          </div>
-          {project.updated_at && (
-            <div className="flex items-center">
-              <Clock className="h-4 w-4 mr-1" />
-              <span>{t('updatedAt')}: {new Date(project.updated_at).toLocaleString()}</span>
-            </div>
+    <div className="h-full overflow-y-auto p-5 md:p-8 text-foreground">
+      {state.id !== projectId ? (
+        <p role="status">{zh ? "正在加载项目…" : "Loading project…"}</p>
+      ) : state.error ? (
+        <div role="alert" className="rounded-xl border p-6">
+          <h1 className="text-xl font-semibold">
+            {zh ? "暂时无法打开项目" : "Unable to open project"}
+          </h1>
+          <p className="my-3">
+            {zh
+              ? "请检查连接或项目访问权限，然后重试。"
+              : "Check your connection or project access, then retry."}
+          </p>
+          <button
+            className="underline mr-6"
+            onClick={() => setRetry((value) => value + 1)}
+          >
+            {zh ? "重试" : "Retry"}
+          </button>
+          <Link className="underline" to="/app/projects">
+            {zh ? "返回项目列表" : "All projects"}
+          </Link>
+        </div>
+      ) : (
+        <div className="mx-auto max-w-6xl space-y-7">
+          <header>
+            <p className="text-sm text-muted-foreground">
+              {zh ? "项目总览" : "Project overview"}
+            </p>
+            <h1 className="mt-2 text-3xl font-semibold break-words">
+              {state.project?.name}
+            </h1>
+            <p className="mt-3 text-muted-foreground">
+              {state.project?.description ||
+                (zh
+                  ? "集中管理资料、构建知识库，并与项目内容对话。"
+                  : "Keep your sources, knowledge base and conversations together.")}
+            </p>
+          </header>
+          {partialError && (
+            <p role="alert" className="rounded-lg border p-3">
+              {zh
+                ? "部分统计暂不可用，仍可进入各功能查看。"
+                : "Some statistics are unavailable. You can still open each workspace."}{" "}
+              <button
+                className="underline"
+                onClick={() => setRetry((value) => value + 1)}
+              >
+                {zh ? "重试" : "Retry"}
+              </button>
+            </p>
           )}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className={`${isDarkMode ? 'bg-[#343541]' : 'bg-white'} rounded-lg p-6 border ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-          <h2 className={`text-xl font-semibold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{t('projectStats')}</h2>
-          <div className="space-y-2">
-            <div className="flex justify-between">
-              <span className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>{t('projectId')}</span>
-              <span className={`${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{project.id}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>{t('status')}</span>
-              <span className={`${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{project.status || t('active')}</span>
-            </div>
+          {files === 0 && (
+            <section className="rounded-xl border border-blue-200 bg-blue-50 p-5 dark:bg-slate-900 dark:border-slate-700">
+              <h2 className="font-semibold text-lg">
+                {zh ? "从第一份文档开始" : "Start with your first document"}
+              </h2>
+              <p className="mt-2 text-muted-foreground">
+                {zh
+                  ? "1. 上传文档 → 2. 导入知识库 → 3. 开始提问。也可以直接进行普通对话。"
+                  : "1. Upload documents → 2. Import to the knowledge base → 3. Ask questions. You can also start a regular chat right away."}
+              </p>
+            </section>
+          )}
+          <div className="grid gap-4 md:grid-cols-3">
+            {actions.map(
+              ({ path, icon: Icon, title, count, description, action }) => (
+                <section
+                  key={path}
+                  className="rounded-xl border bg-card p-5 flex flex-col"
+                >
+                  <Icon className="h-6 w-6 text-blue-500" />
+                  <h2 className="mt-4 font-semibold text-lg">{title}</h2>
+                  <p className="my-3 text-3xl font-semibold">{count ?? "—"}</p>
+                  <p className="text-sm text-muted-foreground flex-1">
+                    {description}
+                  </p>
+                  <Link
+                    to={`${base}/${path}`}
+                    className="mt-6 inline-flex items-center gap-2 text-blue-600 dark:text-blue-400 font-medium"
+                  >
+                    {action}
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </section>
+              ),
+            )}
           </div>
+          <section className="rounded-xl border p-5">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="font-semibold">
+                {zh ? "处理状态" : "Processing status"}
+              </h2>
+              <button
+                className="text-sm underline"
+                onClick={() => setRetry((value) => value + 1)}
+              >
+                {zh ? "刷新状态" : "Refresh status"}
+              </button>
+            </div>
+            <p className="my-3 text-sm text-muted-foreground">
+              {rag
+                ? zh
+                  ? `待处理 / 处理中 ${processing} · 导入失败 ${failed}`
+                  : `Queued / processing ${processing} · Failed ${failed}`
+                : zh
+                  ? "等待知识库状态"
+                  : "Knowledge base status unavailable"}
+            </p>
+            <ImportProgress
+              progress={rag?.progress}
+              language={currentLanguage}
+            />
+            <Link to={`${base}/rag`} className="text-sm underline">
+              {zh ? "查看实时导入进度" : "View live import progress"}
+            </Link>
+          </section>
+          <section className="rounded-xl border p-5">
+            <h2 className="font-semibold mb-3">
+              {zh ? "最近会话" : "Recent conversations"}
+            </h2>
+            {sessions === null ? (
+              <p className="text-muted-foreground text-sm">
+                {zh ? "会话暂不可用" : "Conversations unavailable"}
+              </p>
+            ) : sessions.length === 0 ? (
+              <p className="text-muted-foreground text-sm">
+                {zh
+                  ? "还没有会话。开始提问后，会话会保存在这个项目中。"
+                  : "No conversations yet. Your chats will be saved in this project."}
+              </p>
+            ) : (
+              <ul className="divide-y">
+                {sessions.slice(0, 5).map((session) => (
+                  <li key={session.id}>
+                    <Link
+                      className="block py-3 hover:underline break-words"
+                      to={`${base}/chat?conversation=${encodeURIComponent(session.id)}`}
+                    >
+                      {session.title ||
+                        (zh ? "未命名会话" : "Untitled conversation")}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         </div>
-
-        <div className={`${isDarkMode ? 'bg-[#343541]' : 'bg-white'} rounded-lg p-6 border ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-          <h2 className={`text-xl font-semibold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{t('quickActions')}</h2>
-          <div className="flex flex-wrap gap-2">
-            <button onClick={() => navigate(`/project/${projectId}/documents`)} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white text-sm">
-              {t('addFile')}
-            </button>
-            <button onClick={() => navigate(`/project/${projectId}/rag`)} className={`px-4 py-2 ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-600 hover:bg-gray-700'} rounded text-white text-sm`}>
-              {t('createAnalysis')}
-            </button>
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

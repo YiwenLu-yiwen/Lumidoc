@@ -1,3 +1,4 @@
+import ProjectEntry from './features/project/ProjectEntry';
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { ProjectProvider } from './context/ProjectContext'
@@ -11,6 +12,7 @@ import './index.css' // 确保全局样式生效
 import { Toaster } from 'react-hot-toast'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 
+const AdminPage = lazy(() => import('./features/admin/AdminPage'))
 const ProjectOverview = lazy(() => import('./features/project/ProjectOverview'))
 const ProjectSelect = lazy(() => import('./features/project/ProjectSelect'))
 const ChatGPTHomePage = lazy(() =>
@@ -132,12 +134,12 @@ const router = createBrowserRouter([
       },
       {
         path: "dashboard",
-        element: <ModernDashboard />,
+        element: <ProjectSelect />,
         errorElement: <ErrorPage />
       },
       {
         path: "documents",
-        element: <DocumentAnalysis />,
+        element: <ProjectEntry section="documents" />,
         errorElement: <ErrorPage />
       },
       {
@@ -147,14 +149,15 @@ const router = createBrowserRouter([
       },
       {
         path: "chat",
-        element: <ChatLayout />,
+        element: <ProjectEntry section="chat" />,
         errorElement: <ErrorPage />
       },
       {
         path: "rag",
-        element: <RagManager />,
+        element: <ProjectEntry section="rag" />,
         errorElement: <ErrorPage />
       },
+      { path: "models", element: <ModernDashboard modelsOnly />, errorElement: <ErrorPage /> },
       {
         path: "settings",
         element: <SettingsPage />,
@@ -162,7 +165,7 @@ const router = createBrowserRouter([
       },
       {
         path: "admin",
-        element: <div>{typeof window !== 'undefined' && window.navigator.language.startsWith('zh') ? '管理员面板开发中...' : 'Admin panel under development...'}</div>,
+        element: <AdminPage />,
         errorElement: <ErrorPage />
       },
       {

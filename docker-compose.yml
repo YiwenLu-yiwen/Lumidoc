@@ -254,6 +254,16 @@ services:
       context: .
       dockerfile: src/modules/monitoring/Dockerfile
     environment:
+      - AUTH_SERVICE_URL=http://auth_service:8007
+      - CHAT_SERVICE_URL=http://chat_service:8001
+      - FILE_SERVICE_URL=http://file_service:8004
+      - FILEPROC_SERVICE_URL=http://fileproc_service:8005
+      - GRAPH_SERVICE_URL=http://graph_service:8003
+      - RAG_SERVICE_URL=http://rag_service:8006
+      - LLM_SERVICE_URL=http://llm_service:8080
+      - MONITORING_SERVICE_URL=http://monitoring_service:8008
+      - PROJECT_SERVICE_URL=http://project_service:8020
+      - QUESTION_SERVICE_URL=http://question_service:8002
       - PYTHONPATH=/app
       - REDIS_HOST=redis
       - POSTGRES_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-lumidoc}
@@ -327,6 +337,7 @@ services:
       - ./uploads:/app/uploads
       - ./temp:/app/temp
     environment:
+      - AUTH_SERVICE_URL=http://auth_service:8007
       - PYTHONPATH=/app
       - UPLOAD_DIR=/app/uploads
       - TEMP_DIR=/app/temp
@@ -397,6 +408,7 @@ services:
       context: .
       dockerfile: src/modules/llm/Dockerfile
     environment:
+      - AUTH_SERVICE_URL=http://auth_service:8007
       - PYTHONPATH=/app
       - REDIS_HOST=redis
       - LLM_SERVICE_PORT=${LLM_SERVICE_PORT:-8080}

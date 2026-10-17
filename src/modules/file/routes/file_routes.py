@@ -465,6 +465,43 @@ async def list_project_files_compat(project_id: str):
 
 
 @router.get(
+    "/content/global/{content_hash}",
+    response_model=Dict[str, Any],
+    dependencies=[Depends(require_service_access)],
+)
+async def get_content_by_hash(content_hash: str):
+    """
+    通过哈希值获取文件内容
+
+    Args:
+        content_hash: 文件哈希值
+
+    Returns:
+        Dict[str, Any]: 文件内容
+    """
+    try:
+        result = await file_service.get_content_by_hash(content_hash)
+        if not result.get("success", False):
+            # 不再直接抛出404错误，而是返回带有错误信息的响应
+            return {
+                "success": False,
+                "message": result.get("message", "未找到文件内容"),
+                "error": result.get("error", "文件内容不存在或尚未处理完成"),
+                "file_hash": content_hash
+            }
+        return result
+    except Exception as e:
+        logger.error(f"获取文件内容失败: {str(e)}")
+        logger.error(traceback.format_exc())
+        return {
+            "success": False,
+            "message": f"获取文件内容失败: {str(e)}",
+            "error": str(e),
+            "file_hash": content_hash
+        }
+
+
+@router.get(
     "/content/{project_id}/{file_hash}",
     response_model=Dict[str, Any],
     dependencies=[Depends(require_project_access_dependency)],
@@ -1001,42 +1038,6 @@ async def list_pending_files(
     except Exception as e:
         logger.error(f"获取待处理文件列表失败: {str(e)}")
         raise HTTPException(status_code=500, detail=f"获取待处理文件列表失败: {str(e)}")
-
-@router.get(
-    "/content/global/{content_hash}",
-    response_model=Dict[str, Any],
-    dependencies=[Depends(require_service_access)],
-)
-async def get_content_by_hash(content_hash: str):
-    """
-    通过哈希值获取文件内容
-    
-    Args:
-        content_hash: 文件哈希值
-        
-    Returns:
-        Dict[str, Any]: 文件内容
-    """
-    try:
-        result = await file_service.get_content_by_hash(content_hash)
-        if not result.get("success", False):
-            # 不再直接抛出404错误，而是返回带有错误信息的响应
-            return {
-                "success": False,
-                "message": result.get("message", "未找到文件内容"),
-                "error": result.get("error", "文件内容不存在或尚未处理完成"),
-                "file_hash": content_hash
-            }
-        return result
-    except Exception as e:
-        logger.error(f"获取文件内容失败: {str(e)}")
-        logger.error(traceback.format_exc())
-        return {
-            "success": False,
-            "message": f"获取文件内容失败: {str(e)}",
-            "error": str(e),
-            "file_hash": content_hash
-        }
 
 # 添加文件到RAG的接口
 @router.post("/add-to-rag", response_model=AddToRagResponse)

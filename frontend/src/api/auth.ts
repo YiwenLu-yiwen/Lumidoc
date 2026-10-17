@@ -10,6 +10,9 @@ export interface User {
 }
 
 export interface LoginResponse {
+  email?: string;
+  is_active: boolean;
+  is_superuser: boolean;
   id: number;
   username: string;
   nickname: string;

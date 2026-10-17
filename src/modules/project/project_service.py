@@ -203,7 +203,7 @@ class ProjectService:
             logger.error(traceback.format_exc())
             raise
 
-    @dedupe_task(task_name="get_project")
+    # Ownership reads must be fresh and must never wait on cached background tasks.
     async def get_project(self, project_id: str, user_id: int) -> ProjectResponse:
         """获取项目详情"""
         logger.info(f"Getting project details for project_id={project_id}, user_id={user_id}")

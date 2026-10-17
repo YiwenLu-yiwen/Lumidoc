@@ -18,6 +18,7 @@ interface AuthContextType {
   login: (user: User, token: string) => void;
   logout: () => void;
   refreshToken: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
   getToken: () => string | null;
   isAuthenticated: boolean;
   hasProjectAccess: (projectId: string, requiredLevel?: ProjectAccessLevel) => boolean;
@@ -61,6 +62,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   });
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!token);
+
+  const refreshProfile = useCallback(async () => {
+    if (!token) return;
+    const base = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8888';
+    const response = await fetch(`${base}/api/auth/users/me/`, {headers:{Authorization:`Bearer ${token}`}});
+    if (!response.ok) throw new Error('Unable to load account profile');
+    const profile = await response.json();
+    setUser(previous => {
+      if (!previous || previous.id !== String(profile.id)) return previous;
+      const updated = {...previous, email:profile.email, nickname:profile.nickname || profile.username, role:profile.is_superuser ? UserRole.ADMIN : UserRole.USER};
+      localStorage.setItem(USER_KEY, JSON.stringify(updated));
+      return updated;
+    });
+  }, [token]);
+  useEffect(() => { void refreshProfile().catch(() => undefined); }, [refreshProfile]);
 
   // 组件渲染性能优化：使用useRef避免不必要的re-render
   const projectPermissionsRef = useRef<Record<string, ProjectAccessLevel>>({});
@@ -487,7 +503,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       hasProjectAccess,
       getUserRole,
       isAdmin,
-      updateUserProjectAccess
+      updateUserProjectAccess,
+      refreshProfile
     }}>
       {children}
     </AuthContext.Provider>

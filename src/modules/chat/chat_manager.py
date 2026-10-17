@@ -122,7 +122,8 @@ class ChatManager:
                                   use_graph: Optional[bool] = None,
                                   auth_header: Optional[str] = None,
                                   model: Optional[str] = None,
-                                  conversation_id: str = "legacy") -> AsyncGenerator[str, None]:
+                                  conversation_id: str = "legacy",
+                                  think: bool = False) -> AsyncGenerator[str, None]:
         """
         流式处理用户消息
         
@@ -159,6 +160,7 @@ class ChatManager:
                 model=model,
                 conversation_id=conversation_id,
                 retrieval_mode="off" if use_graph is False else "auto",
+                think=think,
             )
             
             # chat_stream总是返回异步生成器，逐块生成
@@ -169,7 +171,7 @@ class ChatManager:
                     processed_chunk = process_special_format(chunk)
                 
                 # 累积完整响应并yield处理后的chunk
-                full_response += processed_chunk
+                full_response += processed_chunk.get("content", "") if isinstance(processed_chunk, dict) else processed_chunk
                 yield processed_chunk
             
             # 保存完整响应到会话

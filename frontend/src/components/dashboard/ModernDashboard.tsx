@@ -33,7 +33,7 @@ const DESIGN_TOKENS = {
   // 标准化间距系统（基于 8px 网格）
   spacing: {
     xs: '0.5rem',    // 8px
-    sm: '0.75rem',   // 12px  
+    sm: '0.75rem',   // 12px
     md: '1rem',      // 16px
     lg: '1.5rem',    // 24px
     xl: '2rem',      // 32px
@@ -46,7 +46,7 @@ const DESIGN_TOKENS = {
   // 语义化字体系统
   typography: {
     displayLarge: 'text-4xl font-bold tracking-tight leading-tight',
-    displayMedium: 'text-3xl font-bold tracking-tight leading-tight', 
+    displayMedium: 'text-3xl font-bold tracking-tight leading-tight',
     headlineLarge: 'text-2xl font-bold tracking-tight leading-snug',
     headlineMedium: 'text-xl font-semibold leading-snug',
     titleLarge: 'text-lg font-semibold leading-normal',
@@ -72,7 +72,7 @@ const DESIGN_TOKENS = {
     },
     warning: {
       text: 'text-amber-600 dark:text-amber-400',
-      bg: 'bg-amber-50 dark:bg-amber-950/20', 
+      bg: 'bg-amber-50 dark:bg-amber-950/20',
       border: 'border-amber-200 dark:border-amber-800'
     },
     error: {
@@ -89,14 +89,14 @@ const DESIGN_TOKENS = {
   // 统一阴影系统
   shadows: {
     sm: 'shadow-sm',
-    md: 'shadow-md', 
+    md: 'shadow-md',
     lg: 'shadow-lg shadow-black/5',
     xl: 'shadow-xl shadow-black/10'
   },
   // 现代圆角系统
   radius: {
     sm: 'rounded-lg',
-    md: 'rounded-xl', 
+    md: 'rounded-xl',
     lg: 'rounded-2xl',
     full: 'rounded-full'
   },
@@ -235,7 +235,7 @@ const MetricCard: React.FC<MetricCardProps> = ({
   };
 
   return (
-    <div 
+    <div
       className={`
         relative overflow-hidden group
         ${DESIGN_TOKENS.radius.md} ${DESIGN_TOKENS.shadows.sm}
@@ -265,7 +265,7 @@ const MetricCard: React.FC<MetricCardProps> = ({
     >
       {/* 背景装饰渐变 */}
       <div className="absolute inset-0 bg-gradient-to-br from-background/10 to-transparent" />
-      
+
       <div className={DESIGN_TOKENS.spacing.cardPadding}>
         {/* 头部区域 */}
         <div className="flex items-start justify-between mb-4">
@@ -280,7 +280,7 @@ const MetricCard: React.FC<MetricCardProps> = ({
                 {icon}
               </div>
             </div>
-            
+
             {badge && (
               <span className={`
                 ${DESIGN_TOKENS.typography.labelMedium}
@@ -292,20 +292,20 @@ const MetricCard: React.FC<MetricCardProps> = ({
               </span>
             )}
           </div>
-          
+
           <div className={`
             w-2 h-2 ${DESIGN_TOKENS.radius.full} ${statusStyle.dot}
             ${DESIGN_TOKENS.transitions.default}
             group-hover:scale-125 group-hover:shadow-lg
           `} />
         </div>
-        
+
         {/* 指标内容区域 */}
         <div className="space-y-2">
           <p className={`${DESIGN_TOKENS.typography.labelLarge} text-muted-foreground`}>
             {title}
           </p>
-          
+
           {loading ? (
             <div className="space-y-2">
               <div className="h-8 w-20 bg-muted/50 rounded animate-pulse" />
@@ -321,9 +321,9 @@ const MetricCard: React.FC<MetricCardProps> = ({
               </p>
             </>
           )}
-          
+
           {trend && !loading && (
-            <div 
+            <div
               className={`flex items-center space-x-2 pt-2`}
               id={`trend-${title.replace(/\s+/g, '-').toLowerCase()}`}
               role="status"
@@ -373,7 +373,7 @@ const MetricCard: React.FC<MetricCardProps> = ({
           )}
         </div>
       </div>
-      
+
       {/* 悬停时的微妙动画效果 */}
       {onClick && (
         <div className="absolute inset-0 bg-gradient-to-r from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
@@ -382,7 +382,7 @@ const MetricCard: React.FC<MetricCardProps> = ({
   );
 };
 
-export function ModernDashboard() {
+export function ModernDashboard({ modelsOnly = false }: { modelsOnly?: boolean }) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { currentLanguage, t } = useLanguage();
@@ -392,14 +392,14 @@ export function ModernDashboard() {
   const [currentTime, setCurrentTime] = useState(new Date());
   // 数据刷新状态
   const [isRefreshingData, setIsRefreshingData] = useState(false);
-  
+
   // 调试语言检测（生产环境可删除）
   // console.log('🔍 当前检测到的语言:', currentLanguage);
-  
+
   // 真实时间格式化函数 - 基于当前时间和数据更新时间计算
   const formatTimeAgo = (updateTime: Date, currentTime: Date) => {
     const diffInSeconds = Math.floor((currentTime.getTime() - updateTime.getTime()) / 1000);
-    
+
     if (diffInSeconds < 60) {
       return currentLanguage === 'zh-CN' ? `${diffInSeconds}秒前` : `${diffInSeconds}s ago`;
     } else if (diffInSeconds < 3600) {
@@ -413,7 +413,7 @@ export function ModernDashboard() {
       return currentLanguage === 'zh-CN' ? `${days}天前` : `${days}d ago`;
     }
   };
-  
+
   // Ollama 模型管理状态
   const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
@@ -436,13 +436,13 @@ export function ModernDashboard() {
     fast: ollamaModels.filter(model => OllamaApi.detectModelType(model.name) === 'fast').length,
     total: ollamaModels.length
   };
-  
+
   // 加载 Ollama 模型列表
   const loadOllamaModels = useCallback(async () => {
     setIsLoadingModels(true);
     try {
       const response = await OllamaApi.getInstalledModels();
-      const filteredModels = response.models.filter(model => 
+      const filteredModels = response.models.filter(model =>
         !OllamaApi.isEmbeddingModel(model.name)
       );
       setOllamaModels(filteredModels);
@@ -454,17 +454,17 @@ export function ModernDashboard() {
       setIsLoadingModels(false);
     }
   }, []);
-  
+
   // 下载模型
   const downloadModel = async (modelName: string) => {
     if (downloadingModels.has(modelName)) return;
-    
+
     setDownloadingModels(prev => new Set([...prev, modelName]));
     setDownloadProgress(prev => ({ ...prev, [modelName]: { status: 'started', percentage: 0, message: t('downloadStarted') } }));
-    
+
     try {
       const response = await OllamaApi.pullModel({ name: modelName });
-      
+
       if (response.status === 'success') {
         setDownloadProgress(prev => ({ ...prev, [modelName]: { status: 'completed', percentage: 100, message: t('downloadCompleted') } }));
         await loadOllamaModels(); // 重新加载模型列表
@@ -474,7 +474,7 @@ export function ModernDashboard() {
           try {
             const status = await OllamaApi.getPullStatus(modelName);
             setDownloadProgress(prev => ({ ...prev, [modelName]: status }));
-            
+
             if (status.status === 'completed') {
               clearInterval(checkProgress);
               await loadOllamaModels();
@@ -486,7 +486,7 @@ export function ModernDashboard() {
             clearInterval(checkProgress);
           }
         }, 2000);
-        
+
         // 15分钟后清理
         setTimeout(() => {
           clearInterval(checkProgress);
@@ -510,27 +510,27 @@ export function ModernDashboard() {
       }, 3000);
     }
   };
-  
+
   // 处理自定义模型下载
   const handleCustomModelDownload = async () => {
     if (!customModelName.trim()) return;
-    
+
     await downloadModel(customModelName.trim());
     setCustomModelName('');
     setShowCustomInput(false);
   };
-  
+
   // 获取热门模型推荐
   const popularModels = OllamaApi.getPopularModels(currentLanguage);
-  
+
   // 加载真实项目数据
   const loadProjectStats = useCallback(async () => {
     if (!userRef.current) return;
-    
+
     setIsLoadingProjects(true);
     try {
       const projects = await projectApi.listProjects();
-      
+
       // 转换项目数据格式以适配ProjectStats接口
       const stats: ProjectStats[] = projects.map(project => ({
         id: project.id,
@@ -538,7 +538,7 @@ export function ModernDashboard() {
         status: project.status as 'active' | 'completed' | 'paused',
         lastActivity: new Date(project.updated_at).toLocaleString(),
       }));
-      
+
       setProjectStats(stats);
     } catch (error) {
       console.error('[Dashboard] 加载项目数据失败:', error);
@@ -551,12 +551,12 @@ export function ModernDashboard() {
   // 加载最近文档数据
   const loadRecentDocuments = useCallback(async () => {
     if (!userRef.current || projectStats.length === 0) return;
-    
+
     setIsLoadingDocuments(true);
     try {
       // 获取所有项目的文件，然后取最近的几个
       const allFiles: DocumentInfo[] = [];
-      
+
       for (const project of projectStats) {
         try {
           const files = await fileApi.listFiles(project.id);
@@ -574,7 +574,7 @@ export function ModernDashboard() {
           console.error(`[Dashboard] 获取项目${project.id}文件失败:`, error);
         }
       }
-      
+
       // 按时间排序并取前4个
       allFiles.sort((a, b) => new Date(b.uploadTime).getTime() - new Date(a.uploadTime).getTime());
       setRecentDocuments(allFiles.slice(0, 4));
@@ -593,7 +593,7 @@ export function ModernDashboard() {
     try {
       await Promise.allSettled([
         loadOllamaModels(),
-        userRef.current ? loadProjectStats() : Promise.resolve()
+        !modelsOnly && userRef.current ? loadProjectStats() : Promise.resolve()
       ]);
       setLastDataUpdateTime(new Date());
       console.log('[Dashboard] 数据刷新完成:', new Date().toLocaleString());
@@ -602,7 +602,7 @@ export function ModernDashboard() {
     } finally {
       setIsRefreshingData(false);
     }
-  }, [loadOllamaModels, loadProjectStats]);
+  }, [loadOllamaModels, loadProjectStats, modelsOnly]);
 
 
   // 组件挂载时初始化数据
@@ -610,23 +610,23 @@ export function ModernDashboard() {
     console.log('[Dashboard] 组件挂载，初始化数据...');
     void refreshAllData();
   }, [refreshAllData, user]);
-  
+
   // 每秒更新当前时间 - 用于实时计算时间差
   useEffect(() => {
     const timeInterval = setInterval(() => {
       setCurrentTime(new Date());
     }, 1000); // 每秒更新一次
-    
+
     return () => clearInterval(timeInterval);
   }, []);
-  
+
   // 每10分钟自动刷新数据
   useEffect(() => {
     const dataRefreshInterval = setInterval(() => {
       console.log('[Dashboard] 10分钟定时刷新数据...');
       refreshAllData();
     }, 10 * 60 * 1000); // 10分钟刷新一次
-    
+
     return () => clearInterval(dataRefreshInterval);
   }, [refreshAllData]);
 
@@ -677,26 +677,272 @@ export function ModernDashboard() {
     }
   };
 
+  const modelPanel = (
+                <section
+                  className="rounded-2xl border border-border bg-card text-card-foreground shadow-sm"
+                  aria-label="模型管理"
+                  role="region"
+                >
+                <div className="border-b border-border p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="flex items-center space-x-2">
+                        <h3 className="text-xl font-black text-foreground">{t('localModelManagement')}</h3>
+                        {ollamaStatus === true && (
+                          <CheckCircle className="w-5 h-5 text-green-500" />
+                        )}
+                        {ollamaStatus === false && (
+                          <XCircle className="w-5 h-5 text-red-500" />
+                        )}
+                        {ollamaStatus === null && (
+                          <AlertCircle className="w-5 h-5 text-yellow-500" />
+                        )}
+                      </div>
+                      <p className="text-sm font-medium text-muted-foreground">
+                        {t('modelAutoDownload')}
+                      </p>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={loadOllamaModels}
+                        disabled={isLoadingModels}
+                        className="bg-blue-50 hover:bg-blue-100 border-blue-200 text-gray-900 font-semibold"
+                      >
+                        {isLoadingModels ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <RefreshCw className="w-4 h-4 mr-2 text-blue-500" />
+                        )}
+                        {t('refresh')}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowCustomInput(!showCustomInput)}
+                        className="bg-green-50 hover:bg-green-100 border-green-200 text-gray-900 font-semibold"
+                      >
+                        <Plus className="w-4 h-4 mr-2 text-green-500" />
+                        {t('downloadModel')}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-6">
+                  {/* 自定义模型下载输入框 */}
+                  {showCustomInput && (
+                    <div className="mb-6 rounded-xl border border-border bg-muted/40 p-4">
+                      <div className="flex items-center space-x-2">
+                        <Input
+                          placeholder={`${t('enterModelName')} (例: llama3.2:latest)`}
+                          value={customModelName}
+                          onChange={(e) => setCustomModelName(e.target.value)}
+                          onKeyPress={(e) => e.key === 'Enter' && handleCustomModelDownload()}
+                          className="flex-1"
+                        />
+                        <Button
+                          onClick={handleCustomModelDownload}
+                          disabled={!customModelName.trim()}
+                          size="sm"
+                          className="bg-blue-100 hover:bg-blue-200 border-blue-300 text-gray-900 font-semibold"
+                        >
+                          <Download className="w-4 h-4 mr-2 text-blue-500" />
+                          {t('download')}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setShowCustomInput(false);
+                            setCustomModelName('');
+                          }}
+                        >
+                          {t('cancel')}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 已安装模型列表 */}
+                  <div className="mb-6">
+                    <h3 className="mb-3 text-lg font-black text-foreground">{t('installedModels')}</h3>
+                    {isLoadingModels ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="w-6 h-6 animate-spin mr-2" />
+                        <span>{currentLanguage === 'zh-CN' ? `${t('loading')}模型列表...` : `${t('loading')} models...`}</span>
+                      </div>
+                    ) : ollamaModels.length === 0 ? (
+                      <div className="text-center py-8 font-medium text-gray-800">
+                        {ollamaStatus === false ? t('cannotConnect') : t('noModelsInstalled')}
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {ollamaModels.map((model) => {
+                          const modelType = OllamaApi.detectModelType(model.name);
+
+                          return (
+                            <div
+                              key={model.name}
+                              className="rounded-xl border border-border bg-card p-4 transition-all duration-200 hover:bg-muted/50 hover:shadow-md"
+                            >
+                              <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center space-x-2">
+                                  {modelType === 'thinking' ? (
+                                    <Brain className="w-5 h-5 text-purple-500" />
+                                  ) : (
+                                    <Zap className="w-5 h-5 text-green-500" />
+                                  )}
+                                  <span className="text-sm font-bold text-foreground">{model.name}</span>
+                                </div>
+                                <CheckCircle className="w-4 h-4 text-green-500" />
+                              </div>
+
+                              <div className="space-y-2 text-xs">
+                                <div className="flex justify-between">
+                                  <span className="font-medium text-gray-700">
+                                    {t('type')}
+                                  </span>
+                                  <span className="font-bold text-foreground">
+                                    {modelType === 'thinking' ? t('thinkingModel') : t('fastModel')}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="font-medium text-gray-700">
+                                    {t('size')}
+                                  </span>
+                                  <span className="font-bold text-foreground">
+                                    {model.size ? OllamaApi.formatFileSize(model.size) : (currentLanguage === 'zh-CN' ? '未知' : 'Unknown')}
+                                  </span>
+                                </div>
+                                {model.modified && (
+                                  <div className="flex justify-between">
+                                    <span className="font-medium text-gray-700">
+                                      {t('modifiedTime')}
+                                    </span>
+                                    <span className="font-bold text-foreground">
+                                      {new Date(model.modified).toLocaleDateString()}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 热门模型推荐 */}
+                  <div>
+                    <h3 className="mb-3 text-lg font-black text-foreground">{t('popularModels')}</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {popularModels.map((model) => {
+                        const isInstalled = ollamaModels.some(installed => installed.name === model.name);
+                        const isDownloading = downloadingModels.has(model.name);
+                        const progress = downloadProgress[model.name];
+
+                        return (
+                          <div
+                            key={model.name}
+                            className="rounded-xl border border-border bg-card p-4 transition-all duration-200 hover:bg-muted/50 hover:shadow-md"
+                          >
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center space-x-2">
+                                {model.type === 'thinking' ? (
+                                  <Brain className="w-5 h-5 text-purple-500" />
+                                ) : (
+                                  <Zap className="w-5 h-5 text-green-500" />
+                                )}
+                                <span className="text-sm font-bold text-foreground">{model.name}</span>
+                              </div>
+                              {isInstalled ? (
+                                <CheckCircle className="w-4 h-4 text-green-500" />
+                              ) : isDownloading ? (
+                                <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => downloadModel(model.name)}
+                                  className="text-xs px-2 py-1 bg-blue-50 hover:bg-blue-100 border-blue-200 text-gray-900 font-bold"
+                                >
+                                  <Download className="w-3 h-3 mr-1 text-blue-500" />
+                                  {t('download')}
+                                </Button>
+                              )}
+                            </div>
+
+                            <p className="text-xs mb-2 font-medium text-gray-800">
+                              {model.description}
+                            </p>
+
+                            <div className="space-y-2 text-xs">
+                              <div className="flex justify-between">
+                                <span className="text-gray-500">
+                                  {t('type')}
+                                </span>
+                                <span className="font-medium text-gray-900">
+                                  {model.type === 'thinking' ? t('thinkingModel') : t('fastModel')}
+                                </span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-gray-500">
+                                  {t('size')}
+                                </span>
+                                <span className="font-medium text-gray-900">{model.size}</span>
+                              </div>
+
+                              {/* 下载进度条 */}
+                              {isDownloading && progress && (
+                                <div className="mt-2">
+                                  <div className="flex justify-between text-xs mb-1">
+                                    <span>{progress.message}</span>
+                                    <span>{progress.percentage?.toFixed(1)}%</span>
+                                  </div>
+                                  <div className="w-full h-1.5 rounded-full bg-gray-200">
+                                    <div
+                                      className={`h-full rounded-full transition-all duration-300 ${
+                                        progress.status === 'completed' ? 'bg-green-500' :
+                                        progress.status === 'error' ? 'bg-red-500' :
+                                        'bg-blue-500'
+                                      }`}
+                                      style={{ width: `${progress.percentage || 0}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </section>);
+  if (modelsOnly) return <div className="h-full overflow-y-auto p-5 md:p-8"><div className="mx-auto max-w-5xl space-y-5"><h1 className="text-2xl font-semibold">{t('localModelManagement')}</h1>{modelPanel}</div></div>;
+
   return (
     <div className="h-full overflow-y-auto bg-background text-foreground">
       {/* 跳转链接 - 可访问性增强 */}
-      <a 
-        href="#main-content" 
+      <a
+        href="#main-content"
         className={DESIGN_TOKENS.accessibility.skipLink}
         aria-label="跳转到主要内容"
       >
         跳转到主要内容
       </a>
-      <a 
-        href="#metrics-section" 
+      <a
+        href="#metrics-section"
         className={DESIGN_TOKENS.accessibility.skipLink}
         aria-label="跳转到指标概览"
       >
         跳转到指标概览
       </a>
-      
+
       <div className={DESIGN_TOKENS.grid.container}>
-        <main 
+        <main
           id="main-content"
           className={DESIGN_TOKENS.spacing.section}
           role="main"
@@ -722,7 +968,7 @@ export function ModernDashboard() {
                     </p>
                   </div>
                 </div>
-                
+
                 {/* 面包屑导航 - 移动端隐藏 */}
                 <nav className="hidden md:flex items-center space-x-2 text-sm text-gray-500 dark:text-gray-400" aria-label="面包屑">
                   <span className="hover:text-gray-900 dark:hover:text-white cursor-pointer transition-colors text-gray-600 dark:text-gray-300 font-medium">
@@ -734,17 +980,17 @@ export function ModernDashboard() {
                   </span>
                 </nav>
               </div>
-              
+
             </div>
-            
+
             {/* 分隔线 */}
             <div className="h-px bg-gradient-to-r from-transparent via-border to-transparent" />
           </header>
 
           {/* Hero 指标区域 - 企业级设计 - 响应式优化 */}
-          <section 
+          <section
             id="metrics-section"
-            className="space-y-4 sm:space-y-6" 
+            className="space-y-4 sm:space-y-6"
             aria-label="核心指标概览"
             role="region"
           >
@@ -780,7 +1026,7 @@ export function ModernDashboard() {
                 <div className={`w-2 h-2 rounded-full ${isRefreshingData ? 'bg-blue-500 animate-spin' : 'bg-green-500 animate-pulse'}`} />
               </div>
             </div>
-            
+
             <div className={`grid ${DESIGN_TOKENS.grid.metricsGrid} ${DESIGN_TOKENS.spacing.grid}`}>
               {/* AI模型性能指标 */}
               <MetricCard
@@ -800,7 +1046,7 @@ export function ModernDashboard() {
                 }}
                 loading={isLoadingModels}
               />
-              
+
               <MetricCard
                 icon={<Zap className="w-6 h-6" />}
                 title={t('fastModel')}
@@ -814,7 +1060,7 @@ export function ModernDashboard() {
                 priority="high"
                 loading={isLoadingModels}
               />
-              
+
               <MetricCard
                 icon={<FileText className="w-6 h-6" />}
                 title={t('documentProcessing')}
@@ -832,7 +1078,7 @@ export function ModernDashboard() {
                 }}
                 loading={isLoadingDocuments}
               />
-              
+
             </div>
           </section>
 
@@ -847,251 +1093,9 @@ export function ModernDashboard() {
                   <h2 className="bg-background px-6 text-lg font-black text-foreground">{t('localModelManagement')}</h2>
                   <div className="flex-1 h-px bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200"></div>
                 </div>
-                
+
                 {/* Ollama 模型管理面板 */}
-                <section 
-                  className="rounded-2xl border border-border bg-card text-card-foreground shadow-sm"
-                  aria-label="模型管理"
-                  role="region"
-                >
-                <div className="border-b border-border p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="flex items-center space-x-2">
-                        <h3 className="text-xl font-black text-foreground">{t('localModelManagement')}</h3>
-                        {ollamaStatus === true && (
-                          <CheckCircle className="w-5 h-5 text-green-500" />
-                        )}
-                        {ollamaStatus === false && (
-                          <XCircle className="w-5 h-5 text-red-500" />
-                        )}
-                        {ollamaStatus === null && (
-                          <AlertCircle className="w-5 h-5 text-yellow-500" />
-                        )}
-                      </div>
-                      <p className="text-sm font-medium text-muted-foreground">
-                        {t('modelAutoDownload')}
-                      </p>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={loadOllamaModels}
-                        disabled={isLoadingModels}
-                        className="bg-blue-50 hover:bg-blue-100 border-blue-200 text-gray-900 font-semibold"
-                      >
-                        {isLoadingModels ? (
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        ) : (
-                          <RefreshCw className="w-4 h-4 mr-2 text-blue-500" />
-                        )}
-                        {t('refresh')}
-                      </Button>
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={() => setShowCustomInput(!showCustomInput)}
-                        className="bg-green-50 hover:bg-green-100 border-green-200 text-gray-900 font-semibold"
-                      >
-                        <Plus className="w-4 h-4 mr-2 text-green-500" />
-                        {t('downloadModel')}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="p-6">
-                  {/* 自定义模型下载输入框 */}
-                  {showCustomInput && (
-                    <div className="mb-6 rounded-xl border border-border bg-muted/40 p-4">
-                      <div className="flex items-center space-x-2">
-                        <Input
-                          placeholder={`${t('enterModelName')} (例: llama3.2:latest)`}
-                          value={customModelName}
-                          onChange={(e) => setCustomModelName(e.target.value)}
-                          onKeyPress={(e) => e.key === 'Enter' && handleCustomModelDownload()}
-                          className="flex-1"
-                        />
-                        <Button 
-                          onClick={handleCustomModelDownload}
-                          disabled={!customModelName.trim()}
-                          size="sm"
-                          className="bg-blue-100 hover:bg-blue-200 border-blue-300 text-gray-900 font-semibold"
-                        >
-                          <Download className="w-4 h-4 mr-2 text-blue-500" />
-                          {t('download')}
-                        </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="sm"
-                          onClick={() => {
-                            setShowCustomInput(false);
-                            setCustomModelName('');
-                          }}
-                        >
-                          {t('cancel')}
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* 已安装模型列表 */}
-                  <div className="mb-6">
-                    <h3 className="mb-3 text-lg font-black text-foreground">{t('installedModels')}</h3>
-                    {isLoadingModels ? (
-                      <div className="flex items-center justify-center py-8">
-                        <Loader2 className="w-6 h-6 animate-spin mr-2" />
-                        <span>{currentLanguage === 'zh-CN' ? `${t('loading')}模型列表...` : `${t('loading')} models...`}</span>
-                      </div>
-                    ) : ollamaModels.length === 0 ? (
-                      <div className="text-center py-8 font-medium text-gray-800">
-                        {ollamaStatus === false ? t('cannotConnect') : t('noModelsInstalled')}
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {ollamaModels.map((model) => {
-                          const modelType = OllamaApi.detectModelType(model.name);
-                          
-                          return (
-                            <div
-                              key={model.name}
-                              className="rounded-xl border border-border bg-card p-4 transition-all duration-200 hover:bg-muted/50 hover:shadow-md"
-                            >
-                              <div className="flex items-center justify-between mb-3">
-                                <div className="flex items-center space-x-2">
-                                  {modelType === 'thinking' ? (
-                                    <Brain className="w-5 h-5 text-purple-500" />
-                                  ) : (
-                                    <Zap className="w-5 h-5 text-green-500" />
-                                  )}
-                                  <span className="text-sm font-bold text-foreground">{model.name}</span>
-                                </div>
-                                <CheckCircle className="w-4 h-4 text-green-500" />
-                              </div>
-                              
-                              <div className="space-y-2 text-xs">
-                                <div className="flex justify-between">
-                                  <span className="font-medium text-gray-700">
-                                    {t('type')}
-                                  </span>
-                                  <span className="font-bold text-foreground">
-                                    {modelType === 'thinking' ? t('thinkingModel') : t('fastModel')}
-                                  </span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span className="font-medium text-gray-700">
-                                    {t('size')}
-                                  </span>
-                                  <span className="font-bold text-foreground">
-                                    {model.size ? OllamaApi.formatFileSize(model.size) : (currentLanguage === 'zh-CN' ? '未知' : 'Unknown')}
-                                  </span>
-                                </div>
-                                {model.modified && (
-                                  <div className="flex justify-between">
-                                    <span className="font-medium text-gray-700">
-                                      {t('modifiedTime')}
-                                    </span>
-                                    <span className="font-bold text-foreground">
-                                      {new Date(model.modified).toLocaleDateString()}
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                  
-                  {/* 热门模型推荐 */}
-                  <div>
-                    <h3 className="mb-3 text-lg font-black text-foreground">{t('popularModels')}</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {popularModels.map((model) => {
-                        const isInstalled = ollamaModels.some(installed => installed.name === model.name);
-                        const isDownloading = downloadingModels.has(model.name);
-                        const progress = downloadProgress[model.name];
-                        
-                        return (
-                          <div
-                            key={model.name}
-                            className="rounded-xl border border-border bg-card p-4 transition-all duration-200 hover:bg-muted/50 hover:shadow-md"
-                          >
-                            <div className="flex items-center justify-between mb-3">
-                              <div className="flex items-center space-x-2">
-                                {model.type === 'thinking' ? (
-                                  <Brain className="w-5 h-5 text-purple-500" />
-                                ) : (
-                                  <Zap className="w-5 h-5 text-green-500" />
-                                )}
-                                <span className="text-sm font-bold text-foreground">{model.name}</span>
-                              </div>
-                              {isInstalled ? (
-                                <CheckCircle className="w-4 h-4 text-green-500" />
-                              ) : isDownloading ? (
-                                <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
-                              ) : (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => downloadModel(model.name)}
-                                  className="text-xs px-2 py-1 bg-blue-50 hover:bg-blue-100 border-blue-200 text-gray-900 font-bold"
-                                >
-                                  <Download className="w-3 h-3 mr-1 text-blue-500" />
-                                  {t('download')}
-                                </Button>
-                              )}
-                            </div>
-                            
-                            <p className="text-xs mb-2 font-medium text-gray-800">
-                              {model.description}
-                            </p>
-                            
-                            <div className="space-y-2 text-xs">
-                              <div className="flex justify-between">
-                                <span className="text-gray-500">
-                                  {t('type')}
-                                </span>
-                                <span className="font-medium text-gray-900">
-                                  {model.type === 'thinking' ? t('thinkingModel') : t('fastModel')}
-                                </span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-gray-500">
-                                  {t('size')}
-                                </span>
-                                <span className="font-medium text-gray-900">{model.size}</span>
-                              </div>
-                              
-                              {/* 下载进度条 */}
-                              {isDownloading && progress && (
-                                <div className="mt-2">
-                                  <div className="flex justify-between text-xs mb-1">
-                                    <span>{progress.message}</span>
-                                    <span>{progress.percentage?.toFixed(1)}%</span>
-                                  </div>
-                                  <div className="w-full h-1.5 rounded-full bg-gray-200">
-                                    <div 
-                                      className={`h-full rounded-full transition-all duration-300 ${
-                                        progress.status === 'completed' ? 'bg-green-500' :
-                                        progress.status === 'error' ? 'bg-red-500' :
-                                        'bg-blue-500'
-                                      }`}
-                                      style={{ width: `${progress.percentage || 0}%` }}
-                                    />
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </section>
+{modelPanel}
               </div>
 
               {/* 项目概述 - 分界线标题 */}
@@ -1101,9 +1105,9 @@ export function ModernDashboard() {
                   <h2 className="bg-background px-6 text-lg font-black text-foreground">{t('projectOverview')}</h2>
                   <div className="flex-1 h-px bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200"></div>
                 </div>
-                
+
                 {/* 项目状态面板 */}
-                <section 
+                <section
                   className="rounded-2xl border border-border bg-card text-card-foreground shadow-sm"
                   aria-label="项目状态"
                   role="region"
@@ -1116,8 +1120,8 @@ export function ModernDashboard() {
                         {t('monitorProgress')}
                       </p>
                     </div>
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       onClick={() => navigate('/app/projects')}
                       size="sm"
                       className="bg-purple-50 hover:bg-purple-100 border-purple-200 text-gray-900 font-semibold"
@@ -1127,7 +1131,7 @@ export function ModernDashboard() {
                     </Button>
                   </div>
                 </div>
-                
+
                 <div className="p-6">
                   {isLoadingProjects ? (
                     <div className="flex items-center justify-center py-8">
@@ -1162,7 +1166,7 @@ export function ModernDashboard() {
                             </span>
                           </div>
                         </div>
-                        
+
                         </div>
                       ))}
                     </div>
@@ -1181,7 +1185,7 @@ export function ModernDashboard() {
                   <h2 className="bg-background px-6 text-lg font-black text-foreground">{t('recentDocuments')}</h2>
                   <div className="flex-1 h-px bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200"></div>
                 </div>
-                
+
                 <div className="rounded-2xl border border-border bg-card text-card-foreground shadow-sm">
                 <div className="border-b border-border p-6">
                   <div className="flex items-center justify-between">
@@ -1191,8 +1195,8 @@ export function ModernDashboard() {
                         {t('viewLatestDocs')}
                       </p>
                     </div>
-                    <Button 
-                      variant="ghost" 
+                    <Button
+                      variant="ghost"
                       size="sm"
                       className="bg-blue-50 hover:bg-blue-100 text-gray-800"
                     >
@@ -1200,7 +1204,7 @@ export function ModernDashboard() {
                     </Button>
                   </div>
                 </div>
-                
+
                 <div className="p-6">
                   {isLoadingDocuments ? (
                     <div className="flex items-center justify-center py-8">
@@ -1234,9 +1238,9 @@ export function ModernDashboard() {
                               </p>
                             )}
                           </div>
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             className="p-1 bg-gray-100 hover:bg-gray-200"
                           >
                             <MoreHorizontal className="w-4 h-4 text-gray-500" />
@@ -1246,11 +1250,11 @@ export function ModernDashboard() {
                       ))}
                     </div>
                   )}
-                  
+
                   {!isLoadingDocuments && recentDocuments.length > 0 && (
                     <div className="mt-4 text-center">
-                      <Button 
-                        variant="ghost" 
+                      <Button
+                        variant="ghost"
                         className="text-sm w-full bg-blue-50 hover:bg-blue-100 text-gray-900 font-semibold"
                       >
                         {t('viewAllDocs')}
@@ -1269,7 +1273,7 @@ export function ModernDashboard() {
                   <h2 className="bg-background px-6 text-lg font-black text-foreground">{t('quickActions')}</h2>
                   <div className="flex-1 h-px bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200"></div>
                 </div>
-                
+
                 <div className="rounded-2xl border border-border bg-card text-card-foreground shadow-sm">
                 <div className="border-b border-border p-6">
                   <h2 className="text-lg font-black text-foreground">{t('quickActions')}</h2>
@@ -1277,38 +1281,38 @@ export function ModernDashboard() {
                     {t('commonFeatures')}
                   </p>
                 </div>
-                
+
                 <div className="p-6">
                   <div className={`grid ${DESIGN_TOKENS.grid.actionGrid}`}>
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       onClick={() => navigate('/app/documents')}
                       className="h-auto p-6 flex flex-col items-center space-y-3 min-h-[100px] bg-blue-50 hover:bg-blue-100 border-blue-200"
                     >
                       <Upload className="w-8 h-8 text-blue-500" />
                       <span className="text-center text-sm font-bold text-gray-950">{t('uploadDocument')}</span>
                     </Button>
-                    
-                    <Button 
-                      variant="outline" 
+
+                    <Button
+                      variant="outline"
                       onClick={() => navigate('/app/chat')}
                       className="h-auto p-6 flex flex-col items-center space-y-3 min-h-[100px] bg-green-50 hover:bg-green-100 border-green-200"
                     >
                       <MessageSquare className="w-8 h-8 text-green-500" />
                       <span className="text-sm font-bold text-center text-gray-950">{t('newConversation')}</span>
                     </Button>
-                    
-                    <Button 
-                      variant="outline" 
+
+                    <Button
+                      variant="outline"
                       onClick={() => navigate('/app/documents')}
                       className="h-auto p-6 flex flex-col items-center space-y-3 min-h-[100px] bg-purple-50 hover:bg-purple-100 border-purple-200"
                     >
                       <BarChart3 className="w-8 h-8 text-purple-500" />
                       <span className="text-sm font-bold text-center text-gray-950">{t('dataAnalysis')}</span>
                     </Button>
-                    
-                    <Button 
-                      variant="outline" 
+
+                    <Button
+                      variant="outline"
                       onClick={() => navigate('/app/rag')}
                       className="h-auto p-6 flex flex-col items-center space-y-3 min-h-[100px] bg-orange-50 hover:bg-orange-100 border-orange-200"
                     >
@@ -1322,7 +1326,7 @@ export function ModernDashboard() {
 
             </div>
           </div>
-          
+
           {/* 页脚信息 */}
           <footer className="mt-12 pt-8 border-t border-border/50">
             <div className="text-center">

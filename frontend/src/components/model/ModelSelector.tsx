@@ -67,7 +67,7 @@ export function ModelSelector({
       case 'azure':
         return 'text-blue-500';
       case 'deepseek':
-        return 'text-purple-500';
+        return 'text-gray-500';
       case 'ollama':
       case 'local':
         return 'text-orange-500';
@@ -146,11 +146,7 @@ export function ModelSelector({
           {selectedModel ? (
             <>
               {/* 模型类型图标 */}
-              {selectedModel.type === 'thinking' ? (
-                <Brain className="w-4 h-4 text-purple-500" />
-              ) : (
-                <Zap className="w-4 h-4 text-green-500" />
-              )}
+              <Server className="w-4 h-4 text-gray-500" />
               
               {/* 模型信息 */}
               <div className="flex items-center space-x-2 flex-1 min-w-0">
@@ -195,7 +191,7 @@ export function ModelSelector({
                 isDarkMode ? 'text-gray-400' : 'text-gray-500'
               }`}>
                 <Brain className="w-3 h-3" />
-                <span>思考模型</span>
+                <span>支持思考模式</span>
               </div>
               
               {/* 可用的思考模型 */}
@@ -205,7 +201,7 @@ export function ModelSelector({
                   onClick={() => handleModelSelect(model)}
                   className={`w-full px-4 py-3 text-left flex items-center justify-between transition-colors ${
                     selectedModel?.id === model.id
-                      ? isDarkMode ? 'bg-purple-900/30 text-purple-300' : 'bg-purple-50 text-purple-700'
+                      ? isDarkMode ? 'bg-gray-800 text-gray-200' : 'bg-gray-100 text-gray-700'
                       : isDarkMode ? 'hover:bg-gray-700 text-gray-200' : 'hover:bg-gray-50 text-gray-700'
                   }`}
                 >
@@ -229,7 +225,7 @@ export function ModelSelector({
                   </div>
                   
                   {selectedModel?.id === model.id && (
-                    <Check className="w-4 h-4 text-purple-500" />
+                    <Check className="w-4 h-4 text-gray-500" />
                   )}
                 </button>
               ))}
@@ -271,7 +267,7 @@ export function ModelSelector({
                 isDarkMode ? 'text-gray-400' : 'text-gray-500'
               }`}>
                 <Zap className="w-3 h-3" />
-                <span>快速模型</span>
+                <span>未提供思考开关</span>
               </div>
               
               {/* 可用的快速模型 */}

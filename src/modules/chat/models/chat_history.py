@@ -23,6 +23,7 @@ class ChatHistory(Base):
             "user_id": self.user_id,
             "role": self.role,
             "content": self.content,
+            "thinking": (self.meta_data or {}).get("thinking", ""),
             "timestamp": self.timestamp.isoformat() if self.timestamp else None,
             "meta_data": self.meta_data or {}
         }

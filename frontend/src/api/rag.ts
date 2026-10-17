@@ -34,9 +34,23 @@ export type RagFile = string | RagFileInfo;
 // 添加文件状态类型定义
 export type RagFileStatus = 'pending' | 'processing' | 'processed' | 'failed';
 
+export interface RagImportProgress {
+  batch_id: string;
+  total: number;
+  finished: number;
+  succeeded: number;
+  failed: number;
+  percent: number;
+  stage: string;
+  active_file: string | null;
+  estimated_remaining_seconds: {low: number; high: number} | null;
+  elapsed_seconds: number;
+}
+
 // 添加文件状态响应接口
 export interface RagFileStatusResponse {
   success: boolean;
+  progress?: RagImportProgress | null;
   statuses: Record<string, {
     status: RagFileStatus;
     file_path?: string;
@@ -46,6 +60,7 @@ export interface RagFileStatusResponse {
     error?: string;
     chunks_count?: number;
     doc_id?: string;
+    stage?: string;
   }>;
   error?: string;
 }
@@ -141,6 +156,8 @@ export const ragApi = {
         } catch (e: unknown) {
           console.warn(`[RagApi] API路径 ${apiPath} 请求失败:`, e);
           lastError = e;
+          // Retry only a missing route, never replay a timed-out import.
+          if (!isAxiosError(e) || e.response?.status !== 404) throw e;
         }
       }
 
@@ -271,52 +288,26 @@ export const ragApi = {
   },
 
   // 从知识库删除文件
-  deleteRagFile: async (projectId: string, fileName: string): Promise<RagDeleteResponse> => {
+  deleteRagFile: async (projectId: string, fileId: string): Promise<RagDeleteResponse> => {
     try {
-      console.log(`[RagApi] 从知识库删除文件, 项目ID: ${projectId}, 文件名: ${fileName}`);
-
-      // 尝试多种API路径，因为后端可能有不同的端点
-      const apiPaths = [
-        `/api/lightrag/lightrag/file/${projectId}/${encodeURIComponent(fileName)}`,  // LightRAG删除端点
-        `/api/lightrag/rag/file/${projectId}/${encodeURIComponent(fileName)}`,        // 备用端点
-        `/lightrag/rag/file/${projectId}/${encodeURIComponent(fileName)}`,           // 直接端点
-        `/rag/file/${projectId}/${encodeURIComponent(fileName)}`,                    // 原端点
-        `/rag/delete/${projectId}/${encodeURIComponent(fileName)}`,                  // 备用删除端点
-      ];
-
-      let lastError: unknown = null;
-
-      for (const path of apiPaths) {
-        try {
-          console.log(`[RagApi] 尝试删除API路径: ${path}`);
-          const response = await apiClient.delete<RagDeleteResponse>(path);
-
-          if (response.data && response.data.success) {
-            console.log(`[RagApi] 文件删除成功:`, response.data);
-            return response.data;
-          }
-
-          console.warn(`[RagApi] API路径 ${path} 删除失败:`, response.data);
-          lastError = response.data;
-        } catch (e: unknown) {
-          console.warn(`[RagApi] API路径 ${path} 请求失败:`, e);
-          lastError = e;
-        }
-      }
-
-      // 如果所有路径都失败，返回错误
-      return {
-        success: false,
-        message: getApiErrorDetail(lastError) || getErrorMessage(lastError, '删除文件失败，所有API路径都无效')
-      };
-
+      const response = await apiClient.delete<RagDeleteResponse>(
+        `/api/lightrag/rag/file/${encodeURIComponent(projectId)}/${encodeURIComponent(fileId)}`,
+        { timeout: 120000 },
+      );
+      return response.data;
     } catch (error: unknown) {
-      console.error('[RagApi] 删除RAG文件出错:', error);
-      return {
-        success: false,
-        message: getErrorMessage(error, '删除文件失败')
-      };
+      return { success: false, message: getApiErrorDetail(error) || getErrorMessage(error, '删除文件失败') };
     }
+  },
+
+  deleteRagFiles: async (projectId: string, fileIds: string[]) => {
+    const response = await apiClient.post<{
+      success: boolean;
+      results: Array<{file_id: string; success: boolean; message: string; duration_seconds: number}>;
+      duration_seconds: number;
+    }>(`/api/lightrag/rag/files/delete/${encodeURIComponent(projectId)}`,
+      {file_ids: fileIds}, {timeout: 300000});
+    return response.data;
   },
 
   // 查询RAG

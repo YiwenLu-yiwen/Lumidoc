@@ -41,7 +41,8 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Chat Service")
 
 # 创建API路由器 (前缀由main.py中的include_router添加)
-api_router = APIRouter()
+from .authorization import authorize_chat_request
+api_router = APIRouter(dependencies=[Depends(authorize_chat_request)])
 
 # 配置CORS
 app.add_middleware(
@@ -433,6 +434,9 @@ async def stream_chat(
         search_mode = data.get("search_mode", settings.default_query_mode)
         use_graph = data.get("use_graph", True)  # 默认使用图谱增强
         model = data.get("model")
+        think = data.get("think", False)
+        if not isinstance(think, bool):
+            raise HTTPException(status_code=400, detail="think must be a boolean")
         auth_header = request.headers.get("authorization")
         
         # 优先使用message字段，然后是content字段
@@ -442,26 +446,26 @@ async def stream_chat(
             raise HTTPException(status_code=400, detail="Missing content")
         
         # 服务端持久化用户消息和最终回复，不依赖浏览器继续停留在页面。
-        async def persist_message(role, content):
+        async def persist_message(role, content, thinking=""):
             record = {
-                "id": str(uuid.uuid4()), "role": role, "content": content,
+                "id": str(uuid.uuid4()), "role": role, "content": content, "thinking": thinking,
                 "project_id": project_id, "user_id": user_id, "session_id": conversation_id,
                 "timestamp": datetime.now().isoformat(),
             }
             key = f"chat:history:{project_id}"
             redis_client.lpush(key, json.dumps(record))
-            redis_client.expire(key, 60 * 60 * 24 * 30)
+            redis_client.persist(key)
 
         await persist_message("user", content_to_use)
-        async def persist_answer(content):
-            await persist_message("assistant", content)
+        async def persist_answer(content, thinking=""):
+            await persist_message("assistant", content, thinking)
 
         job = response_jobs.start(
             (str(project_id), str(user_id), conversation_id),
             chat_manager.process_message_stream(
                 project_id=project_id, message=content_to_use, user_id=user_id,
                 search_mode=search_mode, use_graph=use_graph,
-                auth_header=auth_header, model=model, conversation_id=conversation_id,
+                auth_header=auth_header, model=model, conversation_id=conversation_id, think=think,
             ),
             persist_answer,
         )
@@ -481,6 +485,8 @@ async def stream_chat(
             }
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Stream chat error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -519,7 +525,7 @@ async def get_project_chat_history(
     user_id: Optional[str] = None,
     limit: int = 100,
     offset: int = 0,
-    include_archived: bool = False,
+    include_archived: bool = True,
     db: Session = Depends(get_db),
     session_id: Optional[str] = None
 ):
@@ -552,6 +558,7 @@ async def get_project_chat_history(
                             'session_id': message_session_id(msg_data),
                             'role': msg_data.get('role', 'unknown'),
                             'content': msg_data.get('content', ''),
+                            'thinking': msg_data.get('thinking', ''),
                             'timestamp': msg_data.get('timestamp', ''),
                             'user_id': msg_data.get('user_id', ''),
                             'project_id': project_id,
@@ -570,7 +577,7 @@ async def get_project_chat_history(
         if include_archived:
             try:
                 # 尝试从PostgreSQL获取归档消息
-                archived_messages = fetch_chat_history(db, project_id, user_id, limit=500, offset=0)
+                archived_messages = fetch_chat_history(db, project_id, user_id, limit=limit + offset, offset=0, session_id=session_id)
                 if archived_messages:
                     logger.info(f"从PostgreSQL获取到 {len(archived_messages)} 条归档消息")
                     # 添加来源标记
@@ -616,6 +623,7 @@ async def get_project_chat_history(
                 session_id=message_session_id(msg),
                 role=msg.get('role', 'unknown'),
                 content=msg.get('content', ''),
+                thinking=msg.get('thinking', ''),
                 timestamp=msg.get('timestamp', '')
             ) for msg in result
         ]
@@ -685,7 +693,7 @@ async def api_get_project_chat_history(
     user_id: Optional[str] = None,
     limit: int = 100,
     offset: int = 0,
-    include_archived: bool = False,
+    include_archived: bool = True,
     db: Session = Depends(get_db),
     session_id: Optional[str] = None
 ):
@@ -812,8 +820,8 @@ async def save_chat_message(
         redis_key = f"chat:history:{project_id}"
         redis_client.lpush(redis_key, json.dumps(message))
         
-        # 设置过期时间 (30天)
-        redis_client.expire(redis_key, 60 * 60 * 24 * 30)
+        # Archive only after a durable database commit.
+        redis_client.persist(redis_key)
         
         return ApiResponse(
             success=True,

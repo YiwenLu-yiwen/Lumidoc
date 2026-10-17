@@ -7,6 +7,7 @@ LLM API路由定义
 
 import logging
 import re
+from fastapi import Request
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from typing import Dict, Any, List, Optional
@@ -32,114 +33,6 @@ async def get_llm_service():
     """获取LLM服务实例"""
     return LLMService()
 
-def detect_model_type_intelligent(model_name: str) -> str:
-    """
-    智能检测模型类型（思考模型或快速模型）
-    基于模型架构、参数规模、官方定位等多维度分析
-    """
-    lower_name = model_name.lower()
-    
-    # 1. 明确的推理/思考模型
-    explicit_thinking_models = [
-        'deepseek-r1',     # DeepSeek 推理模型
-        'o1',              # OpenAI o1 系列
-        'o3',              # OpenAI o3 系列  
-        'reasoning',       # 明确标注推理
-        'think',           # 明确标注思考
-        'cot',             # Chain of Thought
-        'chain-of-thought',
-        'step-by-step',
-        'reflection',
-        'analysis'
-    ]
-    
-    for keyword in explicit_thinking_models:
-        if keyword in lower_name:
-            return 'thinking'
-    
-    # 2. 基于模型系列和参数规模的智能判断
-    model_analysis = analyze_model_characteristics(lower_name)
-    
-    # 3. 大语言模型系列分析
-    if model_analysis['is_large_parameter_model']:
-        return 'thinking'
-    
-    # 4. 专业模型判断
-    if model_analysis['is_professional_model']:
-        return 'thinking'
-    
-    # 5. 默认为快速模型
-    return 'fast'
-
-def analyze_model_characteristics(model_name: str) -> Dict[str, Any]:
-    """分析模型特征"""
-    analysis = {
-        'is_large_parameter_model': False,
-        'is_professional_model': False,
-        'model_family': '',
-        'parameter_size': 0
-    }
-    
-    # 参数规模提取和分析
-    parameter_patterns = [
-        r'(\d+)b',           # 如 7b, 13b
-        r'(\d+)\.(\d+)b'     # 如 3.5b, 2.7b
-    ]
-    
-    for pattern in parameter_patterns:
-        match = re.search(pattern, model_name, re.IGNORECASE)
-        if match:
-            if '.' in match.group(0):
-                size = float(match.group(1) + '.' + match.group(2))
-            else:
-                size = float(match.group(1))
-            analysis['parameter_size'] = size
-            break
-    
-    # 模型系列分析
-    if 'qwen' in model_name:
-        analysis['model_family'] = 'qwen'
-        # Qwen 系列：14B+ 为思考模型，小于14B为快速模型
-        analysis['is_large_parameter_model'] = analysis['parameter_size'] >= 14
-    elif 'llama' in model_name:
-        analysis['model_family'] = 'llama'
-        # Llama 系列：13B+ 为思考模型
-        analysis['is_large_parameter_model'] = analysis['parameter_size'] >= 13
-    elif 'mistral' in model_name or 'mixtral' in model_name:
-        analysis['model_family'] = 'mistral'
-        # Mistral 系列：7B+ 通常为思考模型（架构优化）
-        analysis['is_large_parameter_model'] = analysis['parameter_size'] >= 7
-    elif 'gemma' in model_name:
-        analysis['model_family'] = 'gemma'
-        # Gemma 系列：9B+ 为思考模型
-        analysis['is_large_parameter_model'] = analysis['parameter_size'] >= 9
-    elif 'claude' in model_name:
-        analysis['model_family'] = 'claude'
-        # Claude 系列默认为思考模型
-        analysis['is_professional_model'] = True
-    elif 'gpt' in model_name:
-        analysis['model_family'] = 'gpt'
-        # GPT 系列默认为思考模型
-        analysis['is_professional_model'] = True
-    
-    # 专业/代码模型判断
-    professional_keywords = [
-        'codestral',       # 代码专用
-        'codeqwen',        # 代码专用
-        'wizard',          # 专业模型
-        'nous',            # 专业调优
-        'solar',           # 专业模型
-        'yi-34b',          # 大参数专业模型
-    ]
-    
-    for keyword in professional_keywords:
-        if keyword in model_name:
-            analysis['is_professional_model'] = True
-            break
-    
-    return analysis
-
-# 文本生成接口
 @router.post("/generate", response_model=TextGenerationResponse)
 async def generate_text(
     request: TextGenerationRequest,
@@ -203,10 +96,11 @@ async def generate_chat(
                     max_tokens=request.max_tokens,
                     stop_sequences=request.stop_sequences,
                     model=request.model,
+                    think=request.think, stream_events=True,
                 ):
                     # 返回JSON格式的流式数据，确保与LLMServiceClient期待的格式匹配
                     import json
-                    yield f"data: {json.dumps({'content': chunk}, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps(chunk if isinstance(chunk, dict) else {'content': chunk}, ensure_ascii=False)}\n\n"
             
             return StreamingResponse(
                 generate_stream(),
@@ -500,26 +394,24 @@ async def get_models():
                 response = await client.get(f"{ollama_url}/api/tags")
                 if response.status_code == 200:
                     data = response.json()
-                    for model in data.get('models', []):
-                        # 检查是否是embedding模型
-                        model_name = model.get('name', '').lower()
-                        embedding_keywords = ['embed', 'embedding', 'nomic-embed', 'bge-', 'e5-', 'sentence-transformer', 'all-minilm', 'text-embedding']
-                        if any(embed_keyword in model_name for embed_keyword in embedding_keywords):
-                            continue  # 过滤掉embedding模型
-                        
-                        # 智能识别模型类型
-                        model_type = detect_model_type_intelligent(model_name)
-                        
-                        models.append({
-                            'id': model.get('name'),
-                            'name': model.get('name'),
-                            'display_name': model.get('name', '').replace(':', ' '),
-                            'provider': 'ollama',
-                            'type': model_type,
-                            'available': True,
-                            'size': model.get('size'),
-                            'modified': model.get('modified_at')
-                        })
+                    async def describe(model):
+                        name = model.get('name')
+                        details = await client.post(f"{ollama_url}/api/show", json={"model": name})
+                        details.raise_for_status()
+                        capabilities = details.json().get('capabilities', [])
+                        if 'completion' not in capabilities:
+                            return None
+                        thinking = 'thinking' in capabilities
+                        return {
+                            'id': name, 'name': name, 'display_name': name,
+                            'provider': 'ollama', 'available': True,
+                            'type': 'thinking' if thinking else 'fast',
+                            'supports_thinking': thinking,
+                            'is_default': name == settings.llm_model_name,
+                        }
+                    import asyncio
+                    results = await asyncio.gather(*(describe(model) for model in data.get('models', [])), return_exceptions=True)
+                    models = [result for result in results if isinstance(result, dict)]
         except Exception as e:
             logger.warning(f"无法连接到Ollama: {str(e)}")
         
@@ -688,3 +580,15 @@ async def download_model_task(model_name: str, ollama_url: str):
         logger.info(f"模型下载完成: {model_name}")
     except Exception as e:
         logger.error(f"下载模型任务失败 [{model_name}]: {str(e)}")
+
+
+@router.get("/admin/runtime")
+async def admin_runtime(request: Request):
+    from src.shared.project_access import require_admin
+    await require_admin(request)
+    from ..config.config import settings
+    import httpx
+    async with httpx.AsyncClient(timeout=3) as client:
+        response = await client.get(f"{settings.llm_base_url.rstrip('/')}/api/ps")
+        response.raise_for_status()
+    return {'models': [{'name': model.get('name'), 'size': model.get('size'), 'size_vram': model.get('size_vram')} for model in response.json().get('models', [])]}

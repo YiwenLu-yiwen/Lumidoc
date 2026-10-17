@@ -1,3 +1,4 @@
+import { AccountProfileEditor } from '@/features/settings/AccountProfileEditor';
 import React, { useEffect, useState, useRef } from 'react';
 import { 
   User, 
@@ -479,7 +480,7 @@ export default function ModernAccountModal({ open, onClose }: Props) {
           {/* 右侧内容 */}
           <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
             <div className="max-w-2xl">
-              {activeTab === 'profile' && <ProfileCard user={user} isDarkMode={isDarkMode} />}
+              {activeTab === 'profile' && <><ProfileCard user={user} isDarkMode={isDarkMode} /><AccountProfileEditor key={user?.email} /></>}
               {activeTab === 'settings' && <SettingsCard isDarkMode={isDarkMode} />}
               {activeTab === 'projects' && <ProjectsCard isDarkMode={isDarkMode} />}
               {activeTab === 'security' && (

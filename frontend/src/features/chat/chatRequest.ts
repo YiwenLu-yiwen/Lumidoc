@@ -4,6 +4,7 @@ export interface ChatRequestPayloadInput {
   userId?: string;
   modelId?: string;
   conversationId?: string;
+  thinkingEnabled?: boolean;
 }
 
 export interface ChatRequestPayload {
@@ -15,6 +16,7 @@ export interface ChatRequestPayload {
   user_id: string;
   model?: string;
   session_id: string;
+  think: boolean;
 }
 
 export function createChatRequestPayload({
@@ -23,9 +25,11 @@ export function createChatRequestPayload({
   userId,
   modelId,
   conversationId,
+  thinkingEnabled = false,
 }: ChatRequestPayloadInput): ChatRequestPayload {
   return {
     content,
+    think: thinkingEnabled,
     session_id: conversationId || "legacy",
     message: content,
     project_id: projectId || 'default',

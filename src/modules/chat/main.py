@@ -12,7 +12,7 @@ import sys
 import os
 from contextlib import asynccontextmanager
 from src.shared.logger import initialize_logging, get_logger
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from typing import Optional
@@ -36,12 +36,12 @@ from src.modules.chat.chat_service import api_router as chat_api_router
 from src.shared.config import ChatServiceSettings
 settings = ChatServiceSettings()
 from src.shared.database import get_db, close_db_pool
-from src.modules.chat.data_migration import migrate_old_messages_to_db
+from src.modules.chat.data_migration import archive_inactive_conversations
 
 # 导入定期任务功能
 
 # 导入服务和路由
-from src.modules.chat.chat_service import chat_service, migrate_old_chat_messages
+from src.modules.chat.chat_service import chat_service
 
 # 导入文档相关模块
 from src.shared.docs.version import get_version_info
@@ -65,17 +65,8 @@ async def migrate_old_messages_background_task() -> None:
         try:
             logger.info("开始执行自动聊天记录迁移任务")
 
-            # 获取数据库会话 - 正确的异步方式
-            async for db in get_db():
-                try:
-                    # 执行迁移，默认迁移30天前的消息
-                    result = migrate_old_messages_to_db(db, days=30)
-                    logger.info(f"自动迁移任务完成: 已迁移 {result['messages_migrated']} 条消息")
-                except Exception as e:
-                    logger.error(f"自动迁移任务失败: {str(e)}")
-                finally:
-                    # 数据库连接会在异步生成器中自动管理
-                    break
+            result = await asyncio.to_thread(archive_inactive_conversations)
+            logger.info("Archived %s inactive conversations", result['conversations_migrated'])
 
             # 等待24小时（86400秒）
             await asyncio.sleep(86400)
@@ -97,9 +88,6 @@ async def lifespan(app: FastAPI):
         # 注册服务
         from src.shared.service_discovery import register_service
         await register_service("chat", port=settings.port, health_check_endpoint="/healthz")
-
-        # 迁移老聊天数据
-        asyncio.create_task(migrate_old_chat_messages())
 
         # 启动定期任务
         migration_task = asyncio.create_task(migrate_old_messages_background_task())
@@ -180,7 +168,8 @@ class GraphEnhancedChatRequest(ChatRequest):
     use_entity_expansion: bool = Field(default=True, description="是否使用实体扩展")
 
 # API路由
-@app.post("/api/chat", tags=["聊天"])
+from src.modules.chat.authorization import authorize_chat_request
+@app.post("/api/chat", tags=["聊天"], dependencies=[Depends(authorize_chat_request)])
 async def chat(request: ChatRequest):
     """标准聊天API"""
     try:
@@ -195,7 +184,7 @@ async def chat(request: ChatRequest):
         logger.error(f"聊天处理失败: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/chat/graph", tags=["聊天"])
+@app.post("/api/chat/graph", tags=["聊天"], dependencies=[Depends(authorize_chat_request)])
 async def chat_with_graph(request: GraphEnhancedChatRequest):
     """图谱增强聊天API"""
     try:

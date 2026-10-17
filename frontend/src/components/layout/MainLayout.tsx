@@ -9,13 +9,10 @@ import {
   Plus,
   Trash2,
   Search,
-  MoreHorizontal,
   Sun,
   Moon,
   Monitor,
   Globe,
-  Brain,
-  Zap,
   Check,
   Star,
   Shield,
@@ -50,7 +47,6 @@ interface ChatSession {
   projectId?: string;
   isStarred?: boolean;
   messageCount?: number;
-  model?: 'thinking' | 'fast';
 }
 
 export default function MainLayout({ children }: MainLayoutProps) {
@@ -91,7 +87,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
     selectModel,
   } = useModel();
   const { projectId } = useParams<{ projectId: string }>();
-  const currentProject = projects.find(project => project.id === projectId) ?? projects[0] ?? null;
+  const currentProject = projects.find(project => project.id === projectId) ?? null;
   
   // 从路由路径确定当前页面
   const getCurrentSection = () => {
@@ -102,6 +98,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
     if (path.includes('/chat')) return 'chat';
     if (path.includes('/rag')) return 'rag';
     if (path.includes('/settings')) return 'settings';
+    if (path.includes('/models')) return 'models';
     if (path.includes('/admin')) return 'admin';
     return 'dashboard'; // 默认
   };
@@ -161,7 +158,6 @@ export default function MainLayout({ children }: MainLayoutProps) {
           ...item,
           timestamp: new Date(item.timestamp),
           projectId: currentProject.id,
-          model: selectedModel?.type || 'fast',
         }));
 
         setChatSessions(sessions);
@@ -179,62 +175,23 @@ export default function MainLayout({ children }: MainLayoutProps) {
     const refresh = () => { void fetchChatSessions(); };
     window.addEventListener('chat-updated', refresh);
     return () => { sessionsRequest.current++; window.removeEventListener('chat-updated', refresh); };
-  }, [location.search, currentLanguage, currentProject?.id, currentSection, selectedModel?.type, t, token, user?.id]);
+  }, [location.search, currentLanguage, currentProject?.id, currentSection, t, token, user?.id]);
 
   // 主题状态现在由 ThemeContext 管理
 
   // 侧边栏导航项
+  const zh = currentLanguage === 'zh-CN';
   const navigationItems = [
-    {
-      key: 'dashboard',
-      path: '/app/dashboard',
-      label: t('intelligentWorkbench'),
-      icon: BarChart3,
-      active: currentSection === 'dashboard'
-    },
-    {
-      key: 'documents',
-      path: '/app/documents',
-      label: t('documentAnalysis'),
-      icon: FileText,
-      active: currentSection === 'documents'
-    },
-    {
-      key: 'chat',
-      path: '/app/chat',
-      label: t('chat'),
-      icon: MessageSquare,
-      active: currentSection === 'chat'
-    },
-    {
-      key: 'projects', 
-      path: '/app/projects',
-      label: t('projects'),
-      icon: FolderOpen,
-      active: currentSection === 'projects'
-    },
-    {
-      key: 'rag',
-      path: '/app/rag',
-      label: t('rag'),
-      icon: Database,
-      active: currentSection === 'rag'
-    },
-    // 管理员专属导航项
-    ...(isAdmin ? [{
-      key: 'admin',
-      path: '/app/admin',
-      label: t('admin'),
-      icon: Shield,
-      active: currentSection === 'admin'
-    }] : []),
-    {
-      key: 'settings',
-      path: '/app/settings',
-      label: t('settings'),
-      icon: Settings,
-      active: currentSection === 'settings'
-    }
+    {key:'home',path:'/app/dashboard',label:zh ? '所有项目' : 'All projects',icon:FolderOpen,active:!projectId && ['dashboard','projects'].includes(currentSection)},
+    ...(projectId ? [
+      {key:'dashboard',path:`/project/${projectId}/dashboard`,label:zh ? '项目总览' : 'Project overview',icon:BarChart3,active:currentSection==='dashboard'},
+      {key:'documents',path:`/project/${projectId}/documents`,label:t('documentAnalysis'),icon:FileText,active:currentSection==='documents'},
+      {key:'rag',path:`/project/${projectId}/rag`,label:t('rag'),icon:Database,active:currentSection==='rag'},
+      {key:'chat',path:`/project/${projectId}/chat`,label:t('chat'),icon:MessageSquare,active:currentSection==='chat'},
+    ] : []),
+    {key:'models',path:'/app/models',label:zh ? '模型管理' : 'Models',icon:Monitor,active:currentSection==='models'},
+    ...(isAdmin ? [{key:'admin',path:'/app/admin',label:t('admin'),icon:Shield,active:currentSection==='admin'}] : []),
+    {key:'settings',path:'/app/settings',label:t('settings'),icon:Settings,active:currentSection==='settings'},
   ];
 
   // 过滤聊天会话
@@ -246,6 +203,9 @@ export default function MainLayout({ children }: MainLayoutProps) {
       return matchesSearch && matchesStarred;
     })
     .sort((a, b) => {
+      const cutoff = Date.now() - 30 * 86400000;
+      const archiveOrder = Number(a.timestamp.getTime() < cutoff) - Number(b.timestamp.getTime() < cutoff);
+      if (archiveOrder) return archiveOrder;
       // 置顶收藏的对话
       if (a.isStarred && !b.isStarred) return -1;
       if (!a.isStarred && b.isStarred) return 1;
@@ -279,11 +239,9 @@ export default function MainLayout({ children }: MainLayoutProps) {
   };
 
   const navigateFromSidebar = (path: string) => {
-    const section = path.replace('/app/', '');
-    const target = projectId && ['dashboard', 'documents', 'chat', 'rag'].includes(section)
-      ? `/project/${projectId}/${section}` : path;
-    const conversation = sessionStorage.getItem(`lumidoc-conversation:${currentProject?.id || 'default'}`);
-    navigate(section === 'chat' && conversation ? `${target}?conversation=${encodeURIComponent(conversation)}` : target);
+    const section = path.split('/').pop();
+    const conversation = projectId ? sessionStorage.getItem(`lumidoc-conversation:${projectId}`) : null;
+    navigate(section === 'chat' && conversation ? `${path}?conversation=${encodeURIComponent(conversation)}` : path);
     if (isCompactLayout) setSidebarCollapsed(true);
   };
 
@@ -334,8 +292,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
 
   // 检查管理员权限
   useEffect(() => {
-    // TODO: 实际应用中应该从用户权限中判断
-    setIsAdmin(user?.username === 'admin');
+    setIsAdmin(user?.role === 'admin');
   }, [user]);
 
   // 点击外部关闭语言菜单
@@ -451,18 +408,10 @@ export default function MainLayout({ children }: MainLayoutProps) {
 
               {/* 当前模型指示器 - 精简版 */}
               {selectedModel && (
-                <div className={`px-2 py-1 rounded-md text-xs font-medium flex items-center space-x-1 ${
-                  selectedModel.type === 'thinking'
-                    ? isDarkMode ? 'bg-purple-900/30 text-purple-300' : 'bg-purple-100 text-purple-700'
-                    : isDarkMode ? 'bg-green-900/30 text-green-300' : 'bg-green-100 text-green-700'
+                <div className={`px-2 py-1 rounded-md text-xs font-medium ${
+                  isDarkMode ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-700'
                 }`}>
-                  {selectedModel.type === 'thinking' ? (
-                    <Brain className="w-3 h-3" />
-                  ) : (
-                    <Zap className="w-3 h-3" />
-                  )}
-                  <span className="hidden md:inline text-xs">{selectedModel.displayName}</span>
-                  <span className="md:hidden text-xs">{selectedModel.type === 'thinking' ? t('thinking') : t('fast')}</span>
+                  <span className="text-xs">{selectedModel.displayName}</span>
                 </div>
               )}
 
@@ -520,7 +469,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
                     {isAdmin && <span className="ml-1 text-xs text-yellow-500">Admin</span>}
                   </p>
                   <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                    {t('online')}
+                    {user?.email || (zh ? '账户设置' : 'Account settings')}
                   </p>
                 </div>
                 <div className={`w-7 h-7 ${isDarkMode ? 'bg-gray-600' : 'bg-gray-300'} rounded-full flex items-center justify-center text-sm font-medium ${isDarkMode ? 'text-white' : 'text-gray-700'} relative`}>
@@ -535,6 +484,18 @@ export default function MainLayout({ children }: MainLayoutProps) {
       </header>
 
       {/* 主要内容区域 */}
+      {projectId && <div className="flex items-center gap-3 border-b px-3 py-2 bg-background">
+        <label htmlFor="workspace-project" className="text-sm shrink-0">{zh ? '当前项目' : 'Current project'}</label>
+        <select id="workspace-project" value={projectId} className="min-w-0 max-w-sm flex-1 rounded-md border bg-background px-2 py-1 text-sm" onChange={event => {
+          const section = ['documents','rag','chat'].includes(currentSection) ? currentSection : 'dashboard';
+          navigate(`/project/${event.target.value}/${section}`);
+        }}>
+          {!currentProject && <option value={projectId}>{zh ? '正在加载项目…' : 'Loading project…'}</option>}
+          {projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
+        </select>
+        <button className="text-sm underline shrink-0" onClick={() => navigate('/app/projects')}>{zh ? '所有项目' : 'All projects'}</button>
+      </div>}
+
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         {isCompactLayout && !sidebarCollapsed && (
           <button
@@ -663,7 +624,15 @@ export default function MainLayout({ children }: MainLayoutProps) {
                     暂无历史会话
                   </div>
                 )}
-                {!sessionsLoading && !sessionsError && filteredChatSessions.map((session) => (
+                {!sessionsLoading && !sessionsError && filteredChatSessions.map((session, index) => (
+                  <React.Fragment key={session.id}>
+                  {(index === 0 || (Date.now() - filteredChatSessions[index - 1].timestamp.getTime() > 30 * 86400000) !== (Date.now() - session.timestamp.getTime() > 30 * 86400000)) && (
+                    <div className="px-2 pt-3 pb-1 text-xs text-gray-500">
+                      {Date.now() - session.timestamp.getTime() > 30 * 86400000
+                        ? (currentLanguage === 'zh-CN' ? '已归档会话' : 'Archived conversations')
+                        : (currentLanguage === 'zh-CN' ? '最近会话' : 'Recent conversations')}
+                    </div>
+                  )}
                   <div
                     key={session.id}
                     className={`group p-2 rounded-md cursor-pointer transition-all duration-200 ${
@@ -694,19 +663,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
                             <span className={`text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
                               {formatTime(session.timestamp)}
                             </span>
-                            {session.model && (
-                              <span className={`text-xs px-1.5 py-0.5 rounded flex items-center gap-0.5 ${
-                                session.model === 'thinking'
-                                  ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
-                                  : 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-                              }`}>
-                                {session.model === 'thinking' ? (
-                                  <><Brain className="w-2.5 h-2.5" /> {t('thinking')}</>
-                                ) : (
-                                  <><Zap className="w-2.5 h-2.5" /> {t('fast')}</>
-                                )}
-                              </span>
-                            )}
+
                           </div>
                           {session.messageCount && (
                             <span className={`text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
@@ -737,6 +694,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
                       </div>
                     </div>
                   </div>
+                  </React.Fragment>
                 ))}
               </div>
             </div>
@@ -744,32 +702,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
         )}
 
         {/* 项目列表（仅在项目模式显示） */}
-        {currentSection === 'projects' && !sidebarCollapsed && (
-          <div className="flex-1 overflow-y-auto p-4">
-            <div className="space-y-2">
-              {projects.map((project) => (
-                <div
-                  key={project.id}
-                  className={`p-3 rounded-lg ${isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'} cursor-pointer group`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <FolderOpen className="w-4 h-4 text-blue-500" />
-                      <span className="font-medium">{project.name}</span>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="opacity-0 group-hover:opacity-100 p-1 h-6 w-6"
-                    >
-                      <MoreHorizontal className="w-3 h-3" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+
 
         </div>
 

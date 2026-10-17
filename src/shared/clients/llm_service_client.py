@@ -223,6 +223,8 @@ class LLMServiceClient:
             if kwargs.get("model"):
                 data["model"] = kwargs["model"]
 
+            data["think"] = kwargs.get("think", False)
+
             # 设置请求头，包含服务间认证
             headers = {"Content-Type": "application/json"}
             headers["Authorization"] = f"Service {self.service_token}"
@@ -266,8 +268,10 @@ class LLMServiceClient:
                                     if isinstance(chunk_data, dict):
                                         if chunk_data.get("error"):
                                             raise RuntimeError(str(chunk_data["error"]))
+                                        if kwargs.get("stream_events") and chunk_data.get("thinking"):
+                                            yield {"thinking": chunk_data["thinking"]}
                                         if "content" in chunk_data:
-                                            yield chunk_data["content"]
+                                            yield ({"content": chunk_data["content"]} if kwargs.get("stream_events") else chunk_data["content"])
                                         elif "text" in chunk_data:
                                             yield chunk_data["text"]
                                         elif "choices" in chunk_data and len(chunk_data["choices"]) > 0:

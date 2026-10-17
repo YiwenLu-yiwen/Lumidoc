@@ -182,6 +182,8 @@ try:
     )
 
     # 注册路由
+    from src.modules.fileproc.routes.admin_routes import router as admin_router
+    app.include_router(admin_router, prefix="/api")
     app.include_router(process_router, prefix="/api")  # 添加/api前缀
     app.include_router(diagnostics_router, prefix="/api")  # 保留诊断路由的/api前缀
     app.include_router(stream_router, prefix="/api")  # 保留流处理路由的/api前缀

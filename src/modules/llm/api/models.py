@@ -28,6 +28,7 @@ class ChatMessage(BaseModel):
 
 class ChatGenerationRequest(BaseModel):
     """聊天生成请求"""
+    think: bool = Field(False, description="是否启用模型原生思考模式")
     messages: List[ChatMessage] = Field(..., description="聊天消息历史")
     temperature: Optional[float] = Field(None, description="采样温度，控制随机性")
     max_tokens: Optional[int] = Field(None, description="最大生成令牌数")

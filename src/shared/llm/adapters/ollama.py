@@ -223,6 +223,7 @@ class OllamaAdapter(BaseLLMAdapter):
         Yields:
             str: 生成的回复片段
         """
+        stream_events = kwargs.pop("stream_events", False)
         params = {"model": self.model_name, "messages": messages, "stream": True}
         params.update(self._generation_parameters(kwargs))
         async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -234,9 +235,12 @@ class OllamaAdapter(BaseLLMAdapter):
                     data = json.loads(line)
                     if data.get("error"):
                         raise RuntimeError(data["error"])
-                    content = data.get("message", {}).get("content", "")
+                    message = data.get("message", {})
+                    if stream_events and params.get("think") and message.get("thinking"):
+                        yield {"thinking": message["thinking"]}
+                    content = message.get("content", "")
                     if content:
-                        yield content
+                        yield {"content": content} if stream_events else content
                     if data.get("done"):
                         break
 

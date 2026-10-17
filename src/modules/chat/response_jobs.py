@@ -11,15 +11,25 @@ class ResponseJob:
 
     async def _run(self, source, persist):
         parts = []
+        thoughts = []
+        async def save(text):
+            if thoughts:
+                await persist(text, thinking="".join(thoughts))
+            else:
+                await persist(text)
         try:
             async for chunk in source:
-                parts.append(chunk)
-                self.queue.put_nowait({'content': chunk})
+                event = chunk if isinstance(chunk, dict) else {'content': chunk}
+                if event.get('content'):
+                    parts.append(event['content'])
+                if event.get('thinking'):
+                    thoughts.append(event['thinking'])
+                self.queue.put_nowait(event)
             text = ''.join(parts).strip() or '未生成有效回复，请重试。'
-            await persist(text)
+            await save(text)
         except asyncio.CancelledError:
             # 主动停止仍保存已有正文；断开页面连接不会触发此分支。
-            await persist(''.join(parts).strip() or '已停止生成。')
+            await save(''.join(parts).strip() or '已停止生成。')
             self.queue.put_nowait({'stopped': True})
         except Exception as exc:
             self.queue.put_nowait({'error': str(exc)})

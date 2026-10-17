@@ -79,7 +79,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
                 headers={"WWW-Authenticate": "Bearer"},
             )
         user = await auth_service.get_user(user_id)
-        if user is None:
+        if user is None or not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="User not found",
@@ -165,6 +165,8 @@ async def create_user(user: UserCreate):
     """创建用户"""
     try:
         logger.info(f"注册请求: username={user.username}, email={user.email}, nickname={user.nickname or 'None'}")
+        # Public registration may never assign administrative privileges.
+        user = user.model_copy(update={"is_superuser": False, "is_active": True})
         new_user = await auth_service.create_user(user)
         logger.info(f"用户注册成功: id={new_user.id}, username={new_user.username}")
         return new_user
@@ -278,6 +280,9 @@ async def ping_backend():
     except Exception as e:
         logger.warning(f"无法连接到Gateway: {str(e)}")
     return False
+
+from src.modules.auth.admin_api import account_router
+app.include_router(account_router(auth_service, get_current_user))
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=settings.auth_service_port)

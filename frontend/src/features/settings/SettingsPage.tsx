@@ -1,3 +1,4 @@
+import { AccountProfileEditor } from './AccountProfileEditor';
 import React, { useState } from 'react';
 import {
   User,
@@ -112,7 +113,8 @@ export function SettingsPage() {
       </div>
       
       <div>
-        <h3 className="text-lg font-semibold mb-4">{t('accountStats')}</h3>
+        <AccountProfileEditor key={user?.email} />
+        <h3 className="text-lg font-semibold mt-6 mb-4">{t('accountStats')}</h3>
         <div
           className="rounded-lg border border-border bg-muted/40 p-4 text-sm text-muted-foreground"
           role="status"

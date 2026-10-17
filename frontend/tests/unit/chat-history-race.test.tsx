@@ -6,7 +6,7 @@ import ChatLayout from '../../src/features/chat/ChatLayout';
 vi.mock('../../src/context/ProjectContext', () => ({ useProjects: () => ({ projects: [{ id: 'project-1' }] }) }));
 vi.mock('../../src/context/ThemeContext', () => ({ useTheme: () => ({ isDarkMode: false }) }));
 vi.mock('../../src/context/LanguageContext', () => ({ useLanguage: () => ({ currentLanguage: 'en-US', t: (key: string) => key }) }));
-vi.mock('../../src/hooks/useModel', () => ({ useSelectedModel: () => ({ selectedModel: { id: 'qwen3:1.7b' } }) }));
+vi.mock('../../src/hooks/useModel', () => ({ useSelectedModel: () => ({ selectedModel: { id: 'qwen3:1.7b', supportsThinking: true } }) }));
 vi.mock('../../src/features/chat/components/MigrationButton', () => ({ default: () => null }));
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); localStorage.clear(); });
 
@@ -81,6 +81,7 @@ it('stops backend generation, retains the partial reply and allows another quest
   });
   vi.stubGlobal('fetch', fetchMock);
   render(<MemoryRouter><ChatLayout /></MemoryRouter>);
+  fireEvent.click(screen.getByRole('switch', { name: /Thinking mode/ }));
   const input = screen.getByPlaceholderText('Enter your question, press Enter to send...');
   fireEvent.change(input, { target: { value: 'Write a long answer' } });
   fireEvent.submit(input.closest('form')!);
@@ -88,6 +89,7 @@ it('stops backend generation, retains the partial reply and allows another quest
   fireEvent.click(await screen.findByRole('button', { name: 'Stop generating' }));
   await screen.findByRole('button', { name: 'Send message' });
   expect(input).toHaveProperty('disabled', false);
+  expect(screen.getByLabelText('Thinking time').textContent).toMatch(/^[0-9]+s$/);
   expect(screen.getAllByText('Partial answer')).toHaveLength(1);
   expect(fetchMock.mock.calls.some(([url]) => url.includes('/stop/project-1') && url.includes('session_id=legacy'))).toBe(true);
   expect(screen.queryByRole('button', { name: 'Unlock Status' })).toBeNull();
@@ -115,4 +117,38 @@ it('deletes the current conversation and notifies the sidebar', async () => {
   await waitFor(() => expect(changed).toHaveBeenCalledTimes(1));
   expect(fetchMock.mock.calls.some(([url]) => url.endsWith('/chat/conversations/project-1/delete-me'))).toBe(true);
   window.removeEventListener('chat-updated', changed);
+});
+
+
+it('shows native thinking before the answer and sends an explicit mode', async () => {
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  let payload: { think?: boolean } = {};
+  const encoder = new TextEncoder();
+  vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+    if (url.includes('/history/')) return Promise.resolve(new Response('[]'));
+    if (url.endsWith('/stream')) {
+      payload = JSON.parse(String(init?.body));
+      return Promise.resolve(new Response(new ReadableStream({ start(c) {
+        controller = c;
+        c.enqueue(encoder.encode('data: {"thinking":"Native reasoning"}\n\n'));
+      }})));
+    }
+    return Promise.resolve(new Response('{}'));
+  }));
+  render(<MemoryRouter><ChatLayout /></MemoryRouter>);
+  const toggle = screen.getByRole('switch', { name: /Thinking mode/ });
+  expect(toggle.getAttribute('aria-checked')).toBe('false');
+  fireEvent.click(toggle);
+  const input = screen.getByPlaceholderText('Enter your question, press Enter to send...');
+  fireEvent.change(input, { target: { value: 'Question' } });
+  fireEvent.submit(input.closest('form')!);
+  await screen.findByText('Native reasoning');
+  expect(payload.think).toBe(true);
+  expect(document.querySelector('.prose')?.textContent).toBe('');
+  await act(async () => {
+    controller.enqueue(encoder.encode('data: {"content":"Final answer"}\n\ndata: {"done":true}\n\n'));
+    controller.close();
+  });
+  expect(await screen.findByText('Final answer')).toBeTruthy();
+  expect(document.querySelector('.prose')?.textContent).toBe('Final answer');
 });

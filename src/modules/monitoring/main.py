@@ -173,5 +173,8 @@ async def start_system_metrics_task():
             await asyncio.sleep(60)  # 出错时等待更长时间
 
 
+from src.modules.monitoring.routes.admin_routes import router as admin_router
+app.include_router(admin_router)
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=port)
