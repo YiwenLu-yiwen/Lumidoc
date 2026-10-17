@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timezone
 import httpx
 import psutil
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, HTTPException
 from src.shared.project_access import require_admin
 from src.shared.task_manager import get_task_manager
 from src.shared.service_discovery import get_service_url
@@ -28,6 +28,15 @@ async def status(request: Request):
             except httpx.HTTPError:
                 return {'name': name, 'status': 'unreachable', 'latency_ms': None}
         services = await asyncio.gather(*(probe(name) for name in names))
+        controls = {'available': False, 'services': [], 'operations': {}}
+        control_url = os.getenv('CONTAINER_CONTROL_URL')
+        if control_url:
+            try:
+                result = await client.get(control_url + '/controls', headers={'Authorization': authorization})
+                result.raise_for_status()
+                controls = result.json()
+            except (httpx.HTTPError, ValueError):
+                pass
         models = None
         try:
             target = await get_service_url('llm', healthy_only=False)
@@ -37,7 +46,7 @@ async def status(request: Request):
                 models = response.json().get('models')
         except (httpx.HTTPError, ValueError):
             pass
-    return {'services': services, 'models': models, 'resources': {'scope': 'monitoring container', 'cpu_percent': psutil.cpu_percent(), 'memory_percent': psutil.virtual_memory().percent}, 'checked_at': datetime.now(timezone.utc).isoformat()}
+    return {'controls': controls, 'services': services, 'models': models, 'resources': {'scope': 'monitoring container', 'cpu_percent': psutil.cpu_percent(), 'memory_percent': psutil.virtual_memory().percent}, 'checked_at': datetime.now(timezone.utc).isoformat()}
 
 @router.get('/tasks')
 async def tasks():
@@ -48,3 +57,21 @@ async def tasks():
     rows = [{key: task.get(key) for key in fields} for task in records]
     rows.sort(key=lambda row: str(row.get('updated_at') or row.get('created_at') or ''), reverse=True)
     return {'tasks': rows[:200], 'total': len(rows)}
+
+
+@router.post('/services/{name}/restart', status_code=202)
+async def restart_service(name: str, request: Request):
+    from src.modules.monitoring.services.container_control import SERVICES
+    if name not in SERVICES:
+        raise HTTPException(404, 'Service is not restartable')
+    target = os.getenv('CONTAINER_CONTROL_URL')
+    if not target:
+        raise HTTPException(503, 'Container control unavailable')
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(f'{target}/services/{name}/restart', headers={'Authorization': request.headers.get('authorization', '')})
+        if response.status_code != 202:
+            raise HTTPException(response.status_code if response.status_code in (401, 403, 404, 409) else 503, 'Restart unavailable or cooling down')
+        return response.json()
+    except httpx.HTTPError:
+        raise HTTPException(503, 'Container control unavailable')

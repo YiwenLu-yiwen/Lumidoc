@@ -254,6 +254,7 @@ services:
       context: .
       dockerfile: src/modules/monitoring/Dockerfile
     environment:
+      - CONTAINER_CONTROL_URL=http://container_control:8010
       - AUTH_SERVICE_URL=http://auth_service:8007
       - CHAT_SERVICE_URL=http://chat_service:8001
       - FILE_SERVICE_URL=http://file_service:8004
@@ -272,6 +273,22 @@ services:
       - lumidoc_network
     depends_on:
       - redis
+
+  container_control:
+    build:
+      context: .
+      dockerfile: src/modules/monitoring/Dockerfile
+    command: ["uvicorn", "src.modules.monitoring.services.container_control:app", "--host", "0.0.0.0", "--port", "8010"]
+    environment:
+      - AUTH_SERVICE_URL=http://auth_service:8007
+      - PYTHONPATH=/app
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - lumidoc_network
+    healthcheck:
+      test: ["CMD", "python", "/app/scripts/docker_healthcheck.py", "http://127.0.0.1:8010/healthz"]
+    restart: unless-stopped
 
   gateway_service:
     build:

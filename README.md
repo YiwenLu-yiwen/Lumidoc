@@ -31,6 +31,25 @@ You can add more processed documents to a knowledge base or delete an indexed
 document from its file-status list. Removing it from the knowledge base preserves
 the source file, so it can be imported again later.
 
+## Administration
+
+Administrators can open **Administration** from the sidebar to monitor service health,
+loaded models, tasks and user access. The page supports English and Chinese and refreshes
+every 10 seconds while visible. A failed refresh keeps the last snapshot and shows an
+error; the check timestamp tells you how recent it is.
+
+Service restart requires confirmation, interrupts in-flight requests and has a 60-second
+cooldown. The internal `container_control` service only restarts allowlisted application
+containers belonging to its own Compose project. Restart completion is separate from
+health-check recovery. It cannot restart databases, storage, the gateway or the host.
+If authentication or the gateway is unavailable, recover the stack from the terminal.
+
+The controller is the only service with the Docker socket mounted and publishes no host
+port. Docker socket access is privileged: deploy this controller only on a trusted host
+([Docker security guidance](https://docs.docker.com/engine/security/)). Without a reachable
+controller, monitoring continues and restart buttons are disabled. Recent restart results
+are kept in controller memory; actor/service/result audit events go to its container logs.
+
 ## How it works
 
 ```mermaid
