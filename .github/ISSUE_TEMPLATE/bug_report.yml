@@ -1,0 +1,29 @@
+name: Bug report / 问题反馈
+description: Report a reproducible problem using sample data when possible.
+title: "[Bug]: "
+body:
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment / 运行环境
+      description: OS, Docker/Compose versions, selected model and startup mode (auto/native/gpu/cpu).
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction / 复现步骤
+      description: Which page, what action, and which sample file? Do not attach private documents.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Expected and actual result / 预期与实际结果
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Screenshots or relevant logs / 截图或相关日志
+      description: Remove credentials, tokens, personal details and private content first.

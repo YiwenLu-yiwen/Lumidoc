@@ -1,0 +1,18 @@
+Harbor Studio — Launch brief
+
+This is fictional sample data for the Lumidoc walkthrough.
+
+Harbor Studio is preparing a public launch of its booking website on 15 April 2027.
+Maya Chen is the launch owner. Leo Park owns the website implementation, and
+Sam Rivera owns customer support preparation.
+
+Before launch, the team must complete three checks:
+1. Test the booking flow on desktop and mobile.
+2. Publish the cancellation policy and contact information.
+3. Approve the customer support guide and assign the first week of coverage.
+
+The team reviews readiness every Tuesday at 10:00. Maya makes the final go/no-go
+decision after all three checks are complete. The rehearsal is on 8 April 2027.
+
+The launch budget is 2,400 fictional units: 1,200 for design, 800 for testing,
+and 400 for customer support training. No real company or individual is described.

@@ -1,0 +1,18 @@
+Harbor Studio — Customer support guide
+
+This is fictional sample data for the Lumidoc walkthrough.
+
+Sam Rivera owns support preparation for the Harbor Studio website launch.
+Support coverage is Monday to Friday, 09:00–17:00 in the studio's local time.
+The first response target is one business day.
+
+Customers can cancel a booking without a fee up to 24 hours before its start.
+Requests inside that window are reviewed by the support team individually.
+The team must confirm the booking identifier before making a change.
+
+For a website outage, Sam records the incident and contacts Leo Park.
+Maya Chen decides whether to delay the launch if the booking flow is affected.
+During the first week, the team reviews open incidents at 09:30 each morning.
+
+Before 15 April 2027, Sam must approve this guide, publish the contact details,
+and confirm the coverage schedule. The team rehearses an outage on 8 April 2027.

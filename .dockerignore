@@ -34,3 +34,7 @@ src/models
 .cursor
 .codex
 agentRules.md
+
+# Sample documents and documentation images are not runtime inputs.
+/examples
+/docs/images

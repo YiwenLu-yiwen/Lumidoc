@@ -207,8 +207,15 @@ src/models/RapidOCR/
 # Graph database files
 *.cypher
 
-# examples
+# Local examples remain private; only the published walkthrough is tracked.
 examples/
+!/examples/
+/examples/*
+!/examples/getting-started/
+/examples/getting-started/*
+!/examples/getting-started/README.md
+!/examples/getting-started/launch-brief.txt
+!/examples/getting-started/support-guide.txt
 
 # MinIO data
 minio_data/

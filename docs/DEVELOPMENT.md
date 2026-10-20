@@ -1,6 +1,6 @@
 # Development guide
 
-Use `develop` for ongoing development. The [English README](../README.md) and
+`main` is the only maintained branch. Use a fork for proposed changes. The [English README](../README.md) and
 [中文 README](../README.zh-CN.md) cover features, setup, and deployment limitations.
 
 ## Start the local stack
@@ -30,7 +30,8 @@ Keep the backend running and stop the container serving the frontend before
 starting Vite on the same port:
 
 ```sh
-docker compose stop frontend
+# Disable the local recovery controller while intentionally stopping the frontend.
+docker compose stop container_control frontend
 cd frontend
 npm ci
 npm run dev
