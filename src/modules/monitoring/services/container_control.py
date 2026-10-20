@@ -11,15 +11,35 @@ import time
 from datetime import datetime, timezone
 
 import httpx
+from contextlib import asynccontextmanager
+from src.shared.operation_journal import journal
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from src.shared.project_access import require_admin
 
-app = FastAPI(docs_url=None, redoc_url=None)
+@asynccontextmanager
+async def lifespan(app):
+    import sys
+    from .recovery_supervisor import supervise
+    operations.update(journal().get('restart_operations', {}))
+    for name, operation in operations.items():
+        if operation.get('status') == 'restarting':
+            operation['status'] = 'interrupted'
+            journal().event('service.restart_interrupted', name, 'recovering')
+    journal().put('restart_operations', operations)
+    task = asyncio.create_task(supervise(sys.modules[__name__]))
+    try:
+        yield
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+app = FastAPI(docs_url=None, redoc_url=None, lifespan=lifespan)
 logger = logging.getLogger(__name__)
 SERVICES = {name: f'{name}_service' for name in (
     'auth', 'project', 'file', 'fileproc', 'rag', 'chat', 'llm',
-    'graph', 'question', 'monitoring',
+    'graph', 'question', 'monitoring', 'gateway',
 )}
+SERVICES['frontend'] = 'frontend'
 operations = {}
 lock = asyncio.Lock()
 
@@ -59,6 +79,7 @@ async def controls():
             _, rows = await containers(client)
         present = {row['Labels'].get('com.docker.compose.service') for row in rows}
         return {'available': True, 'services': [name for name, service in SERVICES.items() if service in present],
+                'recovery': {name: journal().get('recovery:' + name, {}) for name in SERVICES},
                 'operations': {name: {key: value for key, value in op.items() if key != 'monotonic'} for name, op in operations.items()}}
     except (httpx.HTTPError, KeyError, ValueError):
         raise HTTPException(503, 'Container control unavailable')
@@ -81,6 +102,8 @@ async def perform_restart(name, actor):
         logger.warning('service_restart actor=%s service=%s result=failed', actor, name)
     finally:
         operations[name]['finished_at'] = datetime.now(timezone.utc).isoformat()
+        journal().put('restart_operations', operations)
+        journal().event('service.restart', name, operations[name]['status'], actor=actor)
 
 
 @app.post('/services/{name}/restart', status_code=202)
@@ -89,7 +112,7 @@ async def restart(name: str, background: BackgroundTasks, context=Depends(requir
         raise HTTPException(404, 'Service is not restartable')
     async with lock:
         previous = operations.get(name)
-        if previous and (previous['status'] == 'restarting' or time.monotonic() - previous['monotonic'] < 60):
+        if previous and (previous['status'] == 'restarting' or time.time() - previous.get('requested_at', 0) < 60):
             raise HTTPException(409, 'Restart in progress or cooling down')
         # Check the socket and target before acknowledging acceptance.
         try:
@@ -100,7 +123,14 @@ async def restart(name: str, background: BackgroundTasks, context=Depends(requir
         except (httpx.HTTPError, KeyError, ValueError):
             raise HTTPException(503, 'Container control unavailable')
         actor = context['user'].get('user_id') or context['user'].get('id')
-        operations[name] = {'status': 'restarting', 'started_at': datetime.now(timezone.utc).isoformat(), 'monotonic': time.monotonic()}
+        journal().put('recovery:' + name, {'attempts': [], 'failures': 0, 'blocked': False})
+        begin_restart(name, actor)
         logger.warning('service_restart actor=%s service=%s result=accepted', actor, name)
         background.add_task(perform_restart, name, actor)
     return {'accepted': True, 'service': name}
+
+
+def begin_restart(name, actor):
+    operations[name] = {'status': 'restarting', 'started_at': datetime.now(timezone.utc).isoformat(), 'requested_at': time.time()}
+    journal().put('restart_operations', operations)
+    journal().event('service.restart_requested', name, 'accepted', actor=actor)

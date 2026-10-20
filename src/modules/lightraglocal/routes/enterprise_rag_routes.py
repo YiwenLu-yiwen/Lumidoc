@@ -539,9 +539,38 @@ async def delete_rag_file(project_id: str, file_id: str, http_request: Request):
 
 
 async def _delete_rag_file(service, project_id, file_id):
-    jobs = _import_jobs(service)
+    from src.shared.operation_journal import journal
+    from src.shared.durable_worker import DurableWorker
     records = await _document_statuses(service, project_id)
     record = records.get(file_id)
+    if record is None: return {'success': True, 'file_id': file_id}
+    if record.get('status') in ('pending', 'processing', 'recovering'):
+        raise HTTPException(409, 'Document is still importing')
+    if not hasattr(service, 'delete_worker'):
+        await start_delete_recovery(service)
+    identifier = journal().enqueue('rag.deletions', {'project_id': project_id, 'file_id': file_id, 'doc_id': record.get('doc_id')})
+    return await service.delete_worker.wait(identifier)
+
+
+async def start_delete_recovery(service):
+    from src.shared.operation_journal import journal
+    from src.shared.durable_worker import DurableWorker
+    async def execute(payload, identifier):
+        return await _delete_rag_file_once(service, payload['project_id'], payload['file_id'],
+                                           {'doc_id': payload.get('doc_id'), 'status': 'deleting'})
+    service.delete_worker = DurableWorker('rag.deletions', execute)
+    service.delete_worker.start()
+    async def execute_batch(payload, identifier):
+        return await _delete_rag_files_once(service, payload['project_id'], payload['file_ids'])
+    service.batch_delete_worker = DurableWorker('rag.batch_deletions', execute_batch)
+    service.batch_delete_worker.start()
+
+
+async def _delete_rag_file_once(service, project_id, file_id, record=None):
+    jobs = _import_jobs(service)
+    if record is None:
+        records = await _document_statuses(service, project_id)
+        record = records.get(file_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Document not found in this knowledge base")
     if record.get('status') in ('pending', 'processing'):
@@ -561,10 +590,20 @@ async def _delete_rag_file(service, project_id, file_id):
 @router.post("/files/delete/{project_id}")
 async def delete_rag_files(project_id: str, http_request: Request,
                            file_ids: List[str] = Body(..., embed=True, min_length=1, max_length=100)):
-    """Authorize once, delete sequentially, and report each result independently."""
-    from time import perf_counter
+    """Persist the whole authorized selection before starting any deletion."""
     await _require_project_access(http_request, project_id)
     service = await get_enterprise_lightrag_service()
+    if not hasattr(service, 'batch_delete_worker'):
+        await start_delete_recovery(service)
+    from src.shared.operation_journal import journal
+    identifier = journal().enqueue('rag.batch_deletions', {
+        'project_id': project_id, 'file_ids': list(dict.fromkeys(file_ids)),
+    })
+    return await service.batch_delete_worker.wait(identifier)
+
+
+async def _delete_rag_files_once(service, project_id, file_ids):
+    from time import perf_counter
     started = perf_counter()
     results = []
     for file_id in dict.fromkeys(file_ids):
@@ -594,25 +633,31 @@ async def build_rag(
     jobs = _import_jobs(service)
 
     async def import_file(file_id):
-        name = await get_file_name_from_service(project_id, file_id)
-        jobs.update(project_id, file_id, file_name=name or file_id)
-        await wait_for_file_processing(project_id, file_id, jobs)
-        content = await get_file_content_from_service(project_id, file_id)
-        if not content:
-            raise ValueError("No extracted text available; finish document processing before importing.")
-        from lightrag.utils import clean_text, compute_mdhash_id
-        doc_id = compute_mdhash_id(clean_text(content), prefix="doc-")
-        jobs.update(project_id, file_id, stage="indexing", doc_id=doc_id)
-        result = await service.insert_document(project_id=project_id, content=content,
-            metadata={"file_id": file_id, "source": "file_service", "filename": name or file_id})
-        if not result.get("success"):
-            raise RuntimeError(result.get("error", "Indexing failed"))
-        jobs.update(project_id, file_id, doc_id=result.get("doc_id", doc_id))
+        await run_import_file(service, project_id, file_id)
 
     accepted = jobs.enqueue(project_id, selected_files, import_file)
     return {"success": True, "project_id": project_id, "status": "accepted",
             "message": "Import queued; poll document status for completion.",
             "file_count": len(accepted), "accepted_files": accepted}
+
+
+async def run_import_file(service, project_id, file_id):
+    jobs = _import_jobs(service)
+    name = await get_file_name_from_service(project_id, file_id)
+    jobs.update(project_id, file_id, file_name=name or file_id)
+    await wait_for_file_processing(project_id, file_id, jobs)
+    content = await get_file_content_from_service(project_id, file_id)
+    if not content:
+        raise ValueError("No extracted text available; finish document processing before importing.")
+    from lightrag.utils import clean_text, compute_mdhash_id
+    doc_id = compute_mdhash_id(clean_text(content), prefix="doc-")
+    jobs.update(project_id, file_id, stage="indexing", doc_id=doc_id)
+    result = await service.insert_document(project_id=project_id, content=content,
+        metadata={"file_id": file_id, "source": "file_service", "filename": name or file_id})
+    if not result.get("success"):
+        raise RuntimeError(result.get("error", "Indexing failed"))
+    jobs.update(project_id, file_id, doc_id=result.get("doc_id", doc_id))
+
 
 
 async def wait_for_file_processing(project_id, file_id, jobs):

@@ -160,3 +160,32 @@ it('loads earlier messages by scrolling without restoring the history toolbar', 
  await waitFor(()=>expect(fetchMock.mock.calls.filter(([url])=>url.includes('offset=50'))).toHaveLength(1));
  expect(screen.getByText('Recent 49')).toBeTruthy();
 });
+
+it('recovers a gateway-closed stream and reloads its completed reply without refreshing', async () => {
+  let accepted = false;
+  let completed = false;
+  vi.stubGlobal('fetch', vi.fn((url: string) => {
+    if (url.includes('/pending/')) return Promise.resolve(new Response(JSON.stringify({ pending: accepted && !completed })));
+    if (url.includes('/history/')) return Promise.resolve(new Response(JSON.stringify(completed ? [
+      { id: 'u', role: 'user', content: 'Recover this reply' },
+      { id: 'a', role: 'assistant', content: 'Recovered final answer' },
+    ] : [])));
+    if (url.endsWith('/stream')) {
+      accepted = true;
+      return Promise.resolve(new Response('data: {"content":"Interrupted partial answer"}\n\ndata: {"error":"Processing error, please retry"}\n\n'));
+    }
+    return Promise.resolve(new Response('{}'));
+  }));
+  Element.prototype.scrollIntoView = vi.fn();
+  render(<MemoryRouter><ChatLayout /></MemoryRouter>);
+  const input = screen.getByPlaceholderText('Enter your question, press Enter to send...');
+  fireEvent.change(input, { target: { value: 'Recover this reply' } });
+  fireEvent.submit(input.closest('form')!);
+  await screen.findByText('Reply continues in the background');
+  expect(screen.queryByText(/Processing error/)).toBeNull();
+  completed = true;
+  await screen.findByText('Recovered final answer', {}, { timeout: 5000 });
+  expect(screen.queryByText('Interrupted partial answer')).toBeNull();
+  expect(screen.getAllByText('Recovered final answer')).toHaveLength(1);
+  expect(input).toHaveProperty('disabled', false);
+});

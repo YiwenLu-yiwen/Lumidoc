@@ -25,13 +25,14 @@ async def test_enqueue_returns_before_work_finishes_and_deduplicates(tmp_path):
 @pytest.mark.asyncio
 async def test_failure_is_retryable_and_restart_is_not_forever_pending(tmp_path):
     jobs = ImportJobs(tmp_path)
+    jobs.retry_delay = 0
     async def broken(file_id):
         raise RuntimeError('No extracted text')
     jobs.enqueue('p', ['a'], broken)
     await asyncio.gather(*jobs.tasks)
     assert jobs.statuses('p')['a']['status'] == 'failed'
     assert jobs.enqueue('p', ['a'], broken) == ['a']
-    assert ImportJobs(tmp_path).statuses('p')['a']['stage'] == 'interrupted'
+    assert ImportJobs(tmp_path).statuses('p')['a']['stage'] == 'queued'
     await asyncio.gather(*jobs.tasks)
 
 
@@ -125,11 +126,11 @@ async def test_delete_updates_index_before_removing_durable_import_status(tmp_pa
     monkeypatch.setattr(routes,'get_enterprise_lightrag_service',AsyncMock(return_value=service))
     monkeypatch.setattr(routes,'_document_statuses',AsyncMock(return_value=jobs.statuses('p')))
     if success:
-        assert (await routes.delete_rag_file('p','file',object()))['success']
+        assert (await routes._delete_rag_file_once(service,'p','file'))['success']
         assert ImportJobs(tmp_path).statuses('p')=={}
     else:
         with pytest.raises(HTTPException):
-            await routes.delete_rag_file('p','file',object())
+            await routes._delete_rag_file_once(service,'p','file')
         assert 'file' in jobs.statuses('p')
     service.delete_document.assert_awaited_once_with('p','doc-1')
 
@@ -142,7 +143,7 @@ async def test_batch_delete_deduplicates_reports_partial_failure_and_authorizes_
     monkeypatch.setattr(routes,'get_enterprise_lightrag_service',AsyncMock(return_value=service))
     delete=AsyncMock(side_effect=[{'success':True,'file_id':'a'},HTTPException(status_code=404,detail='Missing')])
     monkeypatch.setattr(routes,'_delete_rag_file',delete)
-    result=await routes.delete_rag_files('p',object(),['a','a','missing'])
+    result=await routes._delete_rag_files_once(service,'p',['a','a','missing'])
     assert result['success'] is False and len(result['results'])==2
     assert result['results'][1]['status_code']==404
     assert delete.await_count==2

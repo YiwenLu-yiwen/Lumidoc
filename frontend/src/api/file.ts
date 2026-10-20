@@ -1,3 +1,4 @@
+import { enqueueFileOperation, enqueueFileUploads } from './fileOutbox';
 import { apiClient } from './client';
 import { ApiResponse } from '../types/api';
 
@@ -148,163 +149,15 @@ export const fileApi = {
       remainingTime: number 
     }) => void
   ): Promise<{success: boolean, files: FileUploadResponse[]}> => {
-    try {
-      console.log(`[File API] 准备上传${files.length}个文件到项目${projectId}`);
-      
-      // 处理单文件和多文件上传
-      if (files.length === 1) {
-        // 单文件上传
-        const formData = new FormData();
-        formData.append('file', files[0]); // 使用固定的'file'字段名
-        formData.append('process', 'true');
-        
-        console.log(`[File API] 单文件上传, 大小: ${files[0].size}字节`);
-        
-        // 使用XMLHttpRequest进行上传，支持进度跟踪
-        const response = await new Promise<Response>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          const startTime = Date.now();
-          
-          // 上传进度事件
-          xhr.upload.addEventListener('progress', (event) => {
-            if (event.lengthComputable && onProgress) {
-              const now = Date.now();
-              const elapsed = (now - startTime) / 1000; // 秒
-              const speed = elapsed > 0 ? event.loaded / elapsed : 0; // 字节/秒
-              const remainingBytes = event.total - event.loaded;
-              const remainingTime = speed > 0 ? remainingBytes / speed : 0; // 秒
-              
-              onProgress({
-                fileIndex: 0,
-                fileName: `文件1`,
-                percentage: Math.round((event.loaded / event.total) * 100),
-                loaded: event.loaded,
-                total: event.total,
-                speed: speed,
-                remainingTime: remainingTime
-              });
-            }
-          });
-          
-          xhr.addEventListener('load', () => {
-            resolve(new Response(xhr.response, { status: xhr.status, statusText: xhr.statusText }));
-          });
-          
-          xhr.addEventListener('error', () => {
-            reject(new Error('上传请求失败'));
-          });
-          
-          xhr.open('POST', `${gatewayURL}/api/file/upload/${projectId}`);
-          xhr.setRequestHeader('Authorization', `Bearer ${localStorage.getItem('lumidoc_token')}`);
-          xhr.send(formData);
-        });
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error(`[File API] 上传响应错误(${response.status}): ${errorText}`);
-          throw new Error(`上传失败: ${response.status} ${response.statusText}`);
-        }
-        
-        const data = await response.json();
-        console.log('[File API] 单文件上传响应:', data);
-        
-        // 封装成标准的多文件响应格式
-        return {
-          success: Boolean(data.success),
-          files: [data]
-        };
-      } else {
-        // 多文件上传 - 逐个上传文件并收集结果
-        console.log(`[File API] 开始逐个上传${files.length}个文件`);
-        
-        const results = [];
-        for (let index = 0; index < files.length; index++) {
-          const file = files[index];
-          try {
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('process', 'true');
-            
-            console.log(`[File API] 上传文件${index + 1}, 大小: ${file.size}字节`);
-            
-            // 使用XMLHttpRequest进行上传，支持进度跟踪
-            const response = await new Promise<Response>((resolve, reject) => {
-              const xhr = new XMLHttpRequest();
-              const startTime = Date.now();
-              
-              // 上传进度事件
-              xhr.upload.addEventListener('progress', (event) => {
-                if (event.lengthComputable && onProgress) {
-                  const now = Date.now();
-                  const elapsed = (now - startTime) / 1000; // 秒
-                  const speed = elapsed > 0 ? event.loaded / elapsed : 0; // 字节/秒
-                  const remainingBytes = event.total - event.loaded;
-                  const remainingTime = speed > 0 ? remainingBytes / speed : 0; // 秒
-                  
-                  onProgress({
-                    fileIndex: index,
-                    fileName: `文件${index + 1}`,
-                    percentage: Math.round((event.loaded / event.total) * 100),
-                    loaded: event.loaded,
-                    total: event.total,
-                    speed: speed,
-                    remainingTime: remainingTime
-                  });
-                }
-              });
-              
-              xhr.addEventListener('load', () => {
-                resolve(new Response(xhr.response, { status: xhr.status, statusText: xhr.statusText }));
-              });
-              
-              xhr.addEventListener('error', () => {
-                reject(new Error('上传请求失败'));
-              });
-              
-              xhr.open('POST', `${gatewayURL}/api/file/upload/${projectId}`);
-              xhr.setRequestHeader('Authorization', `Bearer ${localStorage.getItem('lumidoc_token')}`);
-              xhr.send(formData);
-            });
-            
-            if (!response.ok) {
-              const errorText = await response.text();
-              console.error(`[File API] 文件${index + 1}上传响应错误(${response.status}): ${errorText}`);
-              // 添加失败记录但继续上传其他文件
-              results.push({
-                success: false,
-                message: `上传失败: ${response.status} ${response.statusText}`,
-                filename: `文件${index + 1}`
-              });
-              continue;
-            }
-            
-            const data = await response.json();
-            console.log(`[File API] 文件${index + 1}上传响应:`, data);
-            results.push(data);
-          } catch (fileError) {
-            console.error(`[File API] 文件${index + 1}上传错误:`, fileError);
-            results.push({
-              success: false,
-              message: fileError instanceof Error ? fileError.message : '上传过程出错',
-              filename: `文件${index + 1}`
-            });
-          }
-        }
-        
-        // 计算总体成功状态
-        const hasSuccess = results.some(r => r.success);
-        
-        return {
-          success: hasSuccess,
-          files: results
-        };
-      }
-    } catch (error) {
-      console.error('[File API] 文件上传错误:', error);
-      throw error;
-    }
+    const started = new Map<number, number>();
+    const results = await enqueueFileUploads<FileUploadResponse>(projectId, files, (fileIndex, loaded, total) => {
+      if (!started.has(fileIndex)) started.set(fileIndex, Date.now());
+      const elapsed = (Date.now() - started.get(fileIndex)!) / 1000;
+      onProgress?.({fileIndex,fileName:files[fileIndex].name,percentage:Math.round(loaded/total*100),loaded,total,speed:elapsed?loaded/elapsed:0,remainingTime:loaded?elapsed*(total-loaded)/loaded:0});
+    });
+    return {success:results.every(result=>result.success),files:results};
   },
-  
+
   // 获取文件列表
   listFiles: async (projectId: string): Promise<FileInfo[]> => {
     try {
@@ -387,100 +240,9 @@ export const fileApi = {
   
   // 删除文件
   deleteFile: async (projectId: string, filePath: string): Promise<ApiResponse> => {
-    try {
-      console.log(`[File API] 删除文件: ${filePath}, 项目ID: ${projectId}`);
-      
-      // 确保路径正确编码 - 使用encodeURIComponent处理整个路径
-      const encodedPath = encodeURIComponent(filePath);
-      console.log(`[File API] 编码后的路径: ${encodedPath}`);
-      
-      // 构建完整的请求URL
-      const requestUrl = `${gatewayURL}/api/file/${projectId}/${encodedPath}`;
-      console.log(`[File API] 删除请求URL: ${requestUrl}`);
-      
-      // 获取身份验证令牌
-      const token = localStorage.getItem('lumidoc_token');
-      const headers = {
-        'Authorization': token ? `Bearer ${token}` : '',
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      };
-      
-      // 使用fetch API直接发送请求，避免axios的URL编码问题
-      const response = await fetch(requestUrl, {
-        method: 'DELETE',
-        headers
-      });
-      
-      console.log(`[File API] 删除请求状态: ${response.status} ${response.statusText}`);
-      
-      // 尝试解析响应 - 即使不是200也尝试解析
-      let data;
-      try {
-        data = await response.json();
-        console.log('[File API] 删除响应数据:', data);
-      } catch (e) {
-        // 如果无法解析JSON，创建一个基于状态码的响应
-        console.error('[File API] 解析删除响应失败:', e);
-        
-        // 如果是404错误，表示文件不存在，视为删除成功
-        if (response.status === 404) {
-          return {
-            success: true,
-            message: "文件不存在或已被删除"
-          };
-        }
-        
-        // 其他HTTP错误
-        if (!response.ok) {
-          return {
-            success: false,
-            message: `服务器错误: ${response.status} ${response.statusText}`
-          };
-        }
-        
-        // 无法解析但请求成功
-        return {
-          success: true,
-          message: "操作可能已完成，但无法解析响应"
-        };
-      }
-      
-      // 处理服务器返回的数据
-      if (data) {
-        if (data.success === false) {
-          console.log("[File API] 服务器报告删除失败", data);
-        } else {
-          console.log("[File API] 删除操作完成", data);
-        }
-        return data;
-      }
-      
-      // 如果没有数据但请求成功，返回基本成功信息
-      if (response.ok) {
-        return {
-          success: true,
-          message: "操作已完成"
-        };
-      }
-      
-      // 默认返回失败
-      return {
-        success: false,
-        message: `删除请求失败: ${response.statusText}`
-      };
-    } catch (error: unknown) {
-      console.error('[File API] 删除文件失败:', error);
-      
-      // 返回错误信息
-      return {
-        success: false,
-        message: `删除文件出错: ${getErrorMessage(error)}`
-      };
-    }
+    return enqueueFileOperation<ApiResponse>(projectId, {kind:'delete',path:filePath});
   },
-  
-  // 批量删除文件
+
   batchDeleteFiles: async (projectId: string, fileHashes: string[]): Promise<ApiResponse<BatchDeleteResult>> => {
     try {
       console.log(`[File API] 批量删除文件，项目ID: ${projectId}，文件数量: ${fileHashes.length}`);

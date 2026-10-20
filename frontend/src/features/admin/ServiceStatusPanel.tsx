@@ -24,7 +24,12 @@ export function ServiceStatusPanel({
   const healthy = status.services.filter(
     (service) => service.status === "healthy",
   ).length;
-  const problems = status.services.length - healthy;
+  const problems = status.services.filter(
+    (service) =>
+      status.controls?.recovery?.[service.name]?.phase === "needs_attention" ||
+      (!status.controls?.recovery?.[service.name]?.phase &&
+        service.status !== "healthy"),
+  ).length;
   const metrics = [
     {
       label: zh ? "正常服务" : "Healthy services",
@@ -69,6 +74,8 @@ export function ServiceStatusPanel({
         </div>
         <div className="divide-y">
           {status.services.map((service) => {
+            const recovery = status.controls?.recovery?.[service.name];
+            const recovering = recovery?.phase === "recovering";
             const ok = service.status === "healthy";
             const op = status.controls?.operations[service.name];
             const pending =
@@ -102,7 +109,14 @@ export function ServiceStatusPanel({
                   <p
                     className={`text-xs font-medium ${ok ? "text-emerald-700 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400"}`}
                   >
-                    {adminLabel(service.status, zh)}
+                    {adminLabel(
+                      recovery?.phase === "needs_attention"
+                        ? "needs_attention"
+                        : recovering
+                          ? "recovering"
+                          : service.status,
+                      zh,
+                    )}
                   </p>
                   <p className="mt-1 text-xs tabular-nums text-muted-foreground">
                     {service.latency_ms !== null
@@ -138,6 +152,13 @@ export function ServiceStatusPanel({
                       ? "重启"
                       : "Restart"}
                 </button>
+                {recovering && (
+                  <p className="w-full pl-11 text-xs text-blue-600 dark:text-blue-400">
+                    {zh
+                      ? `正在恢复服务，近期自动重启 ${recovery?.restart_count || 0} 次。`
+                      : `Recovering service; ${recovery?.restart_count || 0} recent automatic restarts.`}
+                  </p>
+                )}
                 {op && (
                   <p className="w-full pl-11 text-xs text-muted-foreground">
                     {zh ? "最近操作" : "Last action"}:{" "}

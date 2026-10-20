@@ -422,6 +422,16 @@ const FilesList: React.FC<FilesListProps> = ({ fileType, projectId, onTabChange 
   };
 
   useEffect(() => {
+    const refreshed = (event: Event) => {
+      if ((event as CustomEvent).detail?.projectId === projectId) void refreshFiles();
+    };
+    window.addEventListener('file-operations-updated', refreshed);
+    return () => window.removeEventListener('file-operations-updated', refreshed);
+    // refreshFiles reads this project's current filters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, currentFileType]);
+
+  useEffect(() => {
     const loadFiles = async () => {
       if (!projectId) return;
 

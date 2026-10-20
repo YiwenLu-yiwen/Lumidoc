@@ -38,6 +38,7 @@ services:
     restart: "no"
 
   db:
+    restart: unless-stopped
     image: ankane/pgvector:latest
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
@@ -54,6 +55,7 @@ services:
       context: .
       dockerfile: src/modules/file/Dockerfile
     volumes:
+      - operational_data:/app/operational_data
       - ./uploads:/app/uploads
       - ./temp:/app/temp
     environment:
@@ -83,14 +85,13 @@ services:
         limits:
           cpus: '0.5'
           memory: 512M
-      restart_policy:
-        condition: on-failure
 
   rag_service:
     build:
       context: .
       dockerfile: src/modules/lightraglocal/Dockerfile
     volumes:
+      - operational_data:/app/operational_data
       - ./data:/app/data
     environment:
       - PYTHONPATH=/app
@@ -129,8 +130,6 @@ services:
         limits:
           cpus: '1.0'
           memory: 1G
-      restart_policy:
-        condition: on-failure
 
   graph_service:
     build:
@@ -202,6 +201,7 @@ services:
       context: .
       dockerfile: src/modules/chat/Dockerfile
     volumes:
+      - operational_data:/app/operational_data
       - ./data:/app/data
     environment:
       - PYTHONPATH=/app
@@ -226,8 +226,6 @@ services:
         limits:
           cpus: '0.75'
           memory: 768M
-      restart_policy:
-        condition: on-failure
 
   question_service:
     build:
@@ -250,6 +248,8 @@ services:
       - redis
 
   monitoring_service:
+    volumes:
+      - operational_data:/app/operational_data
     build:
       context: .
       dockerfile: src/modules/monitoring/Dockerfile
@@ -280,9 +280,13 @@ services:
       dockerfile: src/modules/monitoring/Dockerfile
     command: ["uvicorn", "src.modules.monitoring.services.container_control:app", "--host", "0.0.0.0", "--port", "8010"]
     environment:
+      - AUTO_RESTART_ENABLED=${AUTO_RESTART_ENABLED:-true}
+      - AUTO_RESTART_MAX_ATTEMPTS=${AUTO_RESTART_MAX_ATTEMPTS:-3}
+      - AUTO_RESTART_WINDOW_SECONDS=${AUTO_RESTART_WINDOW_SECONDS:-900}
       - AUTH_SERVICE_URL=http://auth_service:8007
       - PYTHONPATH=/app
     volumes:
+      - operational_data:/app/operational_data
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - lumidoc_network
@@ -291,6 +295,8 @@ services:
     restart: unless-stopped
 
   gateway_service:
+    volumes:
+      - operational_data:/app/operational_data
     build:
       context: .
       dockerfile: src/modules/gateway/Dockerfile
@@ -328,8 +334,6 @@ services:
         limits:
           cpus: '0.5'
           memory: 512M
-      restart_policy:
-        condition: on-failure
 
   frontend:
     build:
@@ -351,6 +355,7 @@ services:
       context: .
       dockerfile: src/modules/fileproc/Dockerfile
     volumes:
+      - operational_data:/app/operational_data
       - ./uploads:/app/uploads
       - ./temp:/app/temp
     environment:
@@ -383,18 +388,18 @@ services:
         limits:
           cpus: '${FILEPROC_CPU_LIMIT:-2}'
           memory: ${FILEPROC_MEMORY_LIMIT:-4G}
-      restart_policy:
-        condition: on-failure
 
   redis:
+    restart: unless-stopped
     image: redis:7
     volumes:
       - redis_data:/data
-    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "always", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
     networks:
       - lumidoc_network
 
   neo4j:
+    restart: unless-stopped
     image: neo4j:5
     environment:
       - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:?NEO4J_PASSWORD is required}
@@ -404,6 +409,7 @@ services:
       - lumidoc_network
 
   minio:
+    restart: unless-stopped
     build:
       context: ./scripts/minio
     command: server /data --console-address ":9001"
@@ -452,14 +458,13 @@ services:
         limits:
           cpus: '1.0'
           memory: 1G
-      restart_policy:
-        condition: on-failure
 
 networks:
   lumidoc_network:
     driver: bridge
 
 volumes:
+  operational_data:
   db_data:
   redis_data:
   neo4j_data:

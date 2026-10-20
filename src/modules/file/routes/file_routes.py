@@ -293,6 +293,7 @@ class AddToRagResponse(BaseModel):
 )
 async def upload_file(
     project_id: str,
+    request: Request,
     file: UploadFile = File(...),
     process: bool = Form(True)
 ):
@@ -307,7 +308,7 @@ async def upload_file(
     Returns:
         FileUploadResponse: 上传响应
     """
-    return await file_service.upload_file(file, project_id, process)
+    return await file_service.upload_file(file, project_id, process, request.headers.get("x-operation-id"))
 
 @router.get("/status/{task_id}")
 async def get_processing_status(task_id: str):
@@ -653,7 +654,7 @@ async def get_document_summary(project_id: str, file_hash: str, regenerate: bool
     response_model=ApiResponse,
     dependencies=[Depends(require_project_access_dependency)],
 )
-async def delete_file(project_id: str, file_hash: str):
+async def delete_file(project_id: str, file_hash: str, request: Request):
     """
     删除文件
     
@@ -671,7 +672,7 @@ async def delete_file(project_id: str, file_hash: str):
         project_id = project_id.strip()
         
         logger.info(f"开始删除文件，项目ID: {project_id}, 文件哈希: {file_hash}")
-        result = await file_service.delete_file(file_hash, project_id)
+        result = await file_service.delete_file(file_hash, project_id, request.headers.get("x-operation-id"))
         
         # 即使文件不存在，也返回成功状态，避免前端显示错误
         logger.info(f"文件删除操作结果: {result}, 项目ID: {project_id}, 文件哈希: {file_hash}")
@@ -690,7 +691,7 @@ async def delete_file(project_id: str, file_hash: str):
     response_model=ApiResponse,
     dependencies=[Depends(require_project_access_dependency)],
 )
-async def delete_project_file_by_path(project_id: str, file_path: str):
+async def delete_project_file_by_path(project_id: str, file_path: str, request: Request):
     """
     根据文件路径删除项目文件（支持WebUI调用格式）
     
@@ -755,7 +756,7 @@ async def delete_project_file_by_path(project_id: str, file_path: str):
                 logger.info(f"找到对应文件哈希: {file_hash}, 文件: {file_name}")
                 
                 # 使用文件处理服务删除文件
-                result = await file_service.delete_file(file_hash, project_id)
+                result = await file_service.delete_file(file_hash, project_id, request.headers.get("x-operation-id"))
                 
                 if result:
                     logger.info(f"文件删除成功，项目ID: {project_id}, 文件: {file_name}")

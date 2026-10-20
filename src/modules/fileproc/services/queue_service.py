@@ -182,119 +182,65 @@ class FileProcessingQueue:
             self._redis = None
             return await self.connect()
     
-    async def enqueue(self, payload: Dict[str, Any]) -> Optional[str]:
-        """
-        将任务添加到队列
-        
-        Args:
-            payload: 任务数据载荷
-            
-        Returns:
-            str: 任务ID，失败则返回None
-        """
-        try:
-            # 确保连接可用
-            if not await self._ensure_connection():
-                logger.error("无法连接到Redis，任务入队失败")
-                return None
-            
-            # 生成任务ID
-            task_id = payload.get("task_id", str(uuid.uuid4()))
-            
-            # 创建任务数据
-            task = {
-                "task_id": task_id,
-                "created_at": datetime.now().isoformat(),
-                "status": "pending",
-                "progress": 0,
-                "payload": payload
-            }
-            
-            # 将任务添加到队列
-            task_json = json.dumps(task)
-            await self._redis.lpush(self._queue_name, task_json)
-            
-            # 保存任务状态
-            await self._save_task_status(task_id, task)
-            
-            logger.info(f"任务已添加到队列: {task_id}")
-            return task_id
-        except Exception as e:
-            logger.error(f"添加任务到队列失败: {str(e)}")
-            logger.error(traceback.format_exc())
-            return None
-    
-    async def dequeue(self) -> Optional[Dict[str, Any]]:
-        """
-        从队列获取待处理任务（带分布式锁）
-        
-        Returns:
-            Dict[str, Any]: 任务数据，队列为空则返回None
-        """
-        try:
-            # 确保连接可用
-            if not await self._ensure_connection():
-                logger.error("无法连接到Redis，任务出队失败")
-                return None
-            
-            # 从队列右侧获取任务（先进先出）
-            task_data = await self._redis.rpop(self._queue_name)
-            if not task_data:
-                return None
-            
-            # 尝试解析任务数据
+    async def enqueue(self, payload):
+        if not await self._ensure_connection(): raise ConnectionError('Queue unavailable')
+        task_id = payload.get('task_id') or str(uuid.uuid4())
+        task = {'task_id': task_id, 'created_at': datetime.now().isoformat(), 'status': 'pending', 'progress': 0, 'payload': payload}
+        # The intent and the queue entry commit together; repeated submissions are harmless.
+        await self._redis.eval("""
+            if redis.call('EXISTS', KEYS[1]) == 0 then
+                redis.call('SET', KEYS[1], ARGV[1])
+                redis.call('LPUSH', KEYS[2], ARGV[2])
+            end
+            return 1
+        """, 2, self._status_prefix+task_id, self._queue_name, json.dumps(task), task_id)
+        return task_id
+
+    async def recover_inflight(self):
+        from src.shared.operation_journal import journal
+        for raw in await self._redis.lrange(self._processing_queue_key, 0, -1):
             try:
-                # 先尝试解析为JSON
-                try:
-                    task = json.loads(task_data)
-                    task_id = task.get("task_id")
-                    logger.info(f"从队列获取到任务数据: {task_id}")
-                except (json.JSONDecodeError, TypeError):
-                    # 如果不是JSON，可能只是任务ID字符串
-                    task_id = task_data.decode("utf-8") if isinstance(task_data, bytes) else task_data
-                    logger.info(f"从队列获取到任务ID: {task_id}")
-                    
-                    # 根据任务ID获取任务详情
-                    task = await self.get_task_status(task_id)
-                
-                # 如果没有获取到任务详情，则返回基本任务信息
-                if not task:
-                    task = {
-                        "task_id": task_id,
-                        "status": "unknown"
-                    }
-                
-                # 尝试获取任务锁，防止重复处理
-                lock_key = f"lock:{task_id}"
-                lock_acquired = await self._redis.set(
-                    lock_key, 
-                    self._worker_id, 
-                    nx=True,  # 只有key不存在时才设置
-                    ex=3600   # 1小时过期时间
-                )
-                
-                if not lock_acquired:
-                    # 锁获取失败，说明任务正在被其他工作器处理
-                    logger.warning(f"任务 {task_id} 正在被其他工作器处理，跳过")
-                    return None
-                
-                # 将任务标记为处理中
-                await self.update_task_status(
-                    task_id=task_id,
-                    status="processing",
-                    message="处理中"
-                )
-                
-                return task
-            except Exception as e:
-                logger.error(f"解析任务数据失败: {str(e)}")
-                logger.error(traceback.format_exc())
-                return None
-        except Exception as e:
-            logger.error(f"从队列获取任务失败: {str(e)}")
-            logger.error(traceback.format_exc())
+                parsed = json.loads(raw)
+                identifier = parsed['task_id']
+            except (ValueError, TypeError):
+                identifier = raw.decode() if isinstance(raw, bytes) else raw
+            moved = await self._redis.eval("""
+                if redis.call('EXISTS', KEYS[1]) == 0 and redis.call('LREM', KEYS[2], 1, ARGV[1]) == 1 then
+                    redis.call('LPUSH', KEYS[3], ARGV[1])
+                    return 1
+                end
+                return 0
+            """, 3, 'fileproc:lease:'+identifier, self._processing_queue_key, self._queue_name, raw)
+            if moved: journal().event('task.interrupted', 'fileproc', 'recovering', operation_id=identifier)
+
+    async def dequeue(self):
+        if not await self._ensure_connection(): return None
+        await self.recover_inflight()
+        raw = await self._redis.rpoplpush(self._queue_name, self._processing_queue_key)
+        if not raw: return None
+        try:
+            parsed = json.loads(raw)
+            task_id = parsed['task_id']
+        except (ValueError, TypeError):
+            task_id = raw.decode() if isinstance(raw, bytes) else raw
+        task = await self.get_task_status(task_id)
+        if not task or task.get('status') in ('completed','cancelled','failed'):
+            await self._redis.lrem(self._processing_queue_key, 1, raw)
             return None
-    
+        lease = 'fileproc:lease:'+task_id
+        if not await self._redis.set(lease, self._worker_id, nx=True, ex=60): return None
+        attempts = task.get('attempts', 0)
+        if attempts >= 5:
+            task.update(status='failed', message='Automatic recovery limit reached')
+            await self._save_task_status(task_id, task)
+            await self._redis.lrem(self._processing_queue_key, 1, raw)
+            await self._redis.delete(lease)
+            return None
+        task.update(status='processing', attempts=attempts+1, started_at=datetime.now().isoformat())
+        await self._save_task_status(task_id, task)
+        task['_raw'] = raw
+        return task
+
     async def update_task_status(self, task_id: str, status: str, progress: int = None, message: str = None, 
                                 processing_time_seconds: float = None, processing_time_display: str = None, 
                                 result: dict = None) -> bool:
@@ -326,6 +272,8 @@ class FileProcessingQueue:
                 return False
                 
             # 更新任务状态
+            if status == 'failed' and current_status.get('attempts', 0) < 5:
+                status, message, progress = 'pending', '正在自动恢复处理', min(current_status.get('progress', 0), 95)
             current_status["status"] = status
             current_status["updated_at"] = datetime.now().isoformat()
             
@@ -469,161 +417,51 @@ class FileProcessingQueue:
         # 启动处理循环的异步任务
         asyncio.create_task(self._process_queue(handler))
     
-    async def _process_queue(self, handler: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]]) -> None:
-        """
-        队列处理循环
-        
-        Args:
-            handler: 处理任务的异步回调函数
-        """
-        try:
-            # 确保连接可用
-            if not await self._ensure_connection():
-                logger.error("无法连接到Redis，工作器启动失败")
-                self._running = False
-                return
-            
-            # 处理循环
-            while self._running:
-                try:
-                    # 获取任务
-                    task = await self.dequeue()
-                    
-                    if not task:
-                        # 队列为空，等待后重试
-                        await asyncio.sleep(1)
-                        continue
-                    
-                    # 记录正在处理的任务
-                    task_id = task.get("task_id")
-                    if not task_id:
-                        logger.error("任务缺少task_id字段")
-                        continue
-                        
-                    self._processing_tasks.add(task_id)
-                    
-                    try:
-                        # 记录任务开始处理的时间
-                        start_time = time.time()
-                        logger.info(f"开始处理任务: {task_id}")
-                        
-                        # 获取任务负载数据
-                        payload = task.get("payload", {})
-                        if not payload and "status" in task and task["status"] != "unknown":
-                            # 如果没有找到payload但有其他字段，可能是任务数据本身
-                            payload = task
-                            
-                        # 添加详细日志
-                        logger.info(f"处理任务数据: task_id={task_id}, payload={payload}")
-                        
-                        # 确保payload中有必要的信息
-                        if not payload.get("file_id") and task.get("file_id"):
-                            payload["file_id"] = task.get("file_id")
-                            
-                        if not payload.get("project_id") and task.get("project_id"):
-                            payload["project_id"] = task.get("project_id")
-                            
-                        # 确保有任务ID
-                        if not payload.get("task_id") and task_id:
-                            payload["task_id"] = task_id
-                            
-                        # 处理任务
-                        try:
-                            result = await handler(payload)
-                            logger.info(f"任务处理结果: {result}")
-                        except Exception as handler_err:
-                            logger.error(f"处理器异常: {str(handler_err)}")
-                            logger.error(traceback.format_exc())
-                            result = {
-                                "success": False,
-                                "error": f"处理器异常: {str(handler_err)}"
-                            }
-                        
-                        # 计算处理时间
-                        end_time = time.time()
-                        processing_time = end_time - start_time
-                        
-                        # 任务处理完成 - 一次性更新所有状态信息
-                        if result and result.get("success", False):
-                            logger.info(f"任务处理成功: {task_id}, 处理用时: {processing_time:.2f}秒")
-                            # 一次性更新任务状态为完成，包含所有信息
-                            await self.update_task_status(
-                                task_id=task_id,
-                                status="completed",
-                                message="处理成功",
-                                processing_time_seconds=processing_time,
-                                processing_time_display=f"{processing_time:.2f}秒",
-                                result=result
-                            )
-                        else:
-                            error_msg = result.get('error', '未知错误') if result else '处理返回空结果'
-                            logger.warning(f"任务处理失败: {task_id}, 错误: {error_msg}, 处理用时: {processing_time:.2f}秒")
-                            # 一次性更新任务状态为失败，包含所有信息
-                            await self.update_task_status(
-                                task_id=task_id,
-                                status="failed",
-                                message=f"处理失败: {error_msg}",
-                                processing_time_seconds=processing_time,
-                                processing_time_display=f"{processing_time:.2f}秒",
-                                result=result
-                            )
-                        
-                        # 释放任务锁
-                        lock_key = f"lock:{task_id}"
-                        try:
-                            await self._redis.delete(lock_key)
-                            logger.debug(f"已释放任务锁: {task_id}")
-                        except Exception as lock_err:
-                            logger.warning(f"释放任务锁失败: {task_id}, 错误: {str(lock_err)}")
-                            
-                    except Exception as e:
-                        # 任务处理过程发生异常
-                        end_time = time.time()
-                        processing_time = end_time - start_time
-                        logger.error(f"处理任务时出错: {task_id}, 错误: {str(e)}, 处理用时: {processing_time:.2f}秒")
-                        logger.error(traceback.format_exc())
-                        
-                        # 更新任务状态为失败
-                        await self.update_task_status(
-                            task_id=task_id,
-                            status="failed",
-                            message=f"处理任务时出错: {str(e)}"
-                        )
-                        
-                        # 添加处理时间到任务状态
-                        current_status = await self.get_task_status(task_id)
-                        if current_status:
-                            current_status["processing_time_seconds"] = processing_time
-                            current_status["processing_time_display"] = f"{processing_time:.2f}秒"
-                            current_status["error"] = str(e)
-                            await self._save_task_status(task_id, current_status)
-                    finally:
-                        # 从处理集合中移除任务
-                        if task_id in self._processing_tasks:
-                            self._processing_tasks.remove(task_id)
-                
-                except asyncio.CancelledError:
-                    # 任务被取消
-                    logger.info("工作者任务被取消")
-                    break
-                except Exception as e:
-                    # 循环处理过程中发生异常，忽略并继续
-                    logger.error(f"工作者循环中发生错误: {str(e)}")
-                    logger.error(traceback.format_exc())
+    async def _process_queue(self, handler):
+        from src.shared.operation_journal import journal
+        while self._running:
+            try:
+                task = await self.dequeue()
+                if not task:
                     await asyncio.sleep(1)
-                    
-                    # 检查Redis连接
-                    if not await self._ensure_connection():
-                        logger.error("Redis连接已断开，尝试重新连接")
-                        await asyncio.sleep(5)  # 等待5秒后重试
-            
-        except Exception as e:
-            logger.error(f"队列工作者异常退出: {str(e)}")
-            logger.error(traceback.format_exc())
-        finally:
-            self._running = False
-            logger.info(f"队列工作者已停止 (ID: {self._worker_id})")
-    
+                    continue
+                task_id = task['task_id']
+                self._processing_tasks.add(task_id)
+                lease = 'fileproc:lease:'+task_id
+                async def heartbeat():
+                    while True:
+                        await self._redis.eval("if redis.call('GET',KEYS[1]) == ARGV[1] then return redis.call('EXPIRE',KEYS[1],60) end return 0", 1, lease, self._worker_id)
+                        await asyncio.sleep(15)
+                beat = asyncio.create_task(heartbeat())
+                started = time.time()
+                terminal = False
+                try:
+                    payload = task.get('payload') or {key:value for key,value in task.items() if key != '_raw'}
+                    payload['task_id'] = task_id
+                    result = await handler(payload)
+                    if not result or not result.get('success'): raise RuntimeError('Processing interrupted')
+                    await self.update_task_status(task_id, 'completed', progress=100, result=result, processing_time_seconds=time.time()-started)
+                    terminal = True
+                    journal().event('task.completed', 'fileproc', 'completed', operation_id=task_id)
+                except asyncio.CancelledError:
+                    journal().event('task.interrupted', 'fileproc', 'recovering', operation_id=task_id)
+                    raise
+                except Exception:
+                    terminal = task['attempts'] >= 5
+                    await self.update_task_status(task_id, 'failed', message='Recovery limit reached' if terminal else '正在自动恢复处理')
+                    journal().event('task.retry', 'fileproc', 'needs_attention' if terminal else 'recovering', operation_id=task_id)
+                    if not terminal: await asyncio.sleep(min(2**task['attempts'], 30))
+                finally:
+                    beat.cancel()
+                    await asyncio.gather(beat, return_exceptions=True)
+                    if terminal: await self._redis.lrem(self._processing_queue_key, 1, task['_raw'])
+                    await self._redis.eval("if redis.call('GET',KEYS[1]) == ARGV[1] then return redis.call('DEL',KEYS[1]) end return 0", 1, lease, self._worker_id)
+                    self._processing_tasks.discard(task_id)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                await asyncio.sleep(2)
+
     async def stop_worker(self) -> None:
         """停止队列工作者"""
         if not self._running:
@@ -704,9 +542,13 @@ class FileProcessingQueue:
             
             for data in task_data:
                 try:
-                    task_json = data.decode("utf-8")
-                    task = json.loads(task_json)
-                    tasks.append(task)
+                    task_id = data.decode("utf-8") if isinstance(data, bytes) else data
+                    try:
+                        task_id = json.loads(task_id)['task_id']
+                    except (ValueError, TypeError):
+                        pass
+                    task = await self.get_task_status(task_id)
+                    if task: tasks.append(task)
                 except Exception as e:
                     logger.warning(f"解析任务数据失败: {str(e)}")
             
@@ -737,7 +579,7 @@ class FileProcessingQueue:
             status_json = json.dumps(status)
             
             # 设置带过期时间的数据
-            await self._redis.set(status_key, status_json, ex=self._task_ttl)
+            await self._redis.set(status_key, status_json, ex=self._task_ttl if status.get('status') in ('completed','failed','cancelled') else None)
             return True
         except Exception as e:
             logger.error(f"保存任务状态失败: {str(e)}")
@@ -845,24 +687,9 @@ class FileProcessingQueue:
                 logger.error("无法连接到Redis，设置任务数据失败")
                 return False
                 
-            # 初始化任务状态
-            task = {
-                "task_id": task_id,
-                "created_at": datetime.now().isoformat(),
-                "status": "pending",
-                "progress": 0,
-                "message": "准备处理",
-                "payload": task_data
-            }
-            
-            # 保存任务状态
-            success = await self._save_task_status(task_id, task)
-            if success:
-                logger.info(f"任务数据已设置: {task_id}")
-                # 添加到待处理队列
-                await self._redis.lpush(self._pending_queue_key, task_id)
-            
-            return success
+            task_data['task_id'] = task_id
+            await self.enqueue(task_data)
+            return True
         except Exception as e:
             logger.error(f"设置任务数据失败: {str(e)}")
             logger.error(traceback.format_exc())
@@ -884,11 +711,8 @@ class FileProcessingQueue:
                 logger.error("无法连接到Redis，任务入队失败")
                 return False
             
-            # 将任务ID添加到队列
-            await self._redis.lpush(self._queue_name, task_id)
-            
-            logger.info(f"任务ID已添加到处理队列: {task_id}")
-            return True
+            # set_task_data atomically enqueues the task already.
+            return bool(await self.get_task_status(task_id))
         except Exception as e:
             logger.error(f"任务入队失败: {str(e)}")
             logger.error(traceback.format_exc())

@@ -32,6 +32,18 @@ export default function AdminPage() {
   const { user } = useAuth();
   const { currentLanguage } = useLanguage();
   const zh = currentLanguage === "zh-CN";
+  const [events, setEvents] = useState<
+    {
+      id: number;
+      timestamp: number;
+      actor: string;
+      action: string;
+      target: string;
+      outcome: string;
+      operation_id: string;
+    }[]
+  >([]);
+  const [before, setBefore] = useState<number | undefined>();
   const [tab, setTab] = useState("status");
   const [status, setStatus] = useState<ServiceStatus | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -61,6 +73,13 @@ export default function AdminPage() {
         );
         if (id !== requestId.current) return;
         setStatus(response.data);
+      } else if (tab === "events") {
+        const response = await apiClient.get<{ events: typeof events }>(
+          `${gateway}/monitoring/admin/events`,
+          { params: { before } },
+        );
+        if (id !== requestId.current) return;
+        setEvents(response.data.events);
       } else if (tab === "users") {
         const response = await apiClient.get<{
           users: Account[];
@@ -107,7 +126,7 @@ export default function AdminPage() {
         fetching.current = false;
       }
     }
-  }, [user?.role, tab, offset, zh]);
+  }, [user?.role, tab, offset, before, zh]);
   useEffect(() => {
     void request();
     const timer = window.setInterval(() => {
@@ -239,13 +258,14 @@ export default function AdminPage() {
           </div>
         </header>
         <nav
-          className="flex gap-1 border-b"
+          className="flex gap-1 overflow-x-auto border-b"
           aria-label={zh ? "管理功能" : "Admin sections"}
         >
           {[
             ["status", zh ? "服务状态" : "Service status"],
             ["tasks", zh ? "任务中心" : "Tasks"],
             ["users", zh ? "用户管理" : "Users"],
+            ["events", zh ? "操作记录" : "Activity log"],
           ].map(([key, label]) => (
             <button
               key={key}
@@ -292,6 +312,66 @@ export default function AdminPage() {
             restarting={restarting}
             onRestart={(name) => void restartService(name)}
           />
+        )}
+        {tab === "events" && (
+          <section className="rounded-xl border bg-card overflow-hidden">
+            <div className="p-4 text-sm text-muted-foreground">
+              {zh
+                ? "记录请求、中断、自动恢复与管理员操作；不记录密码、令牌或请求正文。"
+                : "Requests, interruptions, recovery and administrator actions. Credentials and request bodies are excluded."}
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-muted/50">
+                  <tr>
+                    {(zh
+                      ? ["时间", "操作人", "操作", "对象", "结果"]
+                      : ["Time", "Actor", "Action", "Target", "Outcome"]
+                    ).map((label) => (
+                      <th className="px-4 py-3" key={label}>
+                        {label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {events.map((event) => (
+                    <tr key={event.id} className="border-t">
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {new Date(event.timestamp * 1000).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3">
+                        {adminLabel(event.actor, zh)}
+                      </td>
+                      <td className="px-4 py-3">
+                        {adminLabel(event.action, zh)}
+                      </td>
+                      <td className="px-4 py-3 max-w-xs break-all">
+                        {event.target}
+                      </td>
+                      <td className="px-4 py-3">
+                        {adminLabel(event.outcome, zh)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex justify-between border-t p-4 text-sm">
+              <button
+                disabled={busy || !before}
+                onClick={() => setBefore(undefined)}
+              >
+                {zh ? "最新记录" : "Latest"}
+              </button>
+              <button
+                disabled={busy || events.length < 100}
+                onClick={() => setBefore(events[events.length - 1]?.id)}
+              >
+                {zh ? "更早记录" : "Earlier"}
+              </button>
+            </div>
+          </section>
         )}
         {tab === "tasks" && (
           <>

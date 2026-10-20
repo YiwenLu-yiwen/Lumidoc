@@ -1,3 +1,4 @@
+import { FileRecoveryStatus } from './components/FileRecoveryStatus';
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { FilesList, FileUploader } from './components';
@@ -77,6 +78,7 @@ const FileManager = () => {
   return (
     <div className="w-full h-full flex flex-col">
       <PageHeader title="文件管理" />
+      <FileRecoveryStatus projectId={projectId} />
       
       <div className="flex border-b">
         <Tab 

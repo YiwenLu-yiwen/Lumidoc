@@ -1,3 +1,4 @@
+import { resumeFileOperations } from '@/api/fileOutbox';
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import axios, { AxiosResponse, AxiosError } from 'axios';
 import { ProjectAccessLevel, UserRole } from './authTypes';
@@ -77,6 +78,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
   }, [token]);
   useEffect(() => { void refreshProfile().catch(() => undefined); }, [refreshProfile]);
+
+  useEffect(() => { if (user?.id && token) return resumeFileOperations(user.id); }, [user?.id, token]);
 
   // 组件渲染性能优化：使用useRef避免不必要的re-render
   const projectPermissionsRef = useRef<Record<string, ProjectAccessLevel>>({});

@@ -15,15 +15,16 @@ router = APIRouter(prefix='/admin', dependencies=[Depends(require_admin)])
 @router.get('/status')
 async def status(request: Request):
     authorization = request.headers.get("authorization", "")
-    names = ['auth', 'project', 'file', 'fileproc', 'rag', 'chat', 'llm', 'graph', 'question', 'monitoring']
+    names = ['auth', 'project', 'file', 'fileproc', 'rag', 'chat', 'llm', 'graph', 'question', 'monitoring', 'gateway', 'frontend']
     async with httpx.AsyncClient(timeout=3) as client:
         async def probe(name):
-            target = os.getenv(f'{name.upper()}_SERVICE_URL') or await get_service_url(name, healthy_only=False)
+            target = ({'gateway': 'http://gateway_service:8888', 'frontend': 'http://frontend:80'}.get(name)
+                      or os.getenv(f'{name.upper()}_SERVICE_URL') or await get_service_url(name, healthy_only=False))
             if not target:
                 return {'name': name, 'status': 'not_configured', 'latency_ms': None}
             started = time.perf_counter()
             try:
-                response = await client.get(target.rstrip('/') + '/healthz')
+                response = await client.get(target.rstrip('/') + ('/' if name == 'frontend' else '/healthz'))
                 return {'name': name, 'status': 'healthy' if response.status_code == 200 else 'unhealthy', 'latency_ms': round((time.perf_counter()-started)*1000)}
             except httpx.HTTPError:
                 return {'name': name, 'status': 'unreachable', 'latency_ms': None}
@@ -55,6 +56,11 @@ async def tasks():
     # Exclude params/results/errors: they may contain credentials or document text.
     fields = ('task_id', 'task_name', 'status', 'created_at', 'updated_at', 'started_at', 'completed_at', 'retry_count')
     rows = [{key: task.get(key) for key in fields} for task in records]
+    from src.shared.operation_journal import journal
+    with journal().connection() as db:
+        durable = db.execute('SELECT id,lane,status,attempts,updated FROM work ORDER BY updated DESC LIMIT 200').fetchall()
+    rows.extend({'task_id': row['id'], 'task_name': row['lane'], 'status': row['status'],
+                 'retry_count': max(0, row['attempts']-1), 'updated_at': datetime.fromtimestamp(row['updated'], timezone.utc).isoformat()} for row in durable)
     rows.sort(key=lambda row: str(row.get('updated_at') or row.get('created_at') or ''), reverse=True)
     return {'tasks': rows[:200], 'total': len(rows)}
 
@@ -75,3 +81,9 @@ async def restart_service(name: str, request: Request):
         return response.json()
     except httpx.HTTPError:
         raise HTTPException(503, 'Container control unavailable')
+
+
+@router.get('/events')
+async def operational_events(before: int | None = None):
+    from src.shared.operation_journal import journal
+    return {'events': journal().events(before=before)}

@@ -1,3 +1,4 @@
+import { FileRecoveryStatus } from '@/features/files/components/FileRecoveryStatus';
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -154,6 +155,14 @@ export function DocumentAnalysis() {
     const timer = setInterval(() => void loadDocuments(), 3000);
     return () => clearInterval(timer);
   }, [documents, loadDocuments]);
+
+  useEffect(() => {
+    const refresh = (event: Event) => {
+      if ((event as CustomEvent).detail?.projectId === projectId) void loadDocuments();
+    };
+    window.addEventListener('file-operations-updated', refresh);
+    return () => window.removeEventListener('file-operations-updated', refresh);
+  }, [projectId, loadDocuments]);
 
   const handleDelete = async (doc: DocumentFile) => {
     if (!projectId || deletingId) return;
@@ -319,6 +328,7 @@ export function DocumentAnalysis() {
   return (
     <div className="h-full overflow-y-auto bg-background">
       <div className="mx-auto max-w-7xl space-y-8 p-4 sm:p-6">
+        {projectId && <FileRecoveryStatus projectId={projectId} />}
         {/* 页面标题 */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>

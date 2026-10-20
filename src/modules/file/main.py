@@ -102,6 +102,8 @@ try:
             logger.error(traceback.format_exc())
             raise
 
+        from .durable_operations import start
+        start()
         yield
 
         # 关闭事件
@@ -251,6 +253,7 @@ try:
     )
     async def file_upload_mapping(
         project_id: str,
+        request: Request,
         file: UploadFile = File(...),
         process: bool = Form(True)
     ):
@@ -265,7 +268,7 @@ try:
             file_service = FileProcessorService()
 
             # 直接调用服务的upload_file方法
-            result = await file_service.upload_file(file, project_id, process)
+            result = await file_service.upload_file(file, project_id, process, request.headers.get("x-operation-id"))
             logger.info(f"文件上传成功: 文件ID={result.file_id}, 哈希值={result.file_id if result.file_id != 'error' else 'N/A'}")
             return result
 

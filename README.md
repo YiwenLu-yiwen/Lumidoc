@@ -38,17 +38,40 @@ loaded models, tasks and user access. The page supports English and Chinese and 
 every 10 seconds while visible. A failed refresh keeps the last snapshot and shows an
 error; the check timestamp tells you how recent it is.
 
-Service restart requires confirmation, interrupts in-flight requests and has a 60-second
-cooldown. The internal `container_control` service only restarts allowlisted application
-containers belonging to its own Compose project. Restart completion is separate from
-health-check recovery. It cannot restart databases, storage, the gateway or the host.
-If authentication or the gateway is unavailable, recover the stack from the terminal.
+Application services (including the gateway) are monitored by an internal controller.
+After two failed checks it attempts recovery, with a 60-second cooldown and at most
+three restarts in 15 minutes. While retrying, the admin page shows **Recovering**;
+exhausting the budget requires administrator intervention. Manual restart requires
+confirmation and clears the recovery block. Two minutes of sustained health resets
+the retry budget. Configure this with `AUTO_RESTART_ENABLED`,
+`AUTO_RESTART_MAX_ATTEMPTS` and `AUTO_RESTART_WINDOW_SECONDS`.
 
-The controller is the only service with the Docker socket mounted and publishes no host
-port. Docker socket access is privileged: deploy this controller only on a trusted host
-([Docker security guidance](https://docs.docker.com/engine/security/)). Without a reachable
-controller, monitoring continues and restart buttons are disabled. Recent restart results
-are kept in controller memory; actor/service/result audit events go to its container logs.
+Accepted uploads, deletions and chat requests are persisted in the `operational_data`
+volume. Document processing uses a Redis acknowledgement queue and persistent AOF;
+LightRAG imports persist their status and resume after replacement. Interrupted work
+is retried up to five times. A crashed model generation starts again, saving one final
+reply; it cannot resume GPU memory or the exact interrupted token. Recovery can wait
+60–90 seconds for an abandoned worker lease to expire. Keep all data volumes when
+recreating containers; deleting volumes removes the recovery records too.
+
+The browser retains unfinished uploads and single-file deletions locally. Reopen the
+app and sign in to the same account to resume them. Bytes that have not reached the
+server require that browser's saved copy; clearing browser storage removes it.
+
+The admin **Activity** tab shows persisted gateway request metadata, task interruptions
+and restart outcomes. Audit records exclude request bodies, query strings and tokens;
+private queued work necessarily contains the data needed to complete the operation.
+Purely local clicks are not recorded. Back up the operational volume with the other
+data volumes and restrict host access; audit and work records currently have no
+automatic retention limit.
+
+The controller only controls allowlisted containers in its own Compose project. It is
+the only service with the Docker socket mounted and publishes no host port. Docker
+socket access is privileged: use a trusted host
+([Docker security guidance](https://docs.docker.com/engine/security/)). Databases,
+storage and the controller use Docker's restart policy; host processes (including
+native Ollama) need host-level supervision. If the controller or Docker daemon is down,
+automatic application recovery cannot run until it is restored.
 
 ## How it works
 

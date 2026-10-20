@@ -75,7 +75,10 @@ async def lifespan(app: FastAPI):
         # 初始化企业级服务
         try:
             from .services.enterprise_lightrag_service import get_enterprise_lightrag_service
-            await get_enterprise_lightrag_service()
+            service = await get_enterprise_lightrag_service()
+            from .routes.enterprise_rag_routes import _import_jobs, run_import_file, start_delete_recovery
+            await start_delete_recovery(service)
+            _import_jobs(service).recover(lambda project, file_id: run_import_file(service, project, file_id))
             logger.info("✅ 企业级LightRAG服务初始化完成")
             
             # 项目隔离模式：按需初始化项目

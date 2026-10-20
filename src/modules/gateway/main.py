@@ -173,6 +173,9 @@ def create_app() -> FastAPI:
         app.add_middleware(AuthMiddleware)
         logger.info("已启用认证中间件")
     
+    from src.modules.gateway.middleware.audit import AuditMiddleware
+    app.add_middleware(AuditMiddleware)
+
     # 注册路由
     app.include_router(proxy_router)
     

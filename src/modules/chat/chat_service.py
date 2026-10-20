@@ -21,7 +21,7 @@ from src.shared.project_access import require_project_access
 from .response_jobs import ResponseJobs
 from .conversations import unique_messages, conversation_summaries, session_id as message_session_id
 
-response_jobs = ResponseJobs()
+response_jobs = None
 from .data_migration import fetch_chat_history, migrate_old_messages_to_db
 
 # 导入共享类型
@@ -95,6 +95,9 @@ redis_client = redis.Redis(
     db=settings.redis_db,
     password=settings.redis_password
 )
+
+from .durable_responses import DurableResponses
+response_jobs = DurableResponses(chat_manager, redis_client)
 
 # 配置健康检查项
 health_checker.add_check("chat_engine", check_chat_engine, critical=True)
@@ -445,30 +448,11 @@ async def stream_chat(
         if not content_to_use:
             raise HTTPException(status_code=400, detail="Missing content")
         
-        # 服务端持久化用户消息和最终回复，不依赖浏览器继续停留在页面。
-        async def persist_message(role, content, thinking=""):
-            record = {
-                "id": str(uuid.uuid4()), "role": role, "content": content, "thinking": thinking,
-                "project_id": project_id, "user_id": user_id, "session_id": conversation_id,
-                "timestamp": datetime.now().isoformat(),
-            }
-            key = f"chat:history:{project_id}"
-            redis_client.lpush(key, json.dumps(record))
-            redis_client.persist(key)
-
-        await persist_message("user", content_to_use)
-        async def persist_answer(content, thinking=""):
-            await persist_message("assistant", content, thinking)
-
-        job = response_jobs.start(
-            (str(project_id), str(user_id), conversation_id),
-            chat_manager.process_message_stream(
-                project_id=project_id, message=content_to_use, user_id=user_id,
-                search_mode=search_mode, use_graph=use_graph,
-                auth_header=auth_header, model=model, conversation_id=conversation_id, think=think,
-            ),
-            persist_answer,
-        )
+        job = response_jobs.start({
+            'project_id': project_id, 'message': content_to_use, 'user_id': user_id,
+            'search_mode': search_mode, 'use_graph': use_graph, 'model': model,
+            'conversation_id': conversation_id, 'think': think,
+        })
 
         async def event_generator():
             async for event in job.events():
@@ -671,7 +655,8 @@ async def stop_chat(project_id: str, user_id: str, session_id: str = "legacy"):
 
 @api_router.get("/chat/pending/{project_id}")
 async def pending_chat(project_id: str, user_id: str, session_id: str = "legacy"):
-    return {"pending": response_jobs.pending((project_id, user_id, session_id))}
+    return {"pending": response_jobs.pending((project_id, user_id, session_id)),
+            "recovery_failed": response_jobs.recovery_failed((project_id, user_id, session_id))}
 
 
 @api_router.post("/chat/stream")

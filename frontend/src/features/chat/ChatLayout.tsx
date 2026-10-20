@@ -145,6 +145,7 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
   const [streamAccepted, setStreamAccepted] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const recoveryRefreshNeeded = useRef(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editMessageId, setEditMessageId] = useState<string | null>(null);
   const [isComposing, setIsComposing] = useState(false);
@@ -391,6 +392,7 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
     let wasPending = true;
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
+      const historyVersion = historyRequest.current;
       try {
         const gatewayUrl = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8888';
         const userId = JSON.parse(localStorage.getItem('lumidoc_user') || '{}').id || 'unknown';
@@ -399,11 +401,13 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
         });
         if (!response.ok) return;
         const data = await response.json();
-        if (disposed || typeof data.pending !== 'boolean') return;
+        if (disposed || historyVersion !== historyRequest.current || typeof data.pending !== 'boolean') return;
         setBackgroundPending(data.pending);
-        if (!abortControllerRef.current && wasPending && !data.pending) {
+        if (data.recovery_failed) setLastError(currentLanguage === "zh-CN" ? "自动恢复次数已达上限，请稍后重试。" : "Automatic recovery limit reached. Please retry later.");
+        if (!abortControllerRef.current && (wasPending || recoveryRefreshNeeded.current) && !data.pending) {
           loadedRef.current = false;
           await loadChatHistory();
+          recoveryRefreshNeeded.current = false;
         }
         wasPending = data.pending && !abortControllerRef.current;
       } catch {
@@ -414,7 +418,7 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
     };
     void poll();
     return () => { disposed = true; clearTimeout(timer); };
-  }, [projectId, conversationId, loadChatHistory]);
+  }, [projectId, conversationId, loadChatHistory, currentLanguage]);
 
   const stopGeneration = async () => {
     if (isStopping) return;
@@ -627,6 +631,7 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
           let aiReply = '';
           let aiThinking = '';
           let done = false;
+          let receivedCompletion = false;
           
         // 不断读取流式数据
           while (!done) {
@@ -651,22 +656,32 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
                     const jsonStr = line.slice(6); // 去掉 "data: " 前缀
                     const data = JSON.parse(jsonStr);
                     
+                    if (data.reset) {
+                      aiReply = ''; aiThinking = '';
+                      setMessages(previous => previous.map((message, index) => index === previous.length-1 && !message.isUser ? {...message, content:'', thinking:undefined} : message));
+                    }
                     // 如果有错误消息
                     if (data.error) {
-                    setMessages(prev => prev.map((m, idx) =>
-                      idx === prev.length - 1 && !m.isUser
-                          ? { ...m, content: `发生错误：${data.error}` }
-                          : m
-                      ));
+                      if (!data.done) {
+                        // The gateway may close a stream while its durable task continues.
+                        recoveryRefreshNeeded.current = true;
+                        setBackgroundPending(true);
+                        setLastError(null);
+                      } else {
+                        receivedCompletion = true;
+                        done = true;
+                        setLastError(data.error);
+                      }
                       continue;
                     }
-                    
+
                     if (data.stopped) {
                       setMessages(prev => prev.map((m, idx) => idx === prev.length - 1 && !m.isUser && !m.content
                         ? { ...m, content: currentLanguage === 'zh-CN' ? '已停止生成。' : 'Generation stopped.' } : m));
                     }
                     // 如果是完成标记
                     if (data.done) {
+                      receivedCompletion = true;
                       done = true;
                       continue;
                     }
@@ -709,6 +724,10 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
             }
           }
           
+          if (!receivedCompletion) {
+            recoveryRefreshNeeded.current = true;
+            setBackgroundPending(true);
+          }
           // 完成后设置流式完成标志
           setStreamingComplete(true);
           setIsLoading(false);
@@ -728,47 +747,16 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
           setIsProcessing(false);
           const errorMessage = error instanceof Error ? error.message : String(error);
           
-        // 错误处理
-          if (error instanceof Error && error.name === 'AbortError') {
-          console.log('聊天请求被中断，这是预期行为');
-          
-          // 中断消息内容
-          const interruptionMessage = "消息处理被中断，请重新发送您的问题。";
-          
-          // 更新前端显示
-          setMessages(prev => {
-            const newMessages = [...prev];
-            // 找到并更新最后一个机器人消息
-            for (let i = newMessages.length - 1; i >= 0; i--) {
-              if (!newMessages[i].isUser && !newMessages[i].content) {
-                newMessages[i] = {
-                  ...newMessages[i],
-                  content: interruptionMessage
-                };
-                break;
-              }
-            }
-            return newMessages;
-          });
-        } else {
-          console.error('聊天请求出错:', error);
-          setLastError(errorMessage);
-          setMessages(prev => {
-            const newMessages = [...prev];
-            // 找到并更新最后一个机器人消息
-            for (let i = newMessages.length - 1; i >= 0; i--) {
-              if (!newMessages[i].isUser) {
-                newMessages[i] = {
-                  ...newMessages[i],
-                  content: `发生错误：${errorMessage}`
-                };
-                break;
-              }
-            }
-            return newMessages;
-          });
-        }
-        
+          if (error instanceof TypeError || (error instanceof Error && error.name === "AbortError")) {
+            recoveryRefreshNeeded.current = true;
+            setBackgroundPending(true);
+            setLastError(null);
+            setMessages(previous => previous.map((message, index) => index === previous.length-1 && !message.isUser
+              ? {...message, content: currentLanguage === 'zh-CN' ? '连接中断，正在等待服务自动恢复…' : 'Connection interrupted. Waiting for automatic recovery…'} : message));
+          } else if (!(error instanceof Error && error.name === 'AbortError')) {
+            setLastError(errorMessage);
+          }
+
         // 确保所有状态都被重置
         abortControllerRef.current = null;
             
@@ -791,6 +779,7 @@ function ChatConversation({ projectId, conversationId }: { projectId?: string; c
         requestTimeout.current = null;
       }
     } finally {
+      abortControllerRef.current = null;
       submitting.current = false;
       setStreamAccepted(false);
       finishStream();

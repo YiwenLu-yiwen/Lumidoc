@@ -180,8 +180,7 @@ class ChatManager:
         except Exception as e:
             import logging
             logging.error(f"Error in stream processing: {e}")
-            error_msg = f"处理消息时发生错误: {str(e)}"
-            yield error_msg
+            raise
             session.add_message('assistant', error_msg)
     
     def add_message(self, project_id: str, role: str, content: str):

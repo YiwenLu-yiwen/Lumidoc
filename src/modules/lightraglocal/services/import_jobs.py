@@ -1,12 +1,13 @@
 """Durable import status for the single-worker RAG deployment.
 
 Browser requests enqueue work; they never own its lifetime. Interrupted jobs are
-reported as retryable failures after a service restart instead of staying pending.
+resumed after a service restart, with bounded retries and persisted attempts.
 """
 import asyncio
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
+import os
 import logging
 from pathlib import Path
 from time import perf_counter
@@ -22,6 +23,8 @@ class ImportJobs:
         self.directory = Path(directory)
         self.projects = {}
         self.tasks = set()
+        self.active = set()
+        self.retry_delay = 2
         self.capacity = asyncio.Semaphore(1)
 
     def _path(self, project):
@@ -32,19 +35,16 @@ class ImportJobs:
             path = self._path(project)
             records = json.loads(path.read_text()) if path.exists() else {}
             self.projects[project] = records
-            for record in records.values():
-                if record['status'] in ('pending', 'processing'):
-                    record.update(status='failed', stage='interrupted',
-                                  error='Service restarted during import; please retry.')
-            if records:
-                self._save(project)
         return self.projects[project]
 
     def _save(self, project):
         self.directory.mkdir(parents=True, exist_ok=True)
         path = self._path(project)
         temporary = path.with_suffix('.tmp')
-        temporary.write_text(json.dumps(self.projects[project], ensure_ascii=False))
+        with temporary.open('w') as stream:
+            stream.write(json.dumps(self.projects[project], ensure_ascii=False))
+            stream.flush()
+            os.fsync(stream.fileno())
         temporary.replace(path)
 
     def update(self, project, file_id, **values):
@@ -98,31 +98,61 @@ class ImportJobs:
         batch_id = str(uuid4())
         created_at = datetime.now(timezone.utc).isoformat()
         for file_id in dict.fromkeys(file_ids):
-            if records.get(file_id, {}).get('status') in ('pending', 'processing', 'processed'):
+            if records.get(file_id, {}).get('status') in ('pending', 'processing', 'recovering', 'processed'):
                 continue
             records[file_id] = dict(project_id=project, status='pending', stage='queued', file_name=file_id,
                                     created_at=created_at, batch_id=batch_id)
             accepted.append(file_id)
         self._save(project)
         for file_id in accepted:
-            task = asyncio.create_task(self._run(project, file_id, worker))
-            self.tasks.add(task)
-            task.add_done_callback(self.tasks.discard)
+            self.schedule(project, file_id, worker)
         return accepted
 
+    def schedule(self, project, file_id, worker):
+        key = (project, file_id)
+        if key in self.active: return
+        self.active.add(key)
+        task = asyncio.create_task(self._run(project, file_id, worker))
+        self.tasks.add(task)
+        def finished(task):
+            self.tasks.discard(task)
+            self.active.discard(key)
+        task.add_done_callback(finished)
+
+    def recover(self, worker):
+        for path in self.directory.glob('*.json'):
+            records = json.loads(path.read_text())
+            for file_id, record in records.items():
+                project = record.get('project_id')
+                if project and record['status'] in ('pending', 'processing', 'recovering'):
+                    self.statuses(project)
+                    self.update(project, file_id, status='pending', stage='recovering')
+                    from src.shared.operation_journal import journal
+                    journal().event('task.interrupted', 'rag', 'recovering', operation_id=f'{project}/{file_id}')
+                    self.schedule(project, file_id, lambda identifier, project=project: worker(project, identifier))
+
     async def _run(self, project, file_id, worker):
-        try:
-            async with self.capacity:
-                started = perf_counter()
-                self.update(project, file_id, status='processing', stage='reading',
-                            started_at=datetime.now(timezone.utc).isoformat())
-                await worker(file_id)
-                self.update(project, file_id, status='processed', stage='completed',
-                            duration_seconds=round(perf_counter() - started, 3))
-                logger.info('rag_import_complete duration_ms=%d', (perf_counter() - started) * 1000)
-        except asyncio.CancelledError:
-            self.update(project, file_id, status='failed', stage='interrupted', error='Import interrupted; please retry.')
-            raise
-        except Exception as exc:
-            logger.exception('RAG import failed')
-            self.update(project, file_id, status='failed', stage='failed', error=str(exc))
+        from src.shared.operation_journal import journal
+        while True:
+            record = self.statuses(project)[file_id]
+            attempts = record.get('attempts', 0)
+            if attempts >= 5:
+                self.update(project, file_id, status='failed', stage='failed', error='Automatic recovery limit reached')
+                journal().event('task.recovery_exhausted', 'rag', 'needs_attention', operation_id=f'{project}/{file_id}')
+                return
+            try:
+                async with self.capacity:
+                    started = perf_counter()
+                    self.update(project, file_id, status='processing', stage='reading', attempts=attempts+1,
+                                started_at=datetime.now(timezone.utc).isoformat())
+                    await worker(file_id)
+                    self.update(project, file_id, status='processed', stage='completed', error=None,
+                                duration_seconds=round(perf_counter()-started, 3))
+                return
+            except asyncio.CancelledError:
+                self.update(project, file_id, status='pending', stage='recovering')
+                raise
+            except Exception:
+                self.update(project, file_id, status='pending', stage='recovering')
+                journal().event('task.retry', 'rag', 'recovering', operation_id=f'{project}/{file_id}')
+                await asyncio.sleep(min(self.retry_delay**(attempts+1), 30))

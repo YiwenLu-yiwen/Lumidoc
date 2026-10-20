@@ -436,7 +436,7 @@ class ChatEngine:
 
         except Exception as e:
             logger.error(f"聊天流式处理失败: {str(e)}")
-            yield f"❌ 处理请求时出错: {str(e)}。请检查网络连接并重试。"
+            raise
             
     async def analyze_knowledge_framework(self, 
                                         query: str, 

@@ -89,6 +89,9 @@ async def lifespan(app: FastAPI):
         from src.shared.service_discovery import register_service
         await register_service("chat", port=settings.port, health_check_endpoint="/healthz")
 
+        from .chat_service import response_jobs
+        response_jobs.worker.start()
+
         # 启动定期任务
         migration_task = asyncio.create_task(migrate_old_messages_background_task())
 

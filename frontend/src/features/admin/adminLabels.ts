@@ -1,4 +1,6 @@
 export const serviceLabels: Record<string, [string, string]> = {
+  gateway: ["API 网关", "API gateway"],
+  frontend: ["网页界面", "Web interface"],
   auth: ["账户认证", "Authentication"],
   project: ["项目管理", "Projects"],
   file: ["文件存储", "Files"],
@@ -11,6 +13,26 @@ export const serviceLabels: Record<string, [string, string]> = {
   monitoring: ["监控服务", "Monitoring"],
 };
 const labels: Record<string, string> = {
+  system: "系统",
+  automatic: "自动恢复",
+  anonymous: "未登录",
+  unverified: "认证前",
+  accepted: "已接受",
+  "request.started": "请求开始",
+  "request.finished": "请求结束",
+  "service.interrupted": "服务中断",
+  "service.restart_requested": "请求重启",
+  "service.restart": "重启结果",
+  "service.restart_interrupted": "重启被中断",
+  "service.recovery_exhausted": "自动恢复超限",
+  "task.interrupted": "任务中断",
+  "task.retry": "任务重试",
+  "task.completed": "任务完成",
+  "task.recovery_exhausted": "任务恢复超限",
+  "chat.stopped": "停止生成",
+
+  recovering: "正在自动恢复",
+  needs_attention: "恢复次数超限，需处理",
   healthy: "运行正常",
   unhealthy: "健康检查异常",
   unreachable: "无法连接",
@@ -52,6 +74,10 @@ export type ServiceStatus = {
   controls?: {
     available: boolean;
     services: string[];
+    recovery?: Record<
+      string,
+      { phase?: string; restart_count?: number; blocked?: boolean }
+    >;
     operations: Record<
       string,
       { status: string; started_at: string; finished_at?: string }

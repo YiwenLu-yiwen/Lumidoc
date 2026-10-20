@@ -919,7 +919,7 @@ class FileProcessor:
                         json_data={
                             "file_hash": file_id,
                             "project_id": project_id,
-                            "status": "failed"
+                            "status": (await self.queue.get_task_status(task_id) or {}).get("status", "pending")
                         },
                         use_service_auth=True
                     )
@@ -967,7 +967,7 @@ class FileProcessor:
                         json_data={
                             "file_hash": file_id,
                             "project_id": project_id,
-                            "status": "failed"
+                            "status": (await self.queue.get_task_status(task_id) or {}).get("status", "pending")
                         },
                         use_service_auth=True
                     )
@@ -1029,7 +1029,7 @@ class FileProcessor:
                     json_data={
                         "file_hash": file_id,
                         "project_id": project_id,
-                        "status": "failed"
+                        "status": (await self.queue.get_task_status(task_id) or {}).get("status", "pending")
                     },
                     use_service_auth=True
                 )
@@ -1039,7 +1039,7 @@ class FileProcessor:
                     await self._send_error_notification(
                         connection_manager, project_id, task_id,
                         {
-                            "status": "failed",
+                            "status": (await self.queue.get_task_status(task_id) or {}).get("status", "pending"),
                             "progress": 100,
                             "stage": "error",
                             "message": f"文件处理失败: {error_message}",
@@ -1082,7 +1082,7 @@ class FileProcessor:
                 await self._send_error_notification(
                     connection_manager, project_id, task_id,
                     {
-                        "status": "failed",
+                        "status": (await self.queue.get_task_status(task_id) or {}).get("status", "pending"),
                         "progress": 100,
                         "stage": "error",
                         "message": f"文件处理失败: {error_message}",
@@ -1535,7 +1535,7 @@ class FileProcessor:
                     json_data={
                         "file_hash": file_id,
                         "project_id": project_id,
-                        "status": "failed"
+                        "status": (await self.queue.get_task_status(task_id) or {}).get("status", "pending")
                     },
                     use_service_auth=True
                 )
@@ -1622,7 +1622,7 @@ class FileProcessor:
                         json_data={
                             "file_hash": file_id,
                             "project_id": project_id,
-                            "status": "failed"
+                            "status": (await self.queue.get_task_status(task_id) or {}).get("status", "pending")
                         },
                         use_service_auth=True
                     )
@@ -1660,7 +1660,7 @@ class FileProcessor:
                         json_data={
                             "file_hash": file_id,
                             "project_id": project_id,
-                            "status": "failed"
+                            "status": (await self.queue.get_task_status(task_id) or {}).get("status", "pending")
                         },
                         use_service_auth=True
                     )
@@ -1719,7 +1719,7 @@ class FileProcessor:
                     json_data={
                         "file_hash": file_id,
                         "project_id": project_id,
-                        "status": "failed"
+                        "status": (await self.queue.get_task_status(task_id) or {}).get("status", "pending")
                     },
                     use_service_auth=True
                 )
@@ -1771,7 +1771,7 @@ class FileProcessor:
                     json_data={
                         "file_hash": file_id,
                         "project_id": project_id,
-                        "status": "failed"
+                        "status": (await self.queue.get_task_status(task_id) or {}).get("status", "pending")
                     },
                     use_service_auth=True
                 )
@@ -1804,7 +1804,7 @@ class FileProcessor:
                     json_data={
                         "file_hash": file_id,
                         "project_id": project_id,
-                        "status": "failed"
+                        "status": (await self.queue.get_task_status(task_id) or {}).get("status", "pending")
                     },
                     use_service_auth=True
                 )
@@ -1851,7 +1851,7 @@ class FileProcessor:
                     json_data={
                         "file_hash": file_id,
                         "project_id": project_id,
-                        "status": "failed"
+                        "status": (await self.queue.get_task_status(task_id) or {}).get("status", "pending")
                     },
                     use_service_auth=True
                 )

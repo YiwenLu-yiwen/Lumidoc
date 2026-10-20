@@ -77,7 +77,11 @@ class FileProcessorService:
         # 如果无法确定MIME类型，返回通用二进制类型
         return content_type or "application/octet-stream"
 
-    async def upload_file(
+    async def upload_file(self, file, project_id, process=True, operation_id=None):
+        from .durable_operations import upload
+        return FileUploadResponse(**await upload(file, project_id, process, operation_id))
+
+    async def _upload_file_once(
         self,
         file: UploadFile,
         project_id: str,
@@ -261,7 +265,7 @@ class FileProcessorService:
         except Exception as e:
             logger.error(f"记录文件到数据库失败: {str(e)}")
             logger.error(traceback.format_exc())
-            return f"error-{uuid.uuid4().hex[:8]}"
+            raise
 
     async def _send_processing_task(self, file_id: str, file_path: Path, content_type: str) -> str:
         """
@@ -277,7 +281,7 @@ class FileProcessorService:
         """
         try:
             # 创建任务ID
-            task_id = f"task-{uuid.uuid4().hex}"
+            task_id = f"task-file-{file_id}"
 
             # 从文件路径中提取项目ID
             # 假设格式为：./uploads/项目ID/文件hash
@@ -337,14 +341,14 @@ class FileProcessorService:
                 if response.get("success"):
                     logger.info(f"文件处理任务已发送: {task_id}")
                 else:
-                    logger.warning(f"文件处理任务发送失败: {response.get('message', '未知错误')}")
+                    raise RuntimeError('File processing submission failed')
             except Exception as e:
-                logger.error(f"调用文件处理服务失败: {str(e)}")
+                raise
 
             return task_id
         except Exception as e:
             logger.error(f"创建处理任务失败: {str(e)}")
-            return f"error-{uuid.uuid4().hex[:8]}"
+            raise
 
     async def get_processing_status(self, task_id: str) -> Dict[str, Any]:
         """
@@ -691,128 +695,28 @@ class FileProcessorService:
             logger.error(traceback.format_exc())
             return f"# 获取文件内容出错\n\n错误信息: {str(e)}"
 
-    async def delete_file(self, file_hash: str, project_id: str) -> bool:
-        """删除文件"""
-        try:
-            logger.info(f"开始删除文件，文件哈希: {file_hash}, 项目ID: {project_id}")
+    async def delete_file(self, file_hash, project_id, operation_id=None):
+        from .durable_operations import delete
+        return await delete(file_hash, project_id, operation_id)
 
-            project_id_value = str(project_id)
-
-            # 首先从数据库删除关联记录
-            pool = await FileServiceDatabase.get_pool()
-            async with pool.acquire() as conn:
-                # 检查文件是否存在(通过文件哈希或文件名)
-                file_exists = await conn.fetchrow(
-                    """
-                    SELECT 1 FROM project_files
-                    WHERE (file_hash = $1 OR name = $1) AND project_id::text = $2::text
-                    """,
-                    file_hash, project_id_value
-                )
-
-                if not file_exists:
-                    logger.warning(f"要删除的文件不存在: 文件哈希={file_hash}, 项目ID={project_id}")
-                    return False
-
-                try:
-                    # 获取文件名用于日志记录
-                    file_record = await conn.fetchrow(
-                        """
-                        SELECT name, file_hash, path FROM project_files
-                        WHERE (file_hash = $1 OR name = $1) AND project_id::text = $2::text
-                        """,
-                        file_hash, project_id_value
-                    )
-
-                    if file_record:
-                        actual_file_name = file_record["name"]
-                        actual_file_hash = file_record["file_hash"]
-                        file_path = file_record["path"]
-                        logger.info(f"找到要删除的文件: {actual_file_name} (哈希: {actual_file_hash}, 路径: {file_path})")
-
-                        # 更新file_hash为实际哈希值
-                        file_hash = actual_file_hash
-                    else:
-                        logger.warning(f"无法获取文件详情，继续尝试删除: {file_hash}")
-                except Exception as e:
-                    # 如果无法获取文件名，继续删除过程
-                    logger.warning(f"获取文件详情失败: {str(e)}，继续尝试删除: {file_hash}")
-
-                # 删除项目文件关联
-                try:
-                    # 使用拓展的条件删除记录
-                    result = await conn.execute(
-                        """
-                        DELETE FROM project_files
-                        WHERE (file_hash = $1 OR name = $1) AND project_id::text = $2::text
-                        RETURNING id
-                        """,
-                        file_hash, project_id_value
-                    )
-                    logger.info(f"已从project_files表删除文件关联记录，结果: {result}")
-                except Exception as e:
-                    logger.error(f"删除project_files记录失败: {str(e)}")
-                    raise
-
-                # 检查是否还有其他项目引用此文件
-                other_refs = 0
-                try:
-                    other_refs = await conn.fetchval(
-                        """
-                        SELECT COUNT(*) FROM project_files
-                        WHERE file_hash = $1
-                        """,
-                        file_hash
-                    )
-                except Exception as e:
-                    logger.error(f"检查文件引用失败: {str(e)}")
-                    raise
-
-                # 🔧 修改删除逻辑：删除项目记录但保留content内容，避免用户在不同project上传同一文件的问题
-                if other_refs == 0:
-                    logger.info(f"文件无其他引用，删除file_contents记录但保留content内容, 哈希: {file_hash}")
-
-                    try:
-                        await conn.execute(
-                            """
-                            DELETE FROM file_contents
-                            WHERE file_hash = $1
-                            """,
-                            file_hash
-                        )
-                        logger.info(f"已从file_contents表删除记录, 哈希: {file_hash}")
-                    except Exception as e:
-                        logger.error(f"删除file_contents记录失败: {str(e)}")
-                        # 继续尝试删除物理文件，不中断流程
-
-                    # 🔧 修改：从存储系统中删除原始文件，但保留content内容
-                    try:
-                        # 检查存储类型
-                        storage_type = os.getenv('STORAGE_TYPE', 'local')
-                        logger.info(f"存储类型: {storage_type}")
-
-                        if storage_type == 's3':
-                            # S3/MinIO存储删除逻辑（不删除content目录）
-                            await self._delete_files_from_s3_storage_keep_content(conn, file_hash, project_id_value)
-                        else:
-                            # 本地存储删除逻辑（不删除content目录）
-                            await self._delete_files_from_local_storage_keep_content(conn, file_hash, project_id_value)
-
-                        logger.info(f"物理文件删除操作完成（保留content内容）, 哈希: {file_hash}")
-                    except Exception as e:
-                        logger.error(f"删除物理文件过程中出错: {str(e)}")
-                        logger.error(traceback.format_exc())
-                        # 数据库记录已删除，即使物理文件删除失败也认为删除成功
-                else:
-                    logger.info(f"文件仍有其他项目引用({other_refs}个)，保留物理文件, 哈希: {file_hash}")
-
-                logger.info(f"文件删除成功完成, 哈希: {file_hash}, 项目ID: {project_id}")
-                return True
-
-        except Exception as e:
-            logger.error(f"删除文件失败: {str(e)}")
-            logger.error(traceback.format_exc())
-            raise
+    async def _delete_file_once(self, file_hash, project_id):
+        """Delete scoped objects before their reference, so replay can finish cleanup."""
+        pool = await FileServiceDatabase.get_pool()
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                record = await conn.fetchrow(
+                    "SELECT id, path FROM project_files WHERE (file_hash=$1 OR name=$1) AND project_id::text=$2 FOR UPDATE",
+                    file_hash, str(project_id))
+                if not record: return True
+                path = record['path']
+                # Legacy globally shared objects are retained; never remove another tenant's bytes.
+                if path and str(project_id) in Path(path).parts:
+                    from src.shared.storage.storage_factory import get_storage
+                    storage = await get_storage(directory_type='upload')
+                    if await storage.file_exists(path):
+                        if not await storage.delete_file(path): raise RuntimeError('Storage deletion incomplete')
+                await conn.execute('DELETE FROM project_files WHERE id=$1', record['id'])
+        return True
 
     async def _delete_files_from_s3_storage(self, conn, file_hash: str, project_id_int: int):
         """从S3/MinIO存储删除文件"""
@@ -1696,67 +1600,9 @@ class FileProcessorService:
             return []
 
     async def batch_delete_files(self, project_id: str, file_hashes: List[str]) -> Dict[str, Any]:
-        """
-        批量删除文件
-
-        Args:
-            project_id: 项目ID
-            file_hashes: 文件哈希列表
-
-        Returns:
-            Dict[str, Any]: 删除结果
-        """
-        try:
-            # 确保project_id是整数
-            try:
-                project_id_int = int(project_id)
-                logger.info(f"批量删除 - 项目ID转换为整数: {project_id_int}")
-            except ValueError:
-                logger.error(f"批量删除 - 项目ID格式错误，无法转换为整数: {project_id}")
-                return {
-                    "success": False,
-                    "message": f"项目ID格式错误: {project_id}",
-                    "deleted": [],
-                    "failed": file_hashes
-                }
-
-            # 记录成功和失败的删除操作
-            successful = []
-            failed = []
-
-            # 逐个删除文件
-            for file_hash in file_hashes:
-                try:
-                    logger.info(f"批量删除 - 开始处理文件: {file_hash}")
-                    result = await self.delete_file(file_hash, project_id)
-
-                    if result:
-                        successful.append(file_hash)
-                        logger.info(f"批量删除 - 成功删除文件: {file_hash}")
-                    else:
-                        failed.append(file_hash)
-                        logger.warning(f"批量删除 - 删除文件失败: {file_hash}")
-                except Exception as e:
-                    logger.error(f"批量删除 - 处理文件时出错: {file_hash}, 错误: {str(e)}")
-                    failed.append(file_hash)
-
-            # 返回结果
-            return {
-                "success": len(successful) > 0,
-                "message": f"成功删除{len(successful)}个文件，{len(failed)}个文件删除失败",
-                "deleted": successful,
-                "failed": failed
-            }
-
-        except Exception as e:
-            logger.error(f"批量删除文件失败: {str(e)}")
-            logger.error(traceback.format_exc())
-            return {
-                "success": False,
-                "message": f"批量删除文件失败: {str(e)}",
-                "deleted": [],
-                "failed": file_hashes
-            }
+        """Persist the whole selection before deleting any file; replay is idempotent."""
+        from .durable_operations import batch_delete
+        return await batch_delete(file_hashes, project_id)
 
     async def list_pending_files(self) -> List[Dict[str, Any]]:
         """
