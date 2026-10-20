@@ -12,8 +12,6 @@ import {
   Sun,
   Moon,
   Monitor,
-  Globe,
-  Check,
   Star,
   Shield,
   BarChart3,
@@ -28,9 +26,7 @@ import { Input } from '@/components/ui/input';
 import ModernAccountModal from '@/components/ui/ModernAccountModal';
 import { ModelSelector } from '@/components/model/ModelSelector';
 import { ModelSelectionContext, useModel } from '@/hooks/useModel';
-import { 
-  supportedLanguages,
-} from '@/utils/language';
+import { LanguageSwitcher } from '@/components/common/LanguageSwitcher';
 import { useTheme } from '@/context/ThemeContext';
 import { useLanguage } from '@/context/LanguageContext';
 import { shouldCollapseSidebar } from './responsiveLayout';
@@ -65,9 +61,8 @@ export default function MainLayout({ children }: MainLayoutProps) {
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [showAccountModal, setShowAccountModal] = useState(false);
-  const { currentLanguage, setLanguage, t } = useLanguage();
+  const { currentLanguage, t } = useLanguage();
   const { themeMode, isDarkMode, toggleTheme } = useTheme();
-  const [showLanguageMenu, setShowLanguageMenu] = useState(false);
   const sessionsRequest = useRef(0);
   const [deletingChatId, setDeletingChatId] = useState<string | null>(null);
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
@@ -106,7 +101,6 @@ export default function MainLayout({ children }: MainLayoutProps) {
   const currentSection = getCurrentSection();
   
   const sidebarRef = useRef<HTMLDivElement>(null);
-  const languageMenuRef = useRef<HTMLDivElement>(null);
 
   const getStoredUserId = (): string | undefined => {
     try {
@@ -280,12 +274,6 @@ export default function MainLayout({ children }: MainLayoutProps) {
     );
   };
 
-  // 切换语言
-  const changeLanguage = (langCode: string) => {
-    setLanguage(langCode);
-    setShowLanguageMenu(false);
-  };
-
   // 主题切换现在由 ThemeContext 管理
 
   // 主题初始化现在由 ThemeContext 管理
@@ -294,18 +282,6 @@ export default function MainLayout({ children }: MainLayoutProps) {
   useEffect(() => {
     setIsAdmin(user?.role === 'admin');
   }, [user]);
-
-  // 点击外部关闭语言菜单
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (languageMenuRef.current && !languageMenuRef.current.contains(event.target as Node)) {
-        setShowLanguageMenu(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -415,44 +391,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
                 </div>
               )}
 
-              {/* 语言切换 */}
-              <div className="relative" ref={languageMenuRef}>
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={() => setShowLanguageMenu(!showLanguageMenu)}
-                    className={`p-1.5 rounded-md transition-colors ${
-                      isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-                    }`}
-                    title={t('language')}
-                    aria-label={t('language')}
-                  >
-                    <Globe className="w-4 h-4" />
-                  </Button>
-                  {showLanguageMenu && (
-                    <div className={`absolute right-0 top-full mt-1 w-44 py-1 rounded-lg shadow-xl z-50 ${
-                      isDarkMode ? 'bg-[#2a2a2a] border border-gray-700' : 'bg-white border border-gray-200'
-                    }`}>
-                      {supportedLanguages.map((lang) => (
-                        <button
-                          key={lang.code}
-                          onClick={() => changeLanguage(lang.code)}
-                          className={`w-full px-3 py-1.5 text-left flex items-center space-x-2 transition-colors ${
-                            currentLanguage === lang.code
-                              ? isDarkMode ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-900'
-                              : isDarkMode ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-100 text-gray-600'
-                          }`}
-                        >
-                          <span className="text-sm">{lang.flag}</span>
-                          <span className="text-xs">{lang.name}</span>
-                          {currentLanguage === lang.code && (
-                            <Check className="w-3 h-3 ml-auto" />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+              <LanguageSwitcher />
 
               {/* 用户菜单 - 充分利用右侧空间 */}
               <Button

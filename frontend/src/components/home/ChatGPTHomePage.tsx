@@ -5,7 +5,6 @@ import {
   Brain, 
   ArrowRight,
   LogIn,
-  Globe,
   ChevronDown,
   Shield,
   Network,
@@ -24,7 +23,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@/context/ThemeContext';
 import { useLanguage } from '@/context/LanguageContext';
-import { supportedLanguages } from '@/utils/language';
+import { LanguageSwitcher } from '@/components/common/LanguageSwitcher';
 
 interface FeatureCard {
   title: string;
@@ -41,7 +40,7 @@ export function ChatGPTHomePage() {
   const navigate = useNavigate();
   const { isDarkMode } = useTheme();
   
-  const { t, currentLanguage, setLanguage } = useLanguage();
+  const { t } = useLanguage();
 
   // 动画演示状态管理
   const [animationStep, setAnimationStep] = useState(0);
@@ -334,21 +333,7 @@ export function ChatGPTHomePage() {
 
             {/* 右侧：语言选择和账号入口 */}
             <div className="ml-auto flex items-center space-x-2 sm:space-x-4">
-              <div className="relative">
-                <Globe aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2" />
-                <select
-                  aria-label={t('language')}
-                  value={currentLanguage}
-                  onChange={event => setLanguage(event.target.value)}
-                  className={`h-10 rounded-md border py-2 pl-8 pr-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                    isDarkMode ? 'border-gray-600 bg-[#171717] text-gray-100' : 'border-gray-300 bg-white text-gray-900'
-                  }`}
-                >
-                  {supportedLanguages.map(language => (
-                    <option key={language.code} value={language.code}>{language.name}</option>
-                  ))}
-                </select>
-              </div>
+              <LanguageSwitcher />
               {!user ? (
                 <>
                   <Button
